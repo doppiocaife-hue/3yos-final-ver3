@@ -4,6 +4,8 @@ use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AdminGalleryController;
 use App\Http\Controllers\AdminPackageController;
+use App\Http\Controllers\AdminReservationController;
+use App\Http\Controllers\AdminServiceController;
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BackupController;
@@ -19,6 +21,7 @@ Route::get('/services', [PublicController::class, 'services'])->name('services')
 Route::get('/packages', [PublicController::class, 'packages'])->name('packages');
 Route::get('/packages/{package:slug}', [PublicController::class, 'packageShow'])->name('packages.show');
 Route::get('/gallery', [PublicController::class, 'gallery'])->name('gallery');
+Route::get('/gallery-images/{path}', [PublicController::class, 'galleryImage'])->where('path', '.*')->name('gallery.image');
 Route::get('/reservation', [PublicController::class, 'reservation'])->name('reservation');
 Route::get('/reservation/status', [PublicController::class, 'reservationStatus'])->name('reservation.status');
 Route::get('/reservation/availability', [ReservationController::class, 'availability'])->name('reservation.availability');
@@ -38,6 +41,8 @@ Route::post('/admin/logout', [AuthController::class, 'logout'])->name('admin.log
 Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(function () {
     Route::get('/', [AdminController::class, 'index'])->name('admin.dashboard');
     Route::get('/reservations', [AdminController::class, 'reservations'])->name('admin.reservations');
+    Route::get('/reservations/create', [AdminReservationController::class, 'create'])->name('admin.reservations.create');
+    Route::post('/reservations', [AdminReservationController::class, 'store'])->name('admin.reservations.store');
     Route::get('/reservations/export', [AdminController::class, 'exportReservationsCsv'])->name('admin.reservations.export');
     Route::patch('/reservations/{reservation}/status', [AdminController::class, 'updateReservationStatus'])->name('admin.reservations.status');
     Route::post('/reservations/{reservation}/service-contract', [AdminController::class, 'uploadReservationContract'])->name('admin.reservations.contract');
@@ -48,8 +53,21 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     Route::delete('/inquiries/{inquiry}', [AdminController::class, 'destroyInquiry'])->name('admin.inquiries.destroy');
     Route::patch('/inquiries/{inquiry}/status', [AdminController::class, 'updateInquiryStatus'])->name('admin.inquiries.status');
     Route::middleware('ensure.full-admin')->group(function () {
-        Route::resource('packages', AdminPackageController::class)->except('show')->names('admin.packages');
-        Route::resource('gallery', AdminGalleryController::class)->except(['show', 'create', 'edit'])->names('admin.gallery');
+        Route::resource('packages', AdminPackageController::class)
+            ->except('show')
+            ->middlewareFor(['store', 'update', 'destroy'], 'confirm.admin-password')
+            ->names('admin.packages');
+        Route::resource('services', AdminServiceController::class)
+            ->except('show')
+            ->middlewareFor(['store', 'update', 'destroy'], 'confirm.admin-password')
+            ->names('admin.services');
+        Route::patch('/services/{service}/toggle', [AdminServiceController::class, 'toggle'])
+            ->middleware('confirm.admin-password')
+            ->name('admin.services.toggle');
+        Route::resource('gallery', AdminGalleryController::class)
+            ->except(['show', 'create', 'edit'])
+            ->middlewareFor(['store', 'update', 'destroy'], 'confirm.admin-password')
+            ->names('admin.gallery');
         Route::get('/team-admins', [AdminUserController::class, 'index'])->name('admin.users');
         Route::post('/team-admins', [AdminUserController::class, 'store'])->name('admin.users.store');
         Route::put('/team-admins/{user}/reset-password', [AdminUserController::class, 'resetPassword'])->name('admin.users.reset');

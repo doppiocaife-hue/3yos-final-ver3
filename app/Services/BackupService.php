@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class BackupService
 {
@@ -21,19 +23,37 @@ class BackupService
 
     public function create(): string
     {
-        $filename = 'backup-' . now()->format('YmdHis') . '.json';
+        $filename = 'backup-' . now()->format('YmdHis');
         $path = storage_path('app/backups/' . $filename);
-        if (! is_dir(dirname($path))) {
-            mkdir(dirname($path), 0755, true);
+        if (! is_dir(dirname($path)) && ! mkdir(dirname($path), 0755, true) && ! is_dir(dirname($path))) {
+            throw new \RuntimeException('The backup directory could not be created.');
         }
+
+        $suffix = 1;
+        while (is_file($path.'.json')) {
+            $path = storage_path('app/backups/'.$filename.'-'.$suffix++);
+        }
+        $path .= '.json';
 
         $contents = ['created_at' => now()->toIso8601String(), 'tables' => []];
 
         foreach (self::TABLES as $table) {
-            $contents['tables'][$table] = DB::table($table)->get()->map(fn ($row) => (array) $row)->all();
+            if (Schema::hasTable($table)) {
+                $contents['tables'][$table] = DB::table($table)->get()->map(fn ($row) => (array) $row)->all();
+            }
         }
 
-        file_put_contents($path, json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+        $temporaryPath = $path.'.'.Str::uuid().'.tmp';
+        try {
+            if (file_put_contents($temporaryPath, json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR), LOCK_EX) === false
+                || ! rename($temporaryPath, $path)) {
+                throw new \RuntimeException('The database backup could not be written.');
+            }
+        } finally {
+            if (is_file($temporaryPath)) {
+                unlink($temporaryPath);
+            }
+        }
 
         return $path;
     }
@@ -41,32 +61,52 @@ class BackupService
     public function restore(string $backup): int
     {
         $path = $this->pathFor($backup);
-        $contents = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+        $json = file_get_contents($path);
+        if ($json === false) {
+            throw new \RuntimeException('The selected backup could not be read.');
+        }
+        $contents = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         $tables = $contents['tables'] ?? null;
 
         if (! is_array($tables)) {
             throw new \RuntimeException('The selected backup has an invalid format.');
         }
 
-        $restoreTables = array_values(array_intersect(self::TABLES, array_keys($tables)));
-        $restoredRows = 0;
-        $driver = DB::getDriverName();
+        $restoreTables = array_values(array_filter(self::TABLES, fn ($table) => array_key_exists($table, $tables) && Schema::hasTable($table)));
+        $rowsByTable = [];
+        $columnsByTable = [];
+        foreach ($restoreTables as $table) {
+            $rows = $tables[$table];
+            if (! is_array($rows) || ! array_is_list($rows)) {
+                throw new \RuntimeException("Invalid data for {$table}.");
+            }
 
-        $this->disableForeignKeys($driver);
+            $columnsByTable[$table] = array_flip(Schema::getColumnListing($table));
+            $rowsByTable[$table] = array_map(function ($row) use ($table, $columnsByTable) {
+                if (! is_array($row)) {
+                    throw new \RuntimeException("Invalid row data for {$table}.");
+                }
+
+                $compatibleRow = array_intersect_key($row, $columnsByTable[$table]);
+                if ($compatibleRow === []) {
+                    throw new \RuntimeException("No compatible columns were found for {$table}.");
+                }
+
+                return $compatibleRow;
+            }, $rows);
+        }
+        $restoredRows = 0;
+
+        Schema::disableForeignKeyConstraints();
 
         try {
-            DB::transaction(function () use ($restoreTables, $tables, &$restoredRows): void {
+            DB::transaction(function () use ($restoreTables, $rowsByTable, &$restoredRows): void {
                 foreach (array_reverse($restoreTables) as $table) {
-                    DB::table($table)->truncate();
+                    DB::table($table)->delete();
                 }
 
                 foreach ($restoreTables as $table) {
-                    $rows = $tables[$table];
-                    if (! is_array($rows)) {
-                        throw new \RuntimeException("Invalid data for {$table}.");
-                    }
-
-                    foreach (array_chunk($rows, 500) as $chunk) {
+                    foreach (array_chunk($rowsByTable[$table], 500) as $chunk) {
                         if ($chunk !== []) {
                             DB::table($table)->insert($chunk);
                             $restoredRows += count($chunk);
@@ -75,7 +115,7 @@ class BackupService
                 }
             });
         } finally {
-            $this->enableForeignKeys($driver);
+            Schema::enableForeignKeyConstraints();
         }
 
         return $restoredRows;
@@ -83,7 +123,7 @@ class BackupService
 
     public function pathFor(string $backup): string
     {
-        if ($backup === basename($backup) && str_ends_with($backup, '.json')) {
+        if (preg_match('/^backup-\d{14}(?:-\d+)?\.json$/D', $backup) === 1) {
             $path = storage_path('app/backups/' . $backup);
             if (is_file($path)) {
                 return $path;
@@ -95,24 +135,8 @@ class BackupService
 
     public function delete(string $backup): void
     {
-        unlink($this->pathFor($backup));
-    }
-
-    private function disableForeignKeys(string $driver): void
-    {
-        if ($driver === 'sqlite') {
-            DB::statement('PRAGMA foreign_keys = OFF');
-        } elseif ($driver === 'mysql') {
-            DB::statement('SET FOREIGN_KEY_CHECKS=0');
-        }
-    }
-
-    private function enableForeignKeys(string $driver): void
-    {
-        if ($driver === 'sqlite') {
-            DB::statement('PRAGMA foreign_keys = ON');
-        } elseif ($driver === 'mysql') {
-            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        if (! unlink($this->pathFor($backup))) {
+            throw new \RuntimeException('The selected backup could not be deleted.');
         }
     }
 
@@ -123,6 +147,14 @@ class BackupService
             return [];
         }
 
-        return array_values(array_filter(scandir($dir), fn ($file) => str_ends_with($file, '.json')));
+        $entries = scandir($dir);
+        if ($entries === false) {
+            return [];
+        }
+
+        $files = array_values(array_filter($entries, fn ($file) => preg_match('/^backup-\d{14}(?:-\d+)?\.json$/D', $file) === 1));
+        rsort($files, SORT_STRING);
+
+        return $files;
     }
 }

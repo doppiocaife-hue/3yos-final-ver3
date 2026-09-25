@@ -58,7 +58,7 @@ class CaptureActivity
             'admin.inquiries.reply' => 'Sent an email reply for inquiry #' . $request->route('inquiry')?->id . '.',
             'admin.inquiries.destroy' => 'Deleted inquiry #' . $request->route('inquiry')?->id . '.',
             'admin.packages.store' => 'Created package “' . $request->input('name') . '”.',
-            'admin.packages.update' => 'Updated package “' . $request->route('package')?->name . '”: ' . $this->changedFields($request, ['name', 'price', 'min_guests', 'max_guests', 'description', 'menu', 'freebies', 'addons', 'event_type', 'is_featured']) . '.',
+            'admin.packages.update' => 'Updated package “' . $request->route('package')?->name . '”: ' . $this->changedFields($request, ['name', 'price', 'description', 'menu', 'freebies', 'addons', 'event_type', 'is_featured']) . '.',
             'admin.packages.destroy' => 'Deleted package “' . $request->route('package')?->name . '”.',
             'admin.gallery.store' => 'Added gallery item “' . $request->input('title') . '”.',
             'admin.gallery.update' => 'Updated gallery item “' . $request->route('gallery')?->title . '”: ' . $this->changedFields($request, ['title', 'event_type', 'description', 'image', 'is_featured']) . '.',

@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\Package;
+use App\Models\Inquiry;
+use App\Mail\InquiryReplyMail;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class PublicPagesTest extends TestCase
@@ -19,6 +22,8 @@ class PublicPagesTest extends TestCase
         $response = $this->get('/reservation');
 
         $response->assertStatus(200);
+        $response->assertSee('placeholder="Juan dela Cruz"', false);
+        $response->assertSee('pattern="(?:\\+63[0-9]{10}|09[0-9]{9})"', false);
     }
 
     public function test_inquiry_page_is_accessible(): void
@@ -26,6 +31,7 @@ class PublicPagesTest extends TestCase
         $response = $this->get('/inquiry');
 
         $response->assertStatus(200);
+        $response->assertSee('pattern="(?:\\+63[0-9]{10}|09[0-9]{9})"', false);
     }
 
     public function test_reservation_requires_two_day_lead_time(): void
@@ -104,6 +110,33 @@ class PublicPagesTest extends TestCase
         $this->assertStringContainsString('Reservations', $csv);
     }
 
+    public function test_admin_inquiry_reply_is_sent_to_the_customer_email(): void
+    {
+        config(['mail.default' => 'smtp']);
+        Mail::fake();
+
+        $inquiry = Inquiry::create([
+            'full_name' => 'Inquiry Client',
+            'contact_number' => '09171234567',
+            'email' => 'customer@example.com',
+            'subject' => 'Event inquiry',
+            'category' => 'Catering',
+            'message' => 'Please send details.',
+            'status' => 'in_progress',
+        ]);
+
+        app(\App\Http\Controllers\AdminController::class)->replyToInquiry(
+            new \Illuminate\Http\Request(['reply' => 'Thank you for reaching out.']),
+            $inquiry,
+        );
+
+        Mail::assertSent(InquiryReplyMail::class, function (InquiryReplyMail $mail) {
+            return $mail->hasTo('customer@example.com')
+                && $mail->subjectLine === 'Re: Event inquiry'
+                && $mail->reply === 'Thank you for reaching out.';
+        });
+    }
+
     public function test_admin_can_track_reservation_payment_status_and_balance(): void
     {
         $reservation = \App\Models\Reservation::create([
@@ -127,6 +160,7 @@ class PublicPagesTest extends TestCase
             'status' => 'completed',
             'payment_status' => 'Downpayment',
             'payment_type' => 'Downpayment',
+            'total_cost' => 30000,
             'amount_paid' => 8000,
         ]);
 
@@ -135,9 +169,57 @@ class PublicPagesTest extends TestCase
         $this->assertSame('completed', $reservation->fresh()->status);
         $this->assertSame('Downpayment', $reservation->fresh()->payment_status);
         $this->assertSame('Downpayment', $reservation->fresh()->payment_type);
+        $this->assertSame(30000.0, (float) $reservation->fresh()->total_cost);
         $this->assertSame(8000.0, (float) $reservation->fresh()->amount_paid);
-        $this->assertSame(17000.0, (float) $reservation->fresh()->balance);
+        $this->assertSame(22000.0, (float) $reservation->fresh()->balance);
         $this->assertNotNull($response);
+    }
+
+    public function test_admin_can_edit_accepted_reservation_schedule_and_package(): void
+    {
+        $originalPackage = Package::create([
+            'name' => 'Original Package',
+            'slug' => 'original-package',
+            'price' => 500,
+            'min_guests' => 20,
+            'max_guests' => 200,
+        ]);
+        $updatedPackage = Package::create([
+            'name' => 'Updated Package',
+            'slug' => 'updated-package',
+            'price' => 750,
+            'min_guests' => 30,
+            'max_guests' => 250,
+        ]);
+        $reservation = \App\Models\Reservation::create([
+            'package_id' => $originalPackage->id,
+            'full_name' => 'Accepted Client',
+            'contact_number' => '09171234567',
+            'email' => 'accepted@example.com',
+            'address' => '123 Accepted Street',
+            'event_type' => 'Wedding',
+            'event_date' => now()->addDays(5)->toDateString(),
+            'event_time' => '18:00',
+            'venue' => 'Accepted Venue',
+            'guest_count' => 80,
+            'estimated_budget' => 20000,
+            'status' => 'confirmed',
+            'reservation_code' => 'RES-EDIT-001',
+        ]);
+
+        $request = new \Illuminate\Http\Request([
+            'status' => 'confirmed',
+            'package_id' => $updatedPackage->id,
+            'event_date' => now()->addDays(10)->toDateString(),
+            'event_time' => '19:30',
+        ]);
+
+        app(\App\Http\Controllers\AdminController::class)->updateReservationStatus($request, $reservation);
+
+        $updated = $reservation->fresh();
+        $this->assertSame($updatedPackage->id, $updated->package_id);
+        $this->assertSame(now()->addDays(10)->toDateString(), $updated->event_date);
+        $this->assertSame('19:30', $updated->event_time);
     }
 
     public function test_admin_reservations_can_be_filtered_by_status_and_payment_status(): void

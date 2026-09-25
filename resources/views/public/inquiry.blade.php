@@ -25,7 +25,7 @@
                     <input type="hidden" name="form_started" value="{{ now()->timestamp }}">
                     <div class="row g-3">
                         <div class="col-md-6"><label class="form-label">Full Name</label><input type="text" name="full_name" class="form-control form-control-lg" required></div>
-                        <div class="col-md-6"><label class="form-label">Contact Number</label><input type="text" name="contact_number" class="form-control form-control-lg" required></div>
+                        <div class="col-md-6"><label class="form-label">Contact Number</label><input type="tel" name="contact_number" value="{{ old('contact_number') }}" class="form-control form-control-lg" inputmode="tel" autocomplete="tel" minlength="11" maxlength="13" pattern="(?:\+63[0-9]{10}|09[0-9]{9})" placeholder="09XXXXXXXXX or +639XXXXXXXXX" title="Enter 09 followed by 9 digits or +63 followed by 10 digits, with no spaces." required><small class="form-text">Enter 09 followed by 9 digits or +63 followed by 10 digits.</small></div>
                         <div class="col-md-6"><label class="form-label">Email Address</label><input type="email" name="email" class="form-control form-control-lg" required></div>
                         <div class="col-md-6"><label class="form-label">Subject</label><input type="text" name="subject" class="form-control form-control-lg" required></div>
                         <div class="col-md-6"><label class="form-label">Category</label><select name="category" class="form-select form-select-lg" required><option value="">Select</option><option>General Inquiry</option><option>Reservation</option><option>Packages</option><option>Pricing</option><option>Custom Event</option><option>Others</option></select></div>

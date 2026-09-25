@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreReservationRequest;
+use App\Mail\ReservationConfirmationMail;
 use App\Models\Client;
+use App\Models\Package;
 use App\Models\Reservation;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Mail;
 use ReCaptcha\ReCaptcha;
 
 class ReservationController extends Controller
@@ -59,8 +62,9 @@ class ReservationController extends Controller
         );
 
         $reservationCode = $this->generateReservationCode();
+        $package = Package::findOrFail($request->input('package_id'));
 
-        Reservation::create([
+        $reservation = Reservation::create([
             'client_id' => $client->id,
             'package_id' => $request->input('package_id'),
             'full_name' => $request->input('full_name'),
@@ -72,7 +76,7 @@ class ReservationController extends Controller
             'event_time' => $request->input('event_time'),
             'venue' => $request->input('venue'),
             'guest_count' => $request->input('guest_count'),
-            'estimated_budget' => $request->input('estimated_budget'),
+            'estimated_budget' => $package->estimatedTotalFor((int) $request->input('guest_count')),
             'additional_services' => $request->input('additional_services'),
             'special_requests' => $request->input('special_requests'),
             'additional_notes' => $request->input('additional_notes'),
@@ -80,10 +84,31 @@ class ReservationController extends Controller
             'reservation_code' => $reservationCode,
         ]);
 
+        $mailSent = false;
+        $mailError = null;
+
+        try {
+            Mail::to($reservation->email, $reservation->full_name)->send(new ReservationConfirmationMail($reservation));
+            $mailSent = ! in_array(config('mail.default'), ['log', 'array'], true);
+        } catch (\Throwable $exception) {
+            $mailError = $exception;
+            report($exception);
+        }
+
         $request->session()->flash('reservation_code', $reservationCode);
         $request->session()->flash('reservation_status', 'pending');
 
-        return redirect()->back()->with('success', 'Your reservation request has been received. Your reservation ID is ' . $reservationCode . '. Please keep this code to check your reservation status.');
+        $message = 'Your reservation request has been received. Your reservation ID is '.$reservationCode.'. Please keep this code to check your reservation status.';
+
+        if ($mailSent) {
+            $message .= ' A confirmation email was sent to '.$reservation->email.'.';
+        } elseif (in_array(config('mail.default'), ['log', 'array'], true)) {
+            $message .= ' Email delivery is not enabled yet; configure Gmail SMTP to receive this ID by email.';
+        } else {
+            $message .= ' We could not send the confirmation email; please keep this ID and contact us if needed.';
+        }
+
+        return redirect()->back()->with('success', $message);
     }
 
     private function generateReservationCode(): string

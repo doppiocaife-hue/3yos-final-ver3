@@ -8,11 +8,11 @@
             <h1 class="fw-bold mb-1">Activity logs</h1>
             <p class="text-muted mb-0">Track which administrator accessed the panel and the actions they performed.</p>
         </div>
-        <span class="badge-soft">{{ $logs->total() }} records</span>
+        <span id="activity-log-count" class="badge-soft">{{ $logs->total() }} records</span>
     </div>
     
-    <form class="row g-2 p-3 mb-4 audit-filter" method="GET">
-        <div class="col-md-5 col-12">
+    <form id="activity-log-filter-form" class="row g-2 p-3 mb-4 audit-filter" method="GET" action="{{ route('admin.activity-logs') }}" data-live-filter data-live-filter-target="#activity-log-results" data-live-filter-count="#activity-log-count">
+        <div class="col-md-3 col-12">
             <label class="visually-hidden" for="actor">Administrator</label>
             <select id="actor" name="actor" class="form-select">
                 <option value="">All administrators</option>
@@ -21,15 +21,24 @@
                 @endforeach
             </select>
         </div>
-        <div class="col-md-5 col-12">
+        <div class="col-md-3 col-12">
             <label class="visually-hidden" for="action">Action</label>
             <input id="action" name="action" class="form-control" value="{{ request('action') }}" placeholder="Search actions, e.g. signed in or updated">
         </div>
-        <div class="col-md-2 col-12">
+        <div class="col-md-2 col-6">
+            <label class="form-label small mb-1" for="date_from">From date</label>
+            <input id="date_from" name="date_from" type="date" class="form-control" value="{{ request('date_from') }}">
+        </div>
+        <div class="col-md-2 col-6">
+            <label class="form-label small mb-1" for="date_to">Through date</label>
+            <input id="date_to" name="date_to" type="date" class="form-control" value="{{ request('date_to') }}">
+        </div>
+        <div class="col-md-2 col-6">
             <button class="btn luxury-btn w-100">Filter logs</button>
         </div>
     </form>
     
+    <div id="activity-log-results" data-filter-count="{{ $logs->total() }}" aria-live="polite">
     <div class="table-responsive">
         <table class="table align-middle">
             <thead>
@@ -70,7 +79,13 @@
             </tbody>
         </table>
     </div>
-    @if($logs->hasPages())<div class="mt-4">{{ $logs->links() }}</div>@endif
+    @if($logs->hasPages())
+        <div class="activity-pagination mt-4">
+            <span class="text-muted small">Showing {{ $logs->firstItem() }} to {{ $logs->lastItem() }} of {{ $logs->total() }} results</span>
+            {{ $logs->links('pagination::bootstrap-5') }}
+        </div>
+    @endif
+    </div>
 </div>
 
 <style>
@@ -81,6 +96,14 @@
 .audit-filter{background:#f7fafb;border:1px solid var(--line);border-radius:11px}
 .actor-avatar{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--mint);color:var(--teal-dark);font-size:.78rem;font-weight:800}
 .method-label{display:inline-block;padding:.2rem .42rem;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:.63rem;font-weight:800;letter-spacing:.06em}
+.activity-pagination{display:flex;flex-direction:column;align-items:flex-start;gap:.65rem}
+.activity-pagination .pagination{flex-wrap:wrap;gap:.15rem;margin:0}
+.activity-pagination .page-link{display:inline-flex;min-width:2rem;min-height:2rem;align-items:center;justify-content:center;padding:.3rem .5rem;border-color:var(--line);border-radius:6px!important;color:var(--teal-dark);font-size:.75rem;line-height:1.1}
+.activity-pagination .page-item:first-child .page-link,.activity-pagination .page-item:last-child .page-link{min-width:0;padding-inline:.55rem}
+.activity-pagination .page-item.active .page-link{border-color:var(--teal);background:var(--teal);color:#fff}
+body.dark-mode .activity-pagination .page-link{border-color:var(--line);background:var(--surface);color:#75d8cf}
+body.dark-mode .activity-pagination .page-item.active .page-link{border-color:var(--teal);background:var(--teal);color:#fff}
+@media(min-width:576px){.activity-pagination{flex-direction:row;align-items:center;justify-content:space-between}}
 body.dark-mode .audit-filter{background:#1d3343}
 </style>
 @endsection

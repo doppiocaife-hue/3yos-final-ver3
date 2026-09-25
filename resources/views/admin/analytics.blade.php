@@ -18,8 +18,8 @@
         <div class="col-md-4 col-sm-6">
             <div class="stat-card p-4 h-100">
                 <div class="badge-soft mb-2">Confirmed revenue</div>
-                <h3 class="fw-bold">₱{{ number_format($monthlyRevenue->sum('revenue'), 0) }}</h3>
-                <p class="mb-0 text-muted">Confirmed and completed events</p>
+                <h3 class="fw-bold">&#8369;{{ number_format($monthlyRevenue->sum('revenue'), 0) }}</h3>
+                <p class="mb-0 text-muted">Fully paid completed events</p>
             </div>
         </div>
         <div class="col-md-4 col-sm-12">
@@ -40,7 +40,7 @@
         </div>
         <div class="col-lg-6">
             <div class="card p-4 h-100">
-                <h4 class="fw-semibold mb-3">Confirmed Revenue</h4>
+                <h4 class="fw-semibold mb-3">Fully Paid Revenue</h4>
                 <canvas id="revenueChart" style="max-height:300px;"></canvas>
             </div>
         </div>

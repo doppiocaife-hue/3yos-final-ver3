@@ -12,5 +12,11 @@ class Service extends Model
         'description',
         'icon',
         'is_featured',
+        'is_enabled',
+    ];
+
+    protected $casts = [
+        'is_featured' => 'boolean',
+        'is_enabled' => 'boolean',
     ];
 }

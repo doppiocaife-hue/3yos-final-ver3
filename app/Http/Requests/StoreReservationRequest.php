@@ -15,18 +15,7 @@ class StoreReservationRequest extends FormRequest
     {
         return [
             'full_name' => ['required', 'string', 'min:2', 'max:255', 'regex:/^[\pL\pN\s\.\'\-]+$/u'],
-            'contact_number' => ['required', 'string', 'min:9', 'regex:/^(?:\+?63|0)(?:[ -]?\d{3}){2}[ -]?\d{4}$/', function ($attribute, $value, $fail) {
-                $digits = preg_replace('/\D+/', '', $value ?? '');
-
-                if (strlen($digits) < 11 || strlen($digits) > 12) {
-                    $fail('Please enter a valid contact number like +639814542318 or 09814542318.');
-                    return;
-                }
-
-                if (preg_match('/^(\d)\1{8,}$/', $digits)) {
-                    $fail('Please enter a valid contact number like +639814542318 or 09814542318.');
-                }
-            }],
+            'contact_number' => ['required', 'string', 'regex:/^(?:\+63\d{10}|09\d{9})$/'],
             'email' => ['required', 'string', 'email:rfc', 'max:255', 'regex:/^[A-Za-z0-9.!#$%&\'*+\/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/'],
             'address' => ['required', 'string', 'min:8', 'max:500', function ($attribute, $value, $fail) {
                 $normalized = trim((string) $value);
@@ -54,7 +43,6 @@ class StoreReservationRequest extends FormRequest
                 }
             }],
             'guest_count' => ['required', 'integer', 'min:1', 'max:1000'],
-            'estimated_budget' => ['required', 'integer', 'min:0'],
             'package_id' => ['required', 'exists:packages,id'],
             'additional_services' => ['nullable', 'string', 'max:1000'],
             'special_requests' => ['nullable', 'string', 'max:1000'],
@@ -71,9 +59,7 @@ class StoreReservationRequest extends FormRequest
             'full_name.required' => 'Please provide your full name.',
             'full_name.regex' => 'Please enter a valid full name without special characters.',
             'contact_number.required' => 'Please provide a contact number.',
-            'contact_number.regex' => 'Please enter a valid contact number.',
-            'contact_number.min' => 'Please enter a valid contact number.',
-            'contact_number.max' => 'Please enter a valid contact number.',
+            'contact_number.regex' => 'Enter +63 followed by 10 digits or 09 followed by 9 digits, with no spaces.',
             'email.required' => 'Please provide your email address.',
             'email.email' => 'Please enter a valid email address.',
             'email.regex' => 'Please enter a valid email address.',

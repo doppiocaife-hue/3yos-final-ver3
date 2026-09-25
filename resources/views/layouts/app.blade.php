@@ -12,6 +12,7 @@
     <style>
         :root{--ink:#20201d;--muted:#6f6d66;--cream:#f8f6f1;--paper:#fffdf9;--wine:#6d3024;--terracotta:#b66545;--gold:#c7984b;--line:#e7e1d7}
         *{box-sizing:border-box}
+        html,body{overflow-x:hidden}
         body{font-family:'DM Sans',sans-serif;color:var(--ink);background:var(--cream)}
         h1,h2,h3,h4,h5,.display-font{font-family:'Playfair Display',Georgia,serif}
         a{text-decoration:none}
@@ -49,9 +50,14 @@
         body.dark-mode main,body.dark-mode .bg-paper,body.dark-mode .section-heading,body.dark-mode .card,body.dark-mode .form-card,body.dark-mode .service-tile,body.dark-mode .process-card,body.dark-mode .cta-panel,body.dark-mode .occasion-panel,body.dark-mode .metric-card,body.dark-mode .mini-cta,body.dark-mode .reservation-sidebar,body.dark-mode .reservation-tile,body.dark-mode .process-item{background:#201f1d!important;color:#f5f1e9!important}
         body.dark-mode .card p,body.dark-mode .card h1,body.dark-mode .card h2,body.dark-mode .card h3,body.dark-mode .card h4,body.dark-mode .card h5,body.dark-mode .process-item strong,body.dark-mode .process-item p,body.dark-mode .service-tile h3,body.dark-mode .service-tile p,body.dark-mode .mini-cta h3,body.dark-mode .mini-cta p,body.dark-mode .reservation-checklist li,body.dark-mode .reservation-tile p,body.dark-mode .form-label,body.dark-mode .text-muted,body.dark-mode .eyebrow{color:#f5f1e9!important}
         body.dark-mode .form-control,body.dark-mode .form-select{background:#151515;border-color:#555047;color:#f5f1e9}
+        body.dark-mode .form-control::placeholder,body.dark-mode textarea::placeholder{color:#aebbc8;opacity:1}
+        body.dark-mode .form-select{background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23dce7f0' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");background-repeat:no-repeat;background-position:right .75rem center;background-size:16px 12px}
+        body.dark-mode input[type="date"]{color-scheme:dark}
+        body.dark-mode input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.82;cursor:pointer}
         body.dark-mode .form-text,body.dark-mode .date-availability{color:var(--muted)!important}
         body.dark-mode .date-availability.text-success{color:#8fe3aa!important}
         body.dark-mode .date-availability.text-danger{color:#ff9b9b!important}
+        body.dark-mode .page-kicker{color:#75d8cf}
         body.dark-mode .btn-outline-primary{color:#f5f1e9;border-color:#d9b18f;background:transparent}
         body.dark-mode .btn-outline-primary:hover{background:#d9b18f;color:#1b1714}
         body.dark-mode .btn-primary{background:#d79c6a;border-color:#d79c6a;color:#1b1714}
@@ -113,6 +119,13 @@
                 <div class="col-6 col-lg-3">
                     <div class="footer-heading mb-3">Get in touch</div>
                     <div class="footer-contact">
+                        <span class="footer-contact-icon">AD</span>
+                        <div>
+                            <small>Address</small>
+                            <span>Marikina City, Metro Manila</span>
+                        </div>
+                    </div>
+                    <div class="footer-contact">
                         <span class="footer-contact-icon">FB</span>
                         <div>
                             <small>Facebook</small>
@@ -158,6 +171,22 @@
                 applyTheme(dark);
             });
         })();
+    </script>
+    <script>
+        document.querySelectorAll('form input:not([type="hidden"]), form select, form textarea').forEach((field) => {
+            if (field.title) return;
+            const label = field.id ? Array.from(field.form?.querySelectorAll('label') || []).find((item) => item.htmlFor === field.id) : null;
+            const fieldName = (label?.textContent || field.placeholder || field.name || 'this field').trim().replace(/\s+/g, ' ').toLowerCase();
+            const instruction = field.type === 'email' ? 'Enter a valid email address.'
+                : field.type === 'tel' ? 'Enter 09 followed by 9 digits or +63 followed by 10 digits, with no spaces.'
+                    : field.type === 'date' ? 'Choose the event date.'
+                        : field.type === 'time' ? 'Choose the event time.'
+                            : field.type === 'file' ? 'Choose a file that meets the accepted format and size.'
+                                : field instanceof HTMLSelectElement ? `Choose ${fieldName}.`
+                                    : field instanceof HTMLTextAreaElement ? `Describe ${fieldName}.`
+                                        : `Enter ${fieldName}.`;
+            field.title = instruction;
+        });
     </script>
 </body>
 </html>

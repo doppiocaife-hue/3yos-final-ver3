@@ -3,10 +3,15 @@
 @section('content')
 <div class="container">
     <div class="card p-4">
+        @if($package->image_path)
+            <img src="{{ asset('storage/' . $package->image_path) }}" alt="{{ $package->name }} catering package" class="w-100 mb-4" style="max-height:420px;object-fit:cover">
+        @endif
+        @if($package->image_path)
+            <img src="{{ asset('storage/' . $package->image_path) }}" alt="{{ $package->name }} catering package" class="w-100 mb-4" style="max-height:420px;object-fit:cover">
+        @endif
         <h1 class="fw-bold">{{ $package->name }}</h1>
         <p class="text-muted">{{ $package->description }}</p>
-        <p><strong>Price:</strong> ₱{{ number_format($package->price, 2) }}</p>
-        <p><strong>Guests:</strong> {{ $package->min_guests }} - {{ $package->max_guests }}</p>
+        <p>Pricing is estimated from your selected package and guest count when you start a reservation. Our team confirms the final contract price.</p>
         <p><strong>Menu:</strong> {{ $package->menu }}</p>
         <p><strong>Freebies:</strong> {{ $package->freebies }}</p>
         <p><strong>Addons:</strong> {{ $package->addons }}</p>

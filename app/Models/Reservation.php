@@ -19,6 +19,7 @@ class Reservation extends Model
         'venue',
         'guest_count',
         'estimated_budget',
+        'total_cost',
         'additional_services',
         'special_requests',
         'additional_notes',
@@ -34,6 +35,7 @@ class Reservation extends Model
 
     protected $casts = [
         'estimated_budget' => 'float',
+        'total_cost' => 'float',
         'amount_paid' => 'float',
         'balance' => 'float',
         'service_contracts' => 'array',

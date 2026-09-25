@@ -8,7 +8,7 @@
         <ul>
             <li>Email: info@3yos.com</li>
             <li>Phone: +63 912 345 6789</li>
-            <li>Address: Quezon City, Metro Manila</li>
+            <li>Address: Marikina City, Metro Manila</li>
         </ul>
     </div>
 </div>

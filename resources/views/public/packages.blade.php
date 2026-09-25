@@ -26,13 +26,19 @@
     <div class="row g-4">
         @forelse($packages as $package)
             @php($tier = strtolower($package->name))
-            <div class="col-md-6 col-xl-3 package-column" data-package-card data-name="{{ $package->name }}" data-price="{{ $package->price }}" data-min-guests="{{ $package->min_guests }}" data-max-guests="{{ $package->max_guests }}">
+            <div class="col-md-6 col-xl-3 package-column" data-package-card data-name="{{ $package->name }}" data-price="{{ $package->price }}">
                 <article class="package-card h-100 {{ $package->is_featured ? 'is-featured' : '' }}">
                     @if($package->is_featured)<div class="package-ribbon">Most popular</div>@endif
+                    <div class="package-image-wrap">
+                        @if($package->image_path)
+                            <img src="{{ asset('storage/' . $package->image_path) }}" alt="{{ $package->name }} catering package" loading="lazy">
+                        @else
+                            <span>{{ $package->name }} package</span>
+                        @endif
+                    </div>
                     <div class="package-tier package-tier--{{ $tier }}">{{ $package->name }}</div>
                     <p class="package-description">{{ $package->description }}</p>
-                    <div class="package-price"><span>from</span> &#8369;{{ number_format($package->price, 0) }} <small>/ guest</small></div>
-                    <div class="package-guests">For {{ $package->min_guests }}–{{ $package->max_guests }} guests</div>
+                    <div class="package-price package-price--estimate">Estimate calculated from your package and guest count</div>
                     <div class="package-rule"></div>
                     <p class="package-inclusion"><strong>Includes</strong>{{ $package->menu }}</p>
                     <a href="{{ route('packages.show', $package->slug) }}" class="btn btn-outline-primary w-100 mt-auto">View package details</a>
@@ -75,6 +81,11 @@
 <style>
     .recommendation{background:#6d3024;color:#fff;padding:clamp(1.6rem,4vw,3rem)}.recommendation h2{font-size:clamp(1.85rem,3vw,2.65rem);line-height:1.08}.recommendation-form{display:grid;grid-template-columns:1fr 1fr auto;gap:.65rem}.recommendation-form label{display:block;margin-bottom:.32rem;font-size:.75rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#f2d8c7}.recommendation-form input{width:100%;border:1px solid rgba(255,255,255,.28);background:#fffdf9;color:#20201d;padding:.78rem}.recommendation-form button{align-self:end;border:0;background:#d7a766;color:#332116;padding:.83rem 1rem;font-weight:800;white-space:nowrap}.recommendation-form button:hover{background:#ecc384}.recommendation-result{min-height:1.4rem;margin-top:1rem;color:#fff7ef;font-weight:600}.package-card{display:flex;flex-direction:column;position:relative;height:100%;padding:2rem 1.5rem 1.5rem;background:var(--paper);border:1px solid var(--line);color:var(--ink);transition:.2s ease}.package-card:hover,.package-card.is-recommended{transform:translateY(-5px);box-shadow:0 18px 34px rgba(70,42,24,.12)}.package-card.is-recommended{border:2px solid var(--terracotta)}.package-ribbon{position:absolute;right:0;top:0;background:#b66545;color:#fff;padding:.36rem .7rem;font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.package-tier{font-family:'Playfair Display',Georgia,serif;font-size:2.3rem;font-weight:700}.package-tier--silver{color:#737a7f}.package-tier--gold{color:#aa7926}.package-tier--platinum{color:#68727a}.package-tier--diamond{color:#6d3024}.package-description{color:var(--muted);line-height:1.55;min-height:5rem;margin:1rem 0}.package-price{font-family:'Playfair Display',Georgia,serif;color:var(--wine);font-size:1.9rem;font-weight:700}.package-price span,.package-price small{font-family:'DM Sans',sans-serif;font-size:.72rem;font-weight:700}.package-guests{margin-top:.4rem;color:var(--muted);font-size:.85rem;font-weight:600}.package-rule{height:1px;background:var(--line);margin:1.35rem 0}.package-inclusion{font-size:.85rem;color:var(--muted);line-height:1.6}.package-inclusion strong{display:block;margin-bottom:.35rem;color:var(--ink);font-size:.73rem;letter-spacing:.08em;text-transform:uppercase}body.dark-mode .package-tier--silver,body.dark-mode .package-tier--platinum{color:#d8e0e5}body.dark-mode .package-tier--gold{color:#f1c96d}body.dark-mode .package-tier--diamond{color:#efb19b}@media(max-width:767px){.recommendation-form{grid-template-columns:1fr}.recommendation-form button{width:100%}}
 </style>
+<style>
+    .package-image-wrap{display:grid;place-items:center;aspect-ratio:16/9;margin:-2rem -1.5rem 1.2rem;overflow:hidden;background:#e8dfd0;color:#5d5146;font-size:.82rem;font-weight:700}
+    .package-image-wrap img{width:100%;height:100%;object-fit:cover}
+    .package-price--estimate{font-family:'DM Sans',sans-serif;font-size:.83rem;font-weight:700;line-height:1.45;color:var(--muted)}
+</style>
 <script>
     document.getElementById('recommend-button').addEventListener('click', function () {
         const budget = Number(document.getElementById('budget').value);
@@ -83,13 +94,15 @@
         const cards = Array.from(document.querySelectorAll('[data-package-card]'));
         cards.forEach(card => card.querySelector('.package-card').classList.remove('is-recommended'));
         if (!budget || !guests) { result.textContent = 'Please enter both your total budget and number of guests.'; return; }
-        const budgetPerGuest = budget / guests;
-        const eligible = cards.filter(card => guests >= Number(card.dataset.minGuests) && guests <= Number(card.dataset.maxGuests) && budgetPerGuest >= Number(card.dataset.price));
-        const choice = eligible[eligible.length - 1] || cards.filter(card => guests >= Number(card.dataset.minGuests) && guests <= Number(card.dataset.maxGuests))[0];
-        if (!choice) { result.textContent = 'For this guest count, please send an inquiry and we’ll prepare a custom package.'; return; }
+        const eligible = cards.filter(card => budget >= Number(card.dataset.price) * guests);
+        const choice = eligible[eligible.length - 1];
+        if (!choice) {
+            result.textContent = cards.length ? 'Your budget is below the estimated total for available packages. Increase your budget or send an inquiry for options.' : 'No packages are currently available. Please send an inquiry for options.';
+            return;
+        }
         choice.querySelector('.package-card').classList.add('is-recommended');
-        const price = Number(choice.dataset.price).toLocaleString();
-        result.innerHTML = `<strong>${choice.dataset.name}</strong> is our recommendation for ${guests} guests (starting at ₱${price} per guest).`;
+        const estimatedTotal = (Number(choice.dataset.price) * guests).toLocaleString('en-PH');
+        result.innerHTML = `<strong>${choice.dataset.name}</strong> is our recommendation for ${guests} guests, with an estimated package total of ₱${estimatedTotal}.`;
         choice.scrollIntoView({behavior: 'smooth', block: 'center'});
     });
 </script>
