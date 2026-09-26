@@ -1,6 +1,10 @@
 {
     "version": 2,
     "buildCommand": "npm run build",
+    "env": {
+        "TMPDIR": "/tmp",
+        "TMP": "/tmp"
+    },
     "builds": [
         {
             "src": "api/index.php",
