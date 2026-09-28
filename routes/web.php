@@ -78,6 +78,7 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     });
     Route::get('/backups', [BackupController::class, 'index'])->name('admin.backups');
     Route::post('/backups/create', [BackupController::class, 'createBackup'])->name('admin.backups.create');
+    Route::post('/backups/upload', [BackupController::class, 'uploadBackup'])->name('admin.backups.upload');
     Route::post('/backups/restore', [BackupController::class, 'restoreBackup'])->name('admin.backups.restore');
     Route::post('/backups/download', [BackupController::class, 'downloadBackup'])->name('admin.backups.download');
     Route::delete('/backups', [BackupController::class, 'deleteBackup'])->name('admin.backups.delete');

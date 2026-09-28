@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -20,6 +21,8 @@ class BackupService
         'notification_templates',
         'gallery_items',
     ];
+
+    private const MAX_UPLOAD_SIZE = 20 * 1024 * 1024;
 
     public function create(): string
     {
@@ -58,6 +61,46 @@ class BackupService
         return $path;
     }
 
+    public function upload(UploadedFile $file): string
+    {
+        if (! $file->isValid()) {
+            throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
+        }
+
+        if ($file->getSize() > self::MAX_UPLOAD_SIZE) {
+            throw new \InvalidArgumentException('Backup file exceeds the maximum allowed size.');
+        }
+
+        $contents = $this->decodeBackup($file);
+        $this->assertBackupCompatible($contents);
+
+        $directory = storage_path('app/backups');
+        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
+            throw new \RuntimeException('The backup directory could not be created.');
+        }
+
+        $filename = 'uploaded-backup-' . now()->format('Ymd-His');
+        $path = $directory . '/' . $filename . '.json';
+        $suffix = 1;
+        while (is_file($path)) {
+            $path = $directory . '/' . $filename . '-' . $suffix++ . '.json';
+        }
+
+        $temporaryPath = $path . '.' . Str::uuid() . '.tmp';
+        try {
+            $encoded = json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+            if (file_put_contents($temporaryPath, $encoded, LOCK_EX) === false || ! rename($temporaryPath, $path)) {
+                throw new \RuntimeException('The uploaded backup could not be stored.');
+            }
+        } finally {
+            if (is_file($temporaryPath)) {
+                unlink($temporaryPath);
+            }
+        }
+
+        return basename($path);
+    }
+
     public function restore(string $backup): int
     {
         $path = $this->pathFor($backup);
@@ -66,11 +109,9 @@ class BackupService
             throw new \RuntimeException('The selected backup could not be read.');
         }
         $contents = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-        $tables = $contents['tables'] ?? null;
+        $this->assertBackupCompatible($contents);
 
-        if (! is_array($tables)) {
-            throw new \RuntimeException('The selected backup has an invalid format.');
-        }
+        $tables = $contents['tables'];
 
         $restoreTables = array_values(array_filter(self::TABLES, fn ($table) => array_key_exists($table, $tables) && Schema::hasTable($table)));
         $rowsByTable = [];
@@ -123,7 +164,7 @@ class BackupService
 
     public function pathFor(string $backup): string
     {
-        if (preg_match('/^backup-\d{14}(?:-\d+)?\.json$/D', $backup) === 1) {
+        if (preg_match('/^(?:backup-\d{14}(?:-\d+)?|uploaded-backup-\d{8}(?:-\d{6})?(?:-\d+)?)\.json$/D', $backup) === 1) {
             $path = storage_path('app/backups/' . $backup);
             if (is_file($path)) {
                 return $path;
@@ -152,9 +193,58 @@ class BackupService
             return [];
         }
 
-        $files = array_values(array_filter($entries, fn ($file) => preg_match('/^backup-\d{14}(?:-\d+)?\.json$/D', $file) === 1));
+        $files = array_values(array_filter($entries, fn ($file) => preg_match('/^(?:backup-\d{14}(?:-\d+)?|uploaded-backup-\d{8}(?:-\d{6})?(?:-\d+)?)\.json$/D', $file) === 1));
         rsort($files, SORT_STRING);
 
         return $files;
+    }
+
+    private function decodeBackup(UploadedFile $file): array
+    {
+        $contents = file_get_contents($file->getRealPath());
+        if ($contents === false) {
+            throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
+        }
+
+        try {
+            $decoded = json_decode($contents, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
+        }
+
+        if (! is_array($decoded)) {
+            throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
+        }
+
+        return $decoded;
+    }
+
+    private function assertBackupCompatible(array $contents): void
+    {
+        if (! array_key_exists('tables', $contents) || ! is_array($contents['tables'])) {
+            throw new \InvalidArgumentException('This backup is not compatible with this application version.');
+        }
+
+        $tables = $contents['tables'];
+        if ($tables === []) {
+            throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
+        }
+
+        $unexpectedTables = array_diff(array_keys($tables), self::TABLES);
+        if ($unexpectedTables !== []) {
+            throw new \InvalidArgumentException('This backup is not compatible with this application version.');
+        }
+
+        foreach ($tables as $table => $rows) {
+            if (! is_array($rows) || ! array_is_list($rows)) {
+                throw new \InvalidArgumentException("The backup file is invalid or corrupted for {$table}.");
+            }
+
+            foreach ($rows as $row) {
+                if (! is_array($row)) {
+                    throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
+                }
+            }
+        }
     }
 }

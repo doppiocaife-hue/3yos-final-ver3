@@ -6,7 +6,10 @@
     <p class="text-muted mb-4">Create a downloadable snapshot of your catering data.</p>
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
     @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
-    <form method="POST" action="{{ route('admin.backups.create') }}" class="mb-3">@csrf<button class="btn btn-primary">Create Backup</button></form>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <form method="POST" action="{{ route('admin.backups.create') }}">@csrf<button class="btn btn-primary" type="submit">Create Backup</button></form>
+        <button class="btn btn-outline-primary" type="button" id="upload-backup-trigger">Upload Backup</button>
+    </div>
     <div class="card p-4">
         <div class="backup-list">
             @forelse($backups as $backup)
@@ -24,6 +27,22 @@
         </div>
     </div>
 </div>
+<dialog id="upload-backup-dialog" aria-labelledby="upload-backup-title">
+    <form id="upload-backup-form" method="POST" action="{{ route('admin.backups.upload') }}" enctype="multipart/form-data">
+        @csrf
+        <h2 id="upload-backup-title">Upload Backup</h2>
+        <p class="text-muted mb-3">Select a backup file to upload.</p>
+        <div class="mb-3">
+            <label for="backup-file-input" class="form-label">Choose file</label>
+            <input id="backup-file-input" name="backup_file" class="form-control" type="file" accept=".json,application/json" required>
+        </div>
+        <div class="small text-muted mb-3">Selected file: <span id="selected-backup-file-name">No file selected.</span></div>
+        <div class="d-flex justify-content-end gap-2 mt-4">
+            <button type="button" class="btn btn-outline-secondary" id="upload-backup-cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="upload-backup-submit">Upload Backup</button>
+        </div>
+    </form>
+</dialog>
 <dialog id="backup-password-dialog" aria-labelledby="backup-password-title">
     <form id="backup-password-dialog-form">
         <h2 id="backup-password-title">Confirm your password</h2>
@@ -38,6 +57,32 @@
 </dialog>
 <script>
 (() => {
+    const uploadDialog = document.getElementById('upload-backup-dialog');
+    const uploadTrigger = document.getElementById('upload-backup-trigger');
+    const uploadForm = document.getElementById('upload-backup-form');
+    const uploadSubmitButton = document.getElementById('upload-backup-submit');
+    const fileInput = document.getElementById('backup-file-input');
+    const selectedFileName = document.getElementById('selected-backup-file-name');
+
+    const updateSelectedFile = () => {
+        const file = fileInput.files && fileInput.files[0];
+        selectedFileName.textContent = file ? file.name : 'No file selected.';
+    };
+
+    uploadTrigger.addEventListener('click', () => {
+        fileInput.value = '';
+        updateSelectedFile();
+        uploadDialog.showModal();
+    });
+
+    document.getElementById('upload-backup-cancel').addEventListener('click', () => uploadDialog.close());
+    fileInput.addEventListener('change', updateSelectedFile);
+
+    uploadForm.addEventListener('submit', () => {
+        uploadSubmitButton.disabled = true;
+        uploadSubmitButton.textContent = 'Uploading...';
+    });
+
     const dialog = document.getElementById('backup-password-dialog');
     const dialogForm = document.getElementById('backup-password-dialog-form');
     const passwordInput = document.getElementById('backup-password-input');

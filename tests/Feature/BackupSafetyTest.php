@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Package;
 use App\Services\BackupService;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class BackupSafetyTest extends TestCase
@@ -65,5 +66,52 @@ class BackupSafetyTest extends TestCase
 
         $response->assertRedirect('/admin/backups');
         $response->assertSessionHasErrors('password_confirmation');
+    }
+
+    public function test_admin_can_upload_a_valid_backup_file(): void
+    {
+        $backupService = app(BackupService::class);
+        $sourceBackupPath = $backupService->create();
+
+        try {
+            $upload = UploadedFile::fake()->createWithContent(
+                'uploaded-backup-20260929020000.json',
+                file_get_contents($sourceBackupPath),
+                'application/json'
+            );
+
+            $response = $this->from('/admin/backups')->withSession([
+                'is_admin' => true,
+                'admin_role' => 'full',
+                'admin_email' => env('ADMIN_EMAIL', 'admin@3yos.com'),
+            ])->post(route('admin.backups.upload'), [
+                'backup_file' => $upload,
+            ]);
+
+            $response->assertRedirect('/admin/backups');
+            $response->assertSessionHas('success', 'Backup uploaded successfully.');
+            $this->assertNotEmpty(array_filter($backupService->listBackups(), fn (string $backup) => str_starts_with($backup, 'uploaded-backup-')));
+        } finally {
+            foreach ($backupService->listBackups() as $backup) {
+                if (str_starts_with($backup, 'uploaded-backup-')) {
+                    $backupService->delete($backup);
+                }
+            }
+            $backupService->delete(basename($sourceBackupPath));
+        }
+    }
+
+    public function test_invalid_backup_file_upload_is_rejected(): void
+    {
+        $response = $this->from('/admin/backups')->withSession([
+            'is_admin' => true,
+            'admin_role' => 'full',
+            'admin_email' => env('ADMIN_EMAIL', 'admin@3yos.com'),
+        ])->post(route('admin.backups.upload'), [
+            'backup_file' => UploadedFile::fake()->create('invalid.txt', 10, 'text/plain'),
+        ]);
+
+        $response->assertRedirect('/admin/backups');
+        $response->assertSessionHasErrors('backup_file');
     }
 }
