@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
     <style>
-        :root{--ink:#20201d;--muted:#6f6d66;--cream:#f8f6f1;--paper:#fffdf9;--wine:#6d3024;--terracotta:#b66545;--gold:#c7984b;--line:#e7e1d7}
+        :root{--ink:#20201d;--muted:#6f6d66;--cream:#f8f6f1;--paper:#fffdf9;--wine:#6d3024;--terracotta:#b66545;--gold:#c7984b;--line:#e7e1d7;--public-header-offset:4.5rem;--public-content-gap:clamp(2.5rem,4vw,4rem)}
         *{box-sizing:border-box}
         html,body{margin:0;padding:0;overflow-x:hidden}
         body{margin:0;padding:0;font-family:'DM Sans',sans-serif;color:var(--ink);background:var(--cream)}
@@ -20,6 +20,9 @@
         .row{margin-left:0;margin-right:0}
         .navbar{position:fixed;top:0;left:0;right:0;z-index:1035;width:100%;margin:0;background:rgba(255,253,249,.94)!important;border-bottom:1px solid rgba(32,32,29,.07);backdrop-filter:blur(14px);transition:transform .28s ease, box-shadow .28s ease;transform:translateY(0)}
         .navbar.header-hidden{transform:translateY(-120%)}
+        main.page-content{padding-top:calc(var(--public-header-offset) + var(--public-content-gap))}
+        main.page-content > :first-child.container,main.page-content > :first-child.gallery-page,main.page-content > .about-hero > .container:first-child,main.page-content > .status-page > .container:first-child{padding-top:0!important}
+        main.page-content[data-page="home"] > .hero{margin-top:calc(-1 * var(--public-header-offset))}
         .navbar-brand{display:inline-flex;align-items:center;gap:.75rem;color:var(--wine)!important;font-family:'Playfair Display',Georgia,serif;font-size:1.4rem;font-weight:800;letter-spacing:.02em}
         .navbar-brand-text{display:flex;flex-direction:column;line-height:1.05}
         .navbar-brand-text small{font-size:.62rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-family:'DM Sans',sans-serif;font-weight:700}
@@ -69,6 +72,8 @@
         body.dark-mode .footer-contact-icon{border-color:rgba(231,183,122,.8);color:#e7b77a}
         body.dark-mode .card,body.dark-mode .process-item{border-color:#403b36!important}
         body.dark-mode .navbar-toggler-icon{filter:invert(1)}
+        @media(min-width:768px) and (max-width:991.98px){:root{--public-header-offset:4.75rem;--public-content-gap:clamp(2rem,4vw,3rem)}}
+        @media(max-width:767.98px){:root{--public-header-offset:4.75rem;--public-content-gap:clamp(1.5rem,6vw,2.25rem)}}
     </style>
 </head>
 <body>
@@ -100,7 +105,7 @@
         </div>
     </nav>
 
-    <main>@yield('content')</main>
+    <main class="page-content" data-page="{{ request()->route()?->getName() }}">@yield('content')</main>
 
     <footer class="footer">
         <div class="container">
