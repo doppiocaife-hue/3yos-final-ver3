@@ -168,7 +168,7 @@
 
 <style>
     .min-vh-75{min-height:68vh}
-    .hero{background:linear-gradient(115deg,#f5eee3 0%,#fbf8f2 60%,#e8d9c6 100%)}
+    .hero{background:linear-gradient(115deg,#f5eee3 0%,#fbf8f2 60%,#e8d9c6 100%);padding-top:calc(74px + clamp(2.25rem,4vw,4.25rem))}
     .hero-title{font-size:clamp(2.8rem,5vw,4.8rem);line-height:.98;letter-spacing:-.045em;max-width:700px}
     .hero-copy{color:#625e57;font-size:1.08rem;line-height:1.7;max-width:560px}
     .hero-art{min-height:390px;position:relative;overflow:hidden;background:radial-gradient(circle at 40% 25%,#e8bd78 0 10%,transparent 10.5%),radial-gradient(circle at 70% 75%,#ac5e3f 0 17%,transparent 17.5%),linear-gradient(145deg,#7c3d2d,#d38a5e);box-shadow:18px 18px 0 #ded2c0;border-radius:26px}
