@@ -34,7 +34,9 @@
             <input id="date_to" name="date_to" type="date" class="form-control" value="{{ request('date_to') }}">
         </div>
         <div class="col-md-2 col-6">
-            <button class="btn luxury-btn w-100">Filter logs</button>
+            @if(request('actor') || request('action') || request('date_from') || request('date_to'))
+                <a href="{{ route('admin.activity-logs') }}" class="btn btn-outline-secondary w-100" data-live-filter-clear="#activity-log-filter-form">Clear</a>
+            @endif
         </div>
     </form>
     

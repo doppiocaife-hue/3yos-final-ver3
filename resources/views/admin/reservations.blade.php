@@ -50,7 +50,6 @@
             </select>
         </div>
         <div class="col-md-4 col-xl-2 d-flex gap-2 reservation-filter-actions">
-            <button type="submit" class="btn luxury-btn w-100">Filter</button>
             @if($status || $paymentStatus || ($search ?? '') !== '' || ($dateFrom ?? '') !== '' || ($dateTo ?? '') !== '')
                 <a href="{{ route('admin.reservations') }}" class="btn btn-outline-secondary w-100" data-live-filter-clear="#reservation-filter-form">Clear</a>
             @endif

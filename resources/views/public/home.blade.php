@@ -1,4 +1,4 @@
-﻿@extends('layouts.app')
+@extends('layouts.app')
 
 @section('title', '3YOS Catering | Exceptional celebrations')
 
@@ -16,12 +16,32 @@
                 </div>
             </div>
             <div class="col-lg-5">
-                <div class="hero-art">
-                    <div class="hero-art__label">
-                        <span>Made for your moment</span>
-                        <strong>Menus with heart.<br>Service with ease.</strong>
+                @if($galleryImages->count())
+                    <div class="hero-art hero-art--slideshow" data-gallery-slideshow>
+                        @foreach($galleryImages as $index => $galleryImage)
+                            <img
+                                src="{{ route('gallery.image', ['path' => $galleryImage->image_path]) }}"
+                                alt="{{ $galleryImage->title ?: 'Gallery image' }}"
+                                class="hero-art__slide {{ $index === 0 ? 'is-active' : '' }}"
+                                loading="{{ $index === 0 ? 'eager' : 'lazy' }}"
+                                data-index="{{ $index }}"
+                                onerror="this.style.display='none';"
+                            >
+                        @endforeach
+                        <div class="hero-art__overlay"></div>
+                        <div class="hero-art__label">
+                            <span>Made for your moment</span>
+                            <strong>Menus with heart.<br>Service with ease.</strong>
+                        </div>
                     </div>
-                </div>
+                @else
+                    <div class="hero-art">
+                        <div class="hero-art__label">
+                            <span>Made for your moment</span>
+                            <strong>Menus with heart.<br>Service with ease.</strong>
+                        </div>
+                    </div>
+                @endif
             </div>
         </div>
     </div>
@@ -155,7 +175,11 @@
     .hero-art:before,.hero-art:after{content:'';position:absolute;border:1px solid rgba(255,255,255,.45);border-radius:50%}
     .hero-art:before{width:315px;height:315px;top:35px;left:48px}
     .hero-art:after{width:210px;height:210px;bottom:-65px;right:-35px}
-    .hero-art__label{position:absolute;z-index:1;bottom:28px;left:28px;color:#fff}
+    .hero-art--slideshow{background:#3a2d26}
+    .hero-art__slide{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1s ease-in-out}
+    .hero-art__slide.is-active{opacity:1}
+    .hero-art__overlay{position:absolute;inset:0;background:linear-gradient(180deg,rgba(32,24,20,.18),rgba(18,14,12,.46));z-index:1}
+    .hero-art__label{position:absolute;z-index:2;bottom:28px;left:28px;color:#fff;max-width:78%}
     .hero-art__label span{display:block;font-size:.7rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;margin-bottom:.45rem}
     .hero-art__label strong{font-family:'Playfair Display',serif;font-size:1.65rem;line-height:1.1}
     .home-metrics{margin-top:-1.25rem}
@@ -183,5 +207,29 @@
     .cta-panel{padding:2.5rem 1.5rem;border:1px solid rgba(109,48,36,.08);background:linear-gradient(140deg,#f9f3ed,#f4e7d8);border-radius:22px}
     @media(max-width:575px){.hero-art{min-height:280px}.hero-title{font-size:2.5rem}.cta-panel{padding:2rem 1rem}.process-item{padding:.85rem .9rem}.metric-card{padding:.8rem .7rem}}
 </style>
+
+@if($galleryImages->count() > 1)
+<script>
+    (() => {
+        const slideshow = document.querySelector('[data-gallery-slideshow]');
+        if (!slideshow) return;
+
+        const slides = Array.from(slideshow.querySelectorAll('.hero-art__slide'));
+        if (slides.length < 2) return;
+
+        let currentIndex = 0;
+        const showSlide = (index) => {
+            slides.forEach((slide, slideIndex) => {
+                slide.classList.toggle('is-active', slideIndex === index);
+            });
+        };
+
+        setInterval(() => {
+            currentIndex = (currentIndex + 1) % slides.length;
+            showSlide(currentIndex);
+        }, 4500);
+    })();
+</script>
+@endif
 @endsection
 

@@ -13,7 +13,9 @@ class PublicController extends Controller
 {
     public function home()
     {
-        return view('public.home');
+        $galleryImages = GalleryItem::latest()->get();
+
+        return view('public.home', compact('galleryImages'));
     }
 
     public function about()

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -12,11 +12,14 @@
     <style>
         :root{--ink:#20201d;--muted:#6f6d66;--cream:#f8f6f1;--paper:#fffdf9;--wine:#6d3024;--terracotta:#b66545;--gold:#c7984b;--line:#e7e1d7}
         *{box-sizing:border-box}
-        html,body{overflow-x:hidden}
-        body{font-family:'DM Sans',sans-serif;color:var(--ink);background:var(--cream)}
+        html,body{margin:0;padding:0;overflow-x:hidden}
+        body{margin:0;padding:0;font-family:'DM Sans',sans-serif;color:var(--ink);background:var(--cream)}
         h1,h2,h3,h4,h5,.display-font{font-family:'Playfair Display',Georgia,serif}
         a{text-decoration:none}
-        .navbar{background:rgba(255,253,249,.94)!important;border-bottom:1px solid rgba(32,32,29,.07);backdrop-filter:blur(14px)}
+        .container,.container-fluid{padding-left:clamp(1rem,2vw,2rem);padding-right:clamp(1rem,2vw,2rem)}
+        .row{margin-left:0;margin-right:0}
+        .navbar{position:fixed;top:0;left:0;right:0;z-index:1035;width:100%;margin:0;background:rgba(255,253,249,.94)!important;border-bottom:1px solid rgba(32,32,29,.07);backdrop-filter:blur(14px);transition:transform .28s ease, box-shadow .28s ease;transform:translateY(0)}
+        .navbar.header-hidden{transform:translateY(-120%)}
         .navbar-brand{display:inline-flex;align-items:center;gap:.75rem;color:var(--wine)!important;font-family:'Playfair Display',Georgia,serif;font-size:1.4rem;font-weight:800;letter-spacing:.02em}
         .navbar-brand-text{display:flex;flex-direction:column;line-height:1.05}
         .navbar-brand-text small{font-size:.62rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-family:'DM Sans',sans-serif;font-weight:700}
@@ -170,6 +173,43 @@
                 localStorage.setItem('customer-theme', dark ? 'dark' : 'light');
                 applyTheme(dark);
             });
+        })();
+    </script>
+    <script>
+        (() => {
+            const header = document.querySelector('.navbar');
+            if (!header) return;
+
+            let previousScrollY = window.scrollY;
+            const threshold = 12;
+
+            const showHeader = () => header.classList.remove('header-hidden');
+            const hideHeader = () => header.classList.add('header-hidden');
+
+            const handleScroll = () => {
+                const currentScrollY = window.scrollY;
+
+                if (currentScrollY <= 0) {
+                    showHeader();
+                    previousScrollY = currentScrollY;
+                    return;
+                }
+
+                if (Math.abs(currentScrollY - previousScrollY) < threshold) {
+                    return;
+                }
+
+                if (currentScrollY > previousScrollY) {
+                    hideHeader();
+                } else {
+                    showHeader();
+                }
+
+                previousScrollY = currentScrollY;
+            };
+
+            window.addEventListener('scroll', handleScroll, { passive: true });
+            handleScroll();
         })();
     </script>
     <script>
