@@ -1,86 +1,61 @@
-# 3YOS Catering System
+<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
-A comprehensive, full-stack web application designed to streamline catering reservations and event management. 
+<p align="center">
+<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
+</p>
 
-## Overview
+## About Laravel
 
-The 3YOS Catering System is a specialized platform built to handle the end-to-end workflow of a catering business. It serves two main audiences: 
-1. **Clients (Guests):** Who need an intuitive way to explore catering packages, view past event galleries, check date availability, and submit booking requests or inquiries.
-2. **Administrators (Staff):** Who require a robust backend to review incoming reservations, manage service contracts, track business analytics, and maintain website content.
+Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
 
-By replacing manual booking processes with an automated online reservation system, 3YOS Catering solves issues like double-booking (enforcing a maximum of 3 events per day) and lead-time constraints (enforcing a minimum 2-day advance notice for bookings). 
+- [Simple, fast routing engine](https://laravel.com/docs/routing).
+- [Powerful dependency injection container](https://laravel.com/docs/container).
+- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
+- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
+- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
+- [Robust background job processing](https://laravel.com/docs/queues).
+- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
 
-## Features
+Laravel is accessible, powerful, and provides tools required for large, robust applications.
 
-### Guest / Public Website
-- **Home & About:** Introduction to the catering business and its values.
-- **Services:** Dynamic listing of available catering services (e.g., Buffet setup, Event styling).
-- **Catering Packages:** Tiered package browsing (Silver, Gold, Platinum, Diamond) with detailed inclusions, menus, and estimated pricing.
-- **Gallery:** Visual portfolio of past catered events and setups.
-- **Reservation System:** 
-  - Real-time date availability checking.
-  - Interactive event time picker.
-  - Automatic capacity limits (prevents overbooking on a single day).
-- **Reservation Status:** A dedicated portal for clients to track their booking status using a unique reservation code.
-- **Inquiry Form:** A dedicated contact form for custom event queries and general questions, protected by rate limiting and CAPTCHA.
+## Learning Laravel
 
-### Admin Panel
-- **Dashboard & Analytics:** High-level overview of pending reservations, recent inquiries, and business metrics.
-- **Reservations Management:** Review booking details, update statuses (e.g., pending, approved, cancelled), and upload/manage signed service contracts.
-- **Inquiries Management:** Track client questions and reply directly from the admin interface.
-- **Catering Packages & Services:** Full CRUD (Create, Read, Update, Delete) management to adjust pricing, descriptions, and toggle service availability.
-- **Gallery Management:** Secure upload and deletion of portfolio images.
-- **Reports:** Generate and export business data based on daily, weekly, monthly, or yearly periods.
-- **User / Account Management (Team Admins):** Manage administrator access with role-based permissions (Full Admin vs. Limited Admin).
-- **Activity Logs:** A comprehensive audit trail tracking administrator actions for security and accountability.
-- **System Backups:** Integrated tools to create, download, restore, and delete database backups directly from the interface.
+Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
 
-## System Architecture
+If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
 
-The 3YOS Catering System is built on a modern, monolithic architecture utilizing the TALL-stack ecosystem (minus Livewire) for rapid development and reliability.
+## Laravel Sponsors
 
-Browser (Client)
-       ↓
-Frontend (Blade + Tailwind CSS + Vite)
-       ↓
-Backend (Laravel + PHP)
-       ↓
-Database (SQLite / MySQL)
+We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
 
-- **Frontend Technology:** Laravel Blade Templates, Tailwind CSS (v4), Vanilla JavaScript, and Vite for asset bundling.
-- **Backend Technology:** Laravel Framework (PHP 8.2+).
-- **Database Technology:** Eloquent ORM supporting SQLite (default local configuration) or MySQL.
-- **Authentication & Authorization:** Laravel Session-based authentication with custom middleware (`ensure.admin`, `ensure.full-admin`) for role-based access control.
-- **Important Integrations:** 
-  - Google reCAPTCHA v2 (Spam protection on public forms).
-  - SMTP Mailer (For sending inquiry replies and reservation updates).
+### Premium Partners
 
-## Project Structure
+- **[Vehikl](https://vehikl.com)**
+- **[Tighten Co.](https://tighten.co)**
+- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
+- **[64 Robots](https://64robots.com)**
+- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
+- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
+- **[Redberry](https://redberry.international/laravel-development)**
+- **[Active Logic](https://activelogic.com)**
 
-```text
-3yos-final-ver/
-├── app/
-│   ├── Http/
-│   │   ├── Controllers/    # Application logic (Admin, Public, Auth)
-│   │   ├── Middleware/     # Security, Role-checks, Activity Logging
-│   │   └── Requests/       # Form validation rules
-│   └── Models/             # Database models (Reservation, Package, User, etc.)
-├── bootstrap/              # Framework bootstrapping and middleware aliases
-├── config/                 # Application, database, and service configurations
-├── database/
-│   ├── migrations/         # Database schema definitions
-│   └── seeders/            # Initial data seeding (Admin user, Default packages)
-├── public/
-│   ├── build/              # Compiled Vite frontend assets (CSS/JS)
-│   └── gallery-images/     # Uploaded public images (via storage symlink)
-├── resources/
-│   ├── css/                # Tailwind CSS source files
-│   ├── js/                 # Frontend JavaScript source
-│   └── views/              # Blade templates (admin/, public/, layouts/)
-├── routes/
-│   ├── web.php             # Public and protected Admin routes
-│   └── console.php         # Artisan console commands
-├── storage/                # Application logs, file uploads, and system backups
-├── .env                    # Environment variables (Secrets, DB config, Mail)
-└── README.md               # Project documentation
-```
+## Contributing
+
+Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+
+## Code of Conduct
+
+In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+
+## Security Vulnerabilities
+
+If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+
+## License
+
+The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+"# 3yos-final-ver2" 
+"# 3yos-final-ver3" 
