@@ -25,28 +25,55 @@
         body.dark-mode .calendar-day-number{color:var(--ink)}
         body.dark-mode .page-kicker{color:#75d8cf}
     </style>
+    <link rel="stylesheet" href="{{ asset('css/admin-workspace.css') }}">
 </head>
 <body>
-<div class="admin-nav-backdrop" id="adminNavBackdrop"></div>
+<button class="admin-nav-backdrop" id="adminNavBackdrop" type="button" aria-label="Close navigation"></button>
 <div class="container-fluid"><div class="admin-layout">
-    <aside class="sidebar text-white p-0"><div class="brand d-flex align-items-center gap-3"><img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png" alt="3YOS Catering Services" style="width:42px;height:42px;object-fit:contain;border-radius:50%;background:transparent"><div><h4>3YOS</h4><div class="brand-subtitle">Operations</div></div></div><nav>
+    <aside class="sidebar text-white p-0" id="adminSidebar" aria-label="Primary navigation">
+        <div class="brand">
+            <img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png" alt="3YOS Catering Services">
+            <div><h4>3YOS</h4><div class="brand-subtitle">Catering operations</div></div>
+        </div>
+        <nav aria-label="Admin sections">
         <div class="nav-caption">Workspace</div>
-        <a class="nav-link {{ request()->routeIs('admin.dashboard') ? 'active' : '' }}" href="{{ route('admin.dashboard') }}">Overview</a>
-        <a class="nav-link {{ request()->routeIs('admin.reservations') ? 'active' : '' }}" href="{{ route('admin.reservations') }}">Reservations</a>
-        <a class="nav-link {{ request()->routeIs('admin.inquiries*') ? 'active' : '' }}" href="{{ route('admin.inquiries') }}">Inquiries</a>
+        <a class="nav-link {{ request()->routeIs('admin.dashboard') ? 'active' : '' }}" href="{{ route('admin.dashboard') }}" @if(request()->routeIs('admin.dashboard')) aria-current="page" @endif>
+            <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span><span>Overview</span>
+        </a>
+        <a class="nav-link {{ request()->routeIs('admin.reservations*') ? 'active' : '' }}" href="{{ route('admin.reservations') }}" @if(request()->routeIs('admin.reservations*')) aria-current="page" @endif>
+            <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17M8 13h3M8 16h6"/></svg></span><span>Reservations</span>
+        </a>
+        <a class="nav-link {{ request()->routeIs('admin.inquiries*') ? 'active' : '' }}" href="{{ route('admin.inquiries') }}" @if(request()->routeIs('admin.inquiries*')) aria-current="page" @endif>
+            <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H7l-3.5 2v-5A7.5 7.5 0 1 1 20 11.5Z"/><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"/></svg></span><span>Inquiries</span>
+        </a>
         @if(session('admin_role') === 'full')
         <div class="nav-caption mt-3">Content & insights</div>
-        <a class="nav-link {{ request()->routeIs('admin.packages.*') ? 'active' : '' }}" href="{{ route('admin.packages.index') }}">Packages</a>
-        <a class="nav-link {{ request()->routeIs('admin.services.*') ? 'active' : '' }}" href="{{ route('admin.services.index') }}">Services</a>
-        <a class="nav-link {{ request()->routeIs('admin.gallery.*') ? 'active' : '' }}" href="{{ route('admin.gallery.index') }}">Gallery</a>
-        <a class="nav-link {{ request()->routeIs('admin.analytics') ? 'active' : '' }}" href="{{ route('admin.analytics') }}">Analytics</a>
-        <a class="nav-link {{ request()->routeIs('admin.reports') ? 'active' : '' }}" href="{{ route('admin.reports') }}">Reports</a>
-        <a class="nav-link {{ request()->routeIs('admin.users') ? 'active' : '' }}" href="{{ route('admin.users') }}">Team admins</a>
-        <a class="nav-link {{ request()->routeIs('admin.activity-logs') ? 'active' : '' }}" href="{{ route('admin.activity-logs') }}">Activity logs</a>
+        <a class="nav-link {{ request()->routeIs('admin.packages.*') ? 'active' : '' }}" href="{{ route('admin.packages.index') }}" @if(request()->routeIs('admin.packages.*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 8.5 4.5v9L12 21l-8.5-4.5v-9L12 3Z"/><path d="m3.8 7.7 8.2 4.5 8.2-4.5M12 12.2V21M8 5.1l8.4 4.6"/></svg></span><span>Packages</span></a>
+        <a class="nav-link {{ request()->routeIs('admin.services.*') ? 'active' : '' }}" href="{{ route('admin.services.index') }}" @if(request()->routeIs('admin.services.*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4v5a4 4 0 0 0 8 0V4M8 4v6M4 9h8M16 4v16M16 4a4 4 0 0 1 4 4v3h-4"/></svg></span><span>Services</span></a>
+        <a class="nav-link {{ request()->routeIs('admin.gallery.*') ? 'active' : '' }}" href="{{ route('admin.gallery.index') }}" @if(request()->routeIs('admin.gallery.*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg></span><span>Gallery</span></a>
+        <a class="nav-link {{ request()->routeIs('admin.analytics') ? 'active' : '' }}" href="{{ route('admin.analytics') }}" @if(request()->routeIs('admin.analytics')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V5M4 20h17"/><path d="m7 15 4-4 3 2 6-7"/><circle cx="7" cy="15" r=".7"/><circle cx="11" cy="11" r=".7"/><circle cx="14" cy="13" r=".7"/><circle cx="20" cy="6" r=".7"/></svg></span><span>Analytics</span></a>
+        <a class="nav-link {{ request()->routeIs('admin.reports*') ? 'active' : '' }}" href="{{ route('admin.reports') }}" @if(request()->routeIs('admin.reports*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 20V3.5Z"/><path d="M14 3.5v5h5M9 13h6M9 16.5h6"/></svg></span><span>Reports</span></a>
+        <a class="nav-link {{ request()->routeIs('admin.users') ? 'active' : '' }}" href="{{ route('admin.users') }}" @if(request()->routeIs('admin.users')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0M16 5a3.4 3.4 0 0 1 0 6.7M17.3 14.2a5.8 5.8 0 0 1 4 5.3"/></svg></span><span>Team admins</span></a>
+        <a class="nav-link {{ request()->routeIs('admin.activity-logs') ? 'active' : '' }}" href="{{ route('admin.activity-logs') }}" @if(request()->routeIs('admin.activity-logs')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg></span><span>Activity logs</span></a>
         @endif
-        <div class="nav-caption mt-3">System</div><a class="nav-link {{ request()->routeIs('admin.backups') ? 'active' : '' }}" href="{{ route('admin.backups') }}">Backups</a>
-    </nav></aside>
-    <div class="admin-main"><header class="header-bar p-3 px-lg-4 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3"><div class="admin-heading d-flex align-items-center gap-2"><button class="header-btn d-lg-none" type="button" id="adminMobileMenu" aria-expanded="false">Menu</button><div><div class="page-kicker">Catering management</div><h4 class="mb-0">Operations workspace</h4></div></div><div class="admin-header-actions d-flex gap-2 align-items-center"><button class="header-btn theme-toggle" id="themeToggle" type="button" aria-label="Enable dark mode" title="Enable dark mode"><span aria-hidden="true">&#9790;</span></button><a href="{{ route('home') }}" class="header-btn text-center text-decoration-none">View website</a><form method="POST" action="{{ route('admin.logout') }}">@csrf<button class="btn btn-outline-danger btn-sm">Sign out</button></form></div></header><div class="admin-page-content p-3 p-lg-4">@yield('content')</div></div>
+        <div class="nav-caption mt-3">System</div>
+        <a class="nav-link {{ request()->routeIs('admin.backups') ? 'active' : '' }}" href="{{ route('admin.backups') }}" @if(request()->routeIs('admin.backups')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6M4 11.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/><path d="M4 17.5c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span><span>Backups</span></a>
+        </nav>
+    </aside>
+    <div class="admin-main">
+        <header class="header-bar p-3 px-lg-4 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+            <div class="admin-heading d-flex align-items-center gap-2">
+                <button class="header-btn d-lg-none" type="button" id="adminMobileMenu" aria-label="Open navigation" aria-controls="adminSidebar" aria-expanded="false" title="Open navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+                <div><div class="page-kicker">Catering management</div><h4 class="mb-0">Operations workspace</h4></div>
+            </div>
+            <div class="admin-header-actions d-flex gap-2 align-items-center">
+                <button class="header-btn theme-toggle" id="themeToggle" type="button" aria-label="Enable dark mode" title="Enable dark mode"><span aria-hidden="true">&#9790;</span></button>
+                <a href="{{ route('home') }}" class="header-btn text-center text-decoration-none">View website</a>
+                <form method="POST" action="{{ route('admin.logout') }}">@csrf<button class="btn btn-outline-danger btn-sm">Sign out</button></form>
+            </div>
+        </header>
+        <div class="admin-page-content p-3 p-lg-4">@yield('content')</div>
+    </div>
 </div></div>
 <dialog id="admin-password-dialog" aria-labelledby="admin-password-title" style="width:min(440px,calc(100vw - 2rem));padding:1.35rem;border:1px solid var(--line);border-radius:12px;color:var(--ink);background:var(--surface);box-shadow:0 18px 48px rgba(0,0,0,.24)">
     <h2 id="admin-password-title" class="h5 mb-2">Confirm administrator password</h2>
@@ -60,7 +87,61 @@
         </div>
     </form>
 </dialog>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script><script>const mobileMenu=document.getElementById('adminMobileMenu'),navBackdrop=document.getElementById('adminNavBackdrop'),closeMobileMenu=()=>{document.body.classList.remove('mobile-admin-nav-open');mobileMenu?.setAttribute('aria-expanded','false')};mobileMenu?.addEventListener('click',()=>{const isOpen=document.body.classList.toggle('mobile-admin-nav-open');mobileMenu.setAttribute('aria-expanded',String(isOpen))});navBackdrop?.addEventListener('click',closeMobileMenu);document.querySelectorAll('.sidebar .nav-link').forEach(link=>link.addEventListener('click',closeMobileMenu));const themeToggle=document.getElementById('themeToggle'),savedTheme=localStorage.getItem('admin-theme'),applyAdminTheme=dark=>{document.body.classList.toggle('dark-mode',dark);themeToggle.innerHTML=dark?'&#9788;':'&#9790;';themeToggle.setAttribute('aria-label',dark?'Enable light mode':'Enable dark mode');themeToggle.setAttribute('title',dark?'Enable light mode':'Enable dark mode');themeToggle.setAttribute('aria-pressed',String(dark))};applyAdminTheme(savedTheme==='dark');themeToggle?.addEventListener('click',()=>{applyAdminTheme(!document.body.classList.contains('dark-mode'));localStorage.setItem('admin-theme',document.body.classList.contains('dark-mode')?'dark':'light')});</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(() => {
+    const sidebar = document.getElementById('adminSidebar');
+    const mobileMenu = document.getElementById('adminMobileMenu');
+    const navBackdrop = document.getElementById('adminNavBackdrop');
+    const mobileBreakpoint = window.matchMedia('(max-width: 991.98px)');
+    const themeToggle = document.getElementById('themeToggle');
+    const savedTheme = localStorage.getItem('admin-theme');
+
+    const setNavigationOpen = (open, restoreFocus = false) => {
+        document.body.classList.toggle('mobile-admin-nav-open', open);
+        mobileMenu?.setAttribute('aria-expanded', String(open));
+        mobileMenu?.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+        mobileMenu?.setAttribute('title', open ? 'Close navigation' : 'Open navigation');
+        if (sidebar) sidebar.inert = mobileBreakpoint.matches && !open;
+        if (navBackdrop) navBackdrop.tabIndex = open ? 0 : -1;
+        if (open) sidebar?.querySelector('.nav-link')?.focus();
+        else if (restoreFocus) mobileMenu?.focus();
+    };
+
+    setNavigationOpen(false);
+    mobileMenu?.addEventListener('click', () => {
+        setNavigationOpen(!document.body.classList.contains('mobile-admin-nav-open'));
+    });
+    navBackdrop?.addEventListener('click', () => setNavigationOpen(false, true));
+    document.querySelectorAll('.sidebar .nav-link').forEach((link) => {
+        link.addEventListener('click', () => setNavigationOpen(false));
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && document.body.classList.contains('mobile-admin-nav-open')) {
+            setNavigationOpen(false, true);
+        }
+    });
+    mobileBreakpoint.addEventListener('change', (event) => {
+        if (!event.matches) setNavigationOpen(false);
+        else if (!document.body.classList.contains('mobile-admin-nav-open') && sidebar) sidebar.inert = true;
+    });
+
+    const applyAdminTheme = (dark) => {
+        document.body.classList.toggle('dark-mode', dark);
+        themeToggle.innerHTML = dark ? '&#9788;' : '&#9790;';
+        themeToggle.setAttribute('aria-label', dark ? 'Enable light mode' : 'Enable dark mode');
+        themeToggle.setAttribute('title', dark ? 'Enable light mode' : 'Enable dark mode');
+        themeToggle.setAttribute('aria-pressed', String(dark));
+    };
+
+    applyAdminTheme(savedTheme === 'dark');
+    themeToggle?.addEventListener('click', () => {
+        const dark = !document.body.classList.contains('dark-mode');
+        applyAdminTheme(dark);
+        localStorage.setItem('admin-theme', dark ? 'dark' : 'light');
+    });
+})();
+</script>
 <script>
 document.addEventListener('submit', (event) => {
     const form = event.target;
@@ -166,6 +247,7 @@ document.querySelectorAll('form input:not([type="hidden"]), form select, form te
     const formUrl = (form) => {
         const url = new URL(form.action || window.location.href, window.location.href);
         url.search = '';
+        url.searchParams.delete('page');
         for (const [key, value] of new FormData(form)) {
             if (typeof value === 'string' && value.trim() !== '') url.searchParams.set(key, value.trim());
         }
@@ -184,12 +266,17 @@ document.querySelectorAll('form input:not([type="hidden"]), form select, form te
     const refreshResults = async (form, url, historyMode = 'replace') => {
         const selector = form.dataset.liveFilterTarget;
         const currentTarget = document.querySelector(selector);
+        const loadingTarget = document.getElementById('activity-log-loading');
         if (!currentTarget) return;
 
         requests.get(form)?.abort();
         const controller = new AbortController();
         requests.set(form, controller);
         currentTarget.setAttribute('aria-busy', 'true');
+        if (loadingTarget) {
+            loadingTarget.hidden = false;
+            loadingTarget.textContent = 'Loading activity logs...';
+        }
 
         try {
             const response = await fetch(url.href, {
@@ -217,6 +304,7 @@ document.querySelectorAll('form input:not([type="hidden"]), form select, form te
             if (error.name !== 'AbortError') console.error(error);
         } finally {
             document.querySelector(selector)?.removeAttribute('aria-busy');
+            if (loadingTarget) loadingTarget.hidden = true;
         }
     };
 

@@ -16,9 +16,10 @@
                 </div>
             </div>
             <div class="col-lg-5">
-                @if($galleryImages->count())
+                @php($availableGalleryImages = $galleryImages->filter(fn ($image) => \Illuminate\Support\Facades\Storage::disk('public')->exists($image->image_path))->values())
+                @if($availableGalleryImages->isNotEmpty())
                     <div class="hero-art hero-art--slideshow" data-gallery-slideshow>
-                        @foreach($galleryImages as $index => $galleryImage)
+                        @foreach($availableGalleryImages as $index => $galleryImage)
                             <img
                                 src="{{ route('gallery.image', ['path' => $galleryImage->image_path]) }}"
                                 alt="{{ $galleryImage->title ?: 'Gallery image' }}"

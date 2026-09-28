@@ -37,7 +37,11 @@
             <div class="col-md-6">
                 <article class="gallery-admin-item">
                     <div class="gallery-admin-preview">
-                        <img src="{{ route('gallery.image', ['path' => $item->image_path]) }}" alt="Catering event photo" loading="lazy">
+                        @if(\Illuminate\Support\Facades\Storage::disk('public')->exists($item->image_path))
+                            <img src="{{ route('gallery.image', ['path' => $item->image_path]) }}" alt="Catering event photo" loading="lazy">
+                        @else
+                            <div class="gallery-admin-missing" role="img" aria-label="Catering event image file unavailable"><span>Image file unavailable</span></div>
+                        @endif
                         @if($item->is_featured)
                             <span class="gallery-admin-featured">Featured</span>
                         @endif
@@ -74,6 +78,8 @@
     .gallery-admin-item { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
     .gallery-admin-preview { position: relative; height: 220px; overflow: hidden; }
     .gallery-admin-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .gallery-admin-missing { display: grid; width: 100%; height: 100%; place-items: center; background: #eaf0f2; color: #71808b; font-size: .8rem; font-weight: 700; }
+    body.dark-mode .gallery-admin-missing { background: #22343f; color: #b4c2c9; }
     .gallery-admin-featured { position: absolute; top: .75rem; left: .75rem; padding: .25rem .5rem; border-radius: 999px; background: var(--gold); color: #2c2014; font-size: .68rem; font-weight: 800; }
     .gallery-admin-editor { position: absolute; right: .65rem; bottom: .65rem; z-index: 2; }
     .gallery-admin-editor summary { padding: .45rem .7rem; border-radius: 7px; background: var(--surface); color: var(--teal-dark); font-size: .78rem; font-weight: 700; cursor: pointer; list-style: none; box-shadow: 0 2px 8px rgba(21,37,55,.18); }

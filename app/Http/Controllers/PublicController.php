@@ -59,6 +59,13 @@ class PublicController extends Controller
         return Storage::disk('public')->response($path);
     }
 
+    public function packageImage(string $path)
+    {
+        abort_unless(str_starts_with($path, 'packages/') && Storage::disk('public')->exists($path), 404);
+
+        return Storage::disk('public')->response($path);
+    }
+
     public function reservation(Request $request)
     {
         $this->ensureSignaturePackages();

@@ -16,8 +16,11 @@
                 <div class="col-sm-6 col-lg-4">
                     <article class="gallery-card h-100">
                         <div class="gallery-image-wrap">
-                            <img src="{{ route('gallery.image', ['path' => $item->image_path]) }}" alt="{{ $item->title }}" class="gallery-image" loading="lazy" onerror="this.hidden=true; this.nextElementSibling.hidden=false;">
-                            <div class="gallery-image-fallback" hidden><span>Photo unavailable</span></div>
+                            @if(\Illuminate\Support\Facades\Storage::disk('public')->exists($item->image_path))
+                                <img src="{{ route('gallery.image', ['path' => $item->image_path]) }}" alt="{{ $item->title }}" class="gallery-image" loading="lazy">
+                            @else
+                                <div class="gallery-image-fallback" role="img" aria-label="{{ $item->title }} photo unavailable"><span>Photo unavailable</span></div>
+                            @endif
                             @if($item->is_featured)
                                 <span class="gallery-featured">Featured</span>
                             @endif

@@ -97,16 +97,6 @@
 </div>
 
 <style>
-    .badge-soft {
-        display: inline-flex;
-        align-items: center;
-        border-radius: 999px;
-        padding: .35rem .7rem;
-        font-size: .72rem;
-        font-weight: 700;
-        background: rgba(47, 170, 164, 0.12);
-        color: #0d6efd;
-    }
     .team-admin-table { table-layout: fixed; min-width: 680px; }
     .team-admin-table th, .team-admin-table td { padding: .45rem .5rem; vertical-align: top; }
     .team-admin-table th:nth-child(1), .team-admin-table td:nth-child(1) { width: 16%; }

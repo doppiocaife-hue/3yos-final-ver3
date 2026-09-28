@@ -6,12 +6,17 @@ use App\Models\GalleryItem;
 use App\Models\Package;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class PublicCatalogFeaturesTest extends TestCase
 {
     public function test_package_image_is_rendered_without_showing_a_per_guest_price(): void
     {
+        Storage::fake('public');
+        Storage::disk('public')->put('packages/garden.jpg', 'fake-image-content');
+
         $package = Package::create([
             'name' => 'Garden Package',
             'slug' => 'garden-package',
@@ -24,17 +29,21 @@ class PublicCatalogFeaturesTest extends TestCase
 
         $catalog = $this->get(route('packages'));
         $catalog->assertOk();
-        $catalog->assertSee('storage/packages/garden.jpg');
+        $catalog->assertSee('package-images/packages/garden.jpg');
         $catalog->assertDontSee('/ guest');
         $catalog->assertSee('Marikina City, Metro Manila');
 
         $detail = $this->get(route('packages.show', $package->slug));
         $detail->assertOk();
-        $detail->assertSee('storage/packages/garden.jpg');
+        $detail->assertSee('package-images/packages/garden.jpg');
     }
 
     public function test_gallery_shows_all_images_without_a_filter_or_metadata_panel(): void
     {
+        Storage::fake('public');
+        Storage::disk('public')->put('gallery/reunion.jpg', 'reunion-image');
+        Storage::disk('public')->put('gallery/wedding.jpg', 'wedding-image');
+
         GalleryItem::create([
             'title' => 'Family reunion',
             'image_path' => 'gallery/reunion.jpg',
@@ -97,6 +106,51 @@ class PublicCatalogFeaturesTest extends TestCase
         $response->assertRedirect(route('admin.gallery.index'));
         $response->assertSessionHasErrors(['image']);
         $response->assertSessionDoesntHaveErrors(['title', 'event_type', 'description']);
+    }
+
+    public function test_uploaded_package_and_gallery_images_are_saved_and_served_from_the_public_disk(): void
+    {
+        Storage::fake('public');
+        $admin = User::factory()->create([
+            'role' => 'full',
+            'password' => Hash::make('image-admin-password'),
+        ]);
+        $session = [
+            'is_admin' => true,
+            'admin_role' => 'full',
+            'admin_user_id' => $admin->id,
+            'admin_email' => $admin->email,
+        ];
+        $image = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lb8AAAAASUVORK5CYII=');
+
+        $packageResponse = $this->withSession($session)->post(route('admin.packages.store'), [
+            'password_confirmation' => 'image-admin-password',
+            'name' => 'Image package',
+            'price' => 500,
+            'image' => UploadedFile::fake()->createWithContent('package.png', $image),
+        ]);
+        $packageResponse->assertRedirect(route('admin.packages.index'));
+
+        $package = Package::where('name', 'Image package')->firstOrFail();
+        $this->assertSame('packages/', substr($package->image_path, 0, 9));
+        Storage::disk('public')->assertExists($package->image_path);
+
+        $packageImage = $this->get(route('package.image', ['path' => $package->image_path]));
+        $packageImage->assertOk()->assertHeader('Content-Type', 'image/png')->assertStreamedContent($image);
+
+        $catalog = $this->get(route('packages'));
+        $catalog->assertOk()->assertSee(route('package.image', ['path' => $package->image_path]), false);
+
+        $galleryResponse = $this->withSession($session)->from(route('admin.gallery.index'))->post(route('admin.gallery.store'), [
+            'password_confirmation' => 'image-admin-password',
+            'image' => UploadedFile::fake()->createWithContent('gallery.png', $image),
+        ]);
+        $galleryResponse->assertRedirect(route('admin.gallery.index'));
+
+        $gallery = GalleryItem::latest()->firstOrFail();
+        Storage::disk('public')->assertExists($gallery->image_path);
+        $galleryImage = $this->get(route('gallery.image', ['path' => $gallery->image_path]));
+        $galleryImage->assertOk()->assertHeader('Content-Type', 'image/png')->assertStreamedContent($image);
     }
 
     public function test_package_estimate_uses_the_package_rate_times_guest_count(): void

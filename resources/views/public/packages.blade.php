@@ -30,8 +30,8 @@
                 <article class="package-card h-100 {{ $package->is_featured ? 'is-featured' : '' }}">
                     @if($package->is_featured)<div class="package-ribbon">Most popular</div>@endif
                     <div class="package-image-wrap">
-                        @if($package->image_path)
-                            <img src="{{ asset('storage/' . $package->image_path) }}" alt="{{ $package->name }} catering package" loading="lazy">
+                        @if($package->image_path && \Illuminate\Support\Facades\Storage::disk('public')->exists($package->image_path))
+                            <img src="{{ route('package.image', ['path' => $package->image_path]) }}" alt="{{ $package->name }} catering package" loading="lazy">
                         @else
                             <span>{{ $package->name }} package</span>
                         @endif

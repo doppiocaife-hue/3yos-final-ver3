@@ -22,6 +22,7 @@ Route::get('/packages', [PublicController::class, 'packages'])->name('packages')
 Route::get('/packages/{package:slug}', [PublicController::class, 'packageShow'])->name('packages.show');
 Route::get('/gallery', [PublicController::class, 'gallery'])->name('gallery');
 Route::get('/gallery-images/{path}', [PublicController::class, 'galleryImage'])->where('path', '.*')->name('gallery.image');
+Route::get('/package-images/{path}', [PublicController::class, 'packageImage'])->where('path', '.*')->name('package.image');
 Route::get('/reservation', [PublicController::class, 'reservation'])->name('reservation');
 Route::get('/reservation/status', [PublicController::class, 'reservationStatus'])->name('reservation.status');
 Route::get('/reservation/availability', [ReservationController::class, 'availability'])->name('reservation.availability');
@@ -73,6 +74,7 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
         Route::put('/team-admins/{user}/reset-password', [AdminUserController::class, 'resetPassword'])->name('admin.users.reset');
         Route::get('/reports', [ReportController::class, 'index'])->name('admin.reports');
         Route::get('/reports/export/{period}', [ReportController::class, 'export'])->whereIn('period', ['daily', 'weekly', 'monthly', 'yearly'])->name('admin.reports.export');
+        Route::get('/reports/export/{period}/excel', [ReportController::class, 'exportExcel'])->whereIn('period', ['daily', 'weekly', 'monthly', 'yearly'])->name('admin.reports.export.excel');
         Route::get('/analytics', [AdminController::class, 'analytics'])->name('admin.analytics');
         Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('admin.activity-logs');
     });
