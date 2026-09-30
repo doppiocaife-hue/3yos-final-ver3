@@ -47,6 +47,8 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     Route::post('/reservations', [AdminReservationController::class, 'store'])->name('admin.reservations.store');
     Route::get('/reservations/export', [AdminController::class, 'exportReservationsCsv'])->name('admin.reservations.export');
     Route::get('/reservations/{reservation}', [AdminController::class, 'showReservation'])->name('admin.reservations.show');
+    Route::get('/reservations/{reservation}/service-contract/{contract}/preview', [AdminController::class, 'previewReservationContract'])->whereNumber('contract')->name('admin.reservations.contract.preview');
+    Route::get('/reservations/{reservation}/service-contract/{contract}/download', [AdminController::class, 'downloadReservationContract'])->whereNumber('contract')->name('admin.reservations.contract.download');
     Route::patch('/reservations/{reservation}/status', [AdminController::class, 'updateReservationStatus'])->name('admin.reservations.status');
     Route::post('/reservations/{reservation}/service-contract', [AdminController::class, 'uploadReservationContract'])->name('admin.reservations.contract');
     Route::delete('/reservations/{reservation}/service-contract/{contract}', [AdminController::class, 'deleteReservationContract'])->name('admin.reservations.contract.delete');

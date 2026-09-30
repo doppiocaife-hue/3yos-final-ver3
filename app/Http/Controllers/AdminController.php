@@ -20,7 +20,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class AdminController extends Controller
 {
@@ -593,6 +595,46 @@ class AdminController extends Controller
         return back()->with('success', count($data['service_contract']).' contract image(s) uploaded.');
     }
 
+    public function previewReservationContract(Reservation $reservation, int $contract)
+    {
+        $path = $this->reservationContractPath($reservation, $contract);
+        $disk = Storage::disk('public');
+        $mimeType = $disk->mimeType($path);
+        abort_unless(in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true), 415);
+
+        $stream = $disk->readStream($path);
+        abort_if($stream === false, 404);
+
+        $filename = basename($path);
+
+        return response()->stream(
+            static function () use ($stream): void {
+                fpassthru($stream);
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            },
+            200,
+            [
+                'Content-Type' => $mimeType,
+                'Content-Disposition' => HeaderUtils::makeDisposition('inline', $filename, Str::ascii($filename) ?: 'contract-image'),
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ],
+        );
+    }
+
+    public function downloadReservationContract(Reservation $reservation, int $contract)
+    {
+        $path = $this->reservationContractPath($reservation, $contract);
+        $disk = Storage::disk('public');
+
+        return $disk->download($path, basename($path), [
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
     public function deleteReservationContract(Request $request, Reservation $reservation, int $contract)
     {
         $files = $reservation->contractFiles();
@@ -607,6 +649,18 @@ class AdminController extends Controller
         ]);
 
         return back()->with('success', 'Contract image deleted.');
+    }
+
+    private function reservationContractPath(Reservation $reservation, int $contract): string
+    {
+        $files = $reservation->contractFiles();
+        abort_unless(isset($files[$contract]), 404);
+
+        $path = $files[$contract];
+        abort_unless(str_starts_with($path, 'service-contracts/'), 404);
+        abort_unless(Storage::disk('public')->exists($path), 404);
+
+        return $path;
     }
 
     private function applyReservationSearch(Builder $query, string $search): void

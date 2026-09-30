@@ -143,12 +143,33 @@
                 <h2 class="h6 fw-bold mb-3">Contract</h2>
                 <div class="contract-detail-list">
                     @forelse($reservation->contractFiles() as $contractIndex => $contractPath)
+                        @php($contractExists = \Illuminate\Support\Facades\Storage::disk('public')->exists($contractPath))
+                        @php($contractMimeType = $contractExists ? \Illuminate\Support\Facades\Storage::disk('public')->mimeType($contractPath) : null)
+                        @php($contractPreviewable = in_array($contractMimeType, ['image/jpeg', 'image/png', 'image/webp'], true))
                         <div class="contract-detail-item">
-                            <a href="{{ asset('storage/'.$contractPath) }}" target="_blank" rel="noopener">View contract {{ $contractIndex + 1 }}</a>
+                            <div class="contract-detail-meta">
+                                <strong>Contract {{ $contractIndex + 1 }}</strong>
+                                <span>{{ basename($contractPath) }}</span>
+                                @unless($contractExists)<small class="text-danger">File is no longer available.</small>@endunless
+                            </div>
+                            <div class="contract-detail-actions">
+                                @if($contractExists && $contractPreviewable)
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-contract-preview
+                                        data-preview-url="{{ route('admin.reservations.contract.preview', [$reservation, $contractIndex]) }}"
+                                        data-download-url="{{ route('admin.reservations.contract.download', [$reservation, $contractIndex]) }}"
+                                        data-filename="{{ basename($contractPath) }}"
+                                        aria-label="View Contract {{ $contractIndex + 1 }}">View</button>
+                                @elseif($contractExists)
+                                    <span class="text-muted small">Preview unavailable</span>
+                                @endif
+                                @if($contractExists)
+                                    <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.reservations.contract.download', [$reservation, $contractIndex]) }}">Download</a>
+                                @endif
                             <form method="POST" action="{{ route('admin.reservations.contract.delete', [$reservation, $contractIndex]) }}" data-confirm-message="Delete this contract image?">
                                 @csrf @method('DELETE')
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                             </form>
+                            </div>
                         </div>
                     @empty
                         <p class="text-muted small mb-0">No contract files uploaded yet.</p>
@@ -204,6 +225,23 @@
     </div>
 </div>
 
+<dialog class="contract-preview-dialog" id="contract-preview-dialog" aria-labelledby="contract-preview-title">
+    <div class="contract-preview-header">
+        <strong id="contract-preview-title">Contract preview</strong>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-contract-preview-close>Close</button>
+    </div>
+    <div class="contract-preview-body">
+        <img id="contract-preview-image" alt="" hidden>
+        <div id="contract-preview-error" class="alert alert-warning mb-0" hidden>
+            This image could not be previewed. <a id="contract-preview-fallback-download" href="#">Download the contract</a> instead.
+        </div>
+    </div>
+    <div class="contract-preview-footer">
+        <a id="contract-preview-download" class="btn btn-sm luxury-btn" href="#">Download</a>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-contract-preview-close>Close</button>
+    </div>
+</dialog>
+
 <style>
     .detail-list { display: grid; gap: .65rem; margin: 0; }
     .detail-list > div { display: flex; flex-wrap: wrap; gap: .35rem .75rem; }
@@ -233,8 +271,26 @@
 
     .contract-detail-list { display: grid; gap: .5rem; }
     .contract-detail-item { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 8px; }
-    .contract-detail-item a { color: var(--teal-dark); font-size: .8rem; font-weight: 700; text-decoration: none; }
+    .contract-detail-meta { display: grid; gap: .12rem; min-width: 0; font-size: .8rem; }
+    .contract-detail-meta span { color: var(--muted); overflow-wrap: anywhere; font-size: .72rem; }
+    .contract-detail-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .4rem; }
     .contract-detail-item form { margin: 0; }
+    .contract-preview-dialog { width: min(1100px, calc(100vw - 2rem)); max-width: none; max-height: calc(100dvh - 2rem); padding: 0; overflow: hidden; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+    .contract-preview-dialog::backdrop { background: rgba(16, 20, 24, .72); }
+    .contract-preview-header, .contract-preview-footer { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem 1rem; background: var(--surface); }
+    .contract-preview-header { border-bottom: 1px solid var(--line); }
+    .contract-preview-footer { justify-content: flex-end; border-top: 1px solid var(--line); }
+    .contract-preview-body { display: grid; place-items: center; min-height: 160px; max-height: calc(100dvh - 9rem); overflow: auto; padding: .75rem; }
+    .contract-preview-body img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100dvh - 11rem); object-fit: contain; }
+    .contract-preview-body img[hidden], #contract-preview-error[hidden] { display: none; }
+    @media(max-width:575px) {
+        .contract-detail-item { align-items: flex-start; flex-direction: column; }
+        .contract-detail-actions { justify-content: flex-start; }
+        .contract-preview-dialog { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); }
+        .contract-preview-header, .contract-preview-footer { padding: .65rem .75rem; }
+        .contract-preview-body { max-height: calc(100dvh - 8rem); padding: .5rem; }
+        .contract-preview-body img { max-height: calc(100dvh - 10rem); }
+    }
 
     .summary-grid--compact { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); margin-bottom: 0; }
     .summary-item--warn { border-left: 4px solid #d49b28; }
@@ -243,4 +299,54 @@
     .activity-entry:first-child { border-top: 0; padding-top: 0; }
     .activity-entry-meta { margin-bottom: .2rem; color: var(--muted); font-size: .7rem; }
 </style>
+<script>
+(() => {
+    const dialog = document.getElementById('contract-preview-dialog');
+    const image = document.getElementById('contract-preview-image');
+    const title = document.getElementById('contract-preview-title');
+    const download = document.getElementById('contract-preview-download');
+    const error = document.getElementById('contract-preview-error');
+    const fallbackDownload = document.getElementById('contract-preview-fallback-download');
+
+    if (!dialog || !image || !title || !download || !error || !fallbackDownload) return;
+
+    document.querySelectorAll('[data-contract-preview]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const previewUrl = button.dataset.previewUrl;
+            const downloadUrl = button.dataset.downloadUrl;
+            const filename = button.dataset.filename;
+            if (!previewUrl || !downloadUrl || !filename) return;
+
+            title.textContent = filename;
+            download.href = downloadUrl;
+            fallbackDownload.href = downloadUrl;
+            image.alt = filename;
+            image.hidden = true;
+            error.hidden = true;
+            image.src = previewUrl;
+            dialog.showModal();
+        });
+    });
+
+    image.addEventListener('load', () => {
+        image.hidden = false;
+        error.hidden = true;
+    });
+    image.addEventListener('error', () => {
+        image.hidden = true;
+        error.hidden = false;
+    });
+    document.querySelectorAll('[data-contract-preview-close]').forEach((button) => {
+        button.addEventListener('click', () => dialog.close());
+    });
+    dialog.addEventListener('close', () => {
+        image.removeAttribute('src');
+        image.hidden = true;
+        error.hidden = true;
+    });
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+    });
+})();
+</script>
 @endsection
