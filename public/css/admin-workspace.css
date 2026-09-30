@@ -167,6 +167,19 @@ body { --bs-body-color: var(--ink); --bs-heading-color: var(--ink); --bs-seconda
 .page-header > a.btn, .page-header > .badge-soft, .page-actions { flex: 0 0 auto; }
 .page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .back-link { display: inline-block; margin-bottom: .4rem; color: var(--teal-dark); font-size: .8rem; font-weight: 700; text-decoration: none; }
+.admin-pagination { display: flex; flex-direction: column; align-items: center; gap: .55rem; width: 100%; margin-top: 1rem; }
+.admin-pagination nav { max-width: 100%; }
+.admin-pagination .pagination { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .15rem; }
+.admin-pagination .page-link { display: inline-flex; min-width: 2rem; min-height: 2rem; align-items: center; justify-content: center; padding: .3rem .5rem; border-color: var(--line); border-radius: 6px !important; background: var(--surface); color: var(--teal-dark); font-size: .8rem; line-height: 1.1; text-decoration: none; }
+.admin-pagination .page-link:hover { border-color: var(--teal); background: var(--mint); color: var(--teal-dark); }
+.admin-pagination .page-item.active .page-link { border-color: var(--teal); background: var(--teal); color: #fff; }
+.admin-pagination .page-item.disabled .page-link { background: var(--surface); color: var(--muted); opacity: .55; }
+.admin-pagination .page-link:focus-visible { outline: 3px solid rgba(13, 139, 131, .28); outline-offset: 2px; }
+.admin-pagination-range { text-align: center; }
+body.dark-mode .admin-pagination .page-link { border-color: var(--line); background: var(--surface); color: #75d8cf; }
+body.dark-mode .admin-pagination .page-link:hover { border-color: var(--teal); background: #203f40; color: #a4e2d9; }
+body.dark-mode .admin-pagination .page-item.active .page-link { border-color: var(--teal); background: var(--teal); color: #fff; }
+body.dark-mode .admin-pagination .page-item.disabled .page-link { color: var(--muted); }
 
 .card, .stat-card {
     border: 1px solid var(--line);
@@ -411,6 +424,7 @@ body.dark-mode .status-badge--cancelled, body.dark-mode .status-select--cancelle
     .filter-field--wide { grid-column: 1 / -1; }
     .table { font-size: .82rem; }
     .reservation-mobile-card { border-color: var(--line); border-radius: var(--radius); background: var(--surface); }
+    .admin-pagination-page:not(.admin-pagination-page--mobile) { display: none; }
     dialog { width: calc(100vw - 1.25rem) !important; max-height: calc(100dvh - 1.5rem); overflow-y: auto; padding: 1rem !important; }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -83,23 +83,12 @@
             </tbody>
         </table>
     </div>
-    @if($logs->hasPages())
-        <div class="activity-pagination mt-4">
-            {{ $logs->links('pagination::bootstrap-5') }}
-        </div>
-    @endif
+    @include('admin.partials.pagination', ['paginator' => $logs, 'resultLabel' => 'results', 'ariaLabel' => 'Activity log pagination'])
     </div>
 </div>
 
 <style>
 .actor-avatar{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--mint);color:var(--teal-dark);font-size:.78rem;font-weight:800}
 .method-label{display:inline-block;padding:.2rem .42rem;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:.63rem;font-weight:800;letter-spacing:.06em}
-.activity-pagination{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.7rem;width:100%}
-.activity-pagination .pagination{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:.15rem;margin:0;width:100%}
-.activity-pagination .page-link{display:inline-flex;min-width:2rem;min-height:2rem;align-items:center;justify-content:center;padding:.3rem .5rem;border-color:var(--line);border-radius:6px!important;color:var(--teal-dark);font-size:.75rem;line-height:1.1}
-.activity-pagination .page-item:first-child .page-link,.activity-pagination .page-item:last-child .page-link{min-width:0;padding-inline:.55rem}
-.activity-pagination .page-item.active .page-link{border-color:var(--teal);background:var(--teal);color:#fff}
-body.dark-mode .activity-pagination .page-link{border-color:var(--line);background:var(--surface);color:#75d8cf}
-body.dark-mode .activity-pagination .page-item.active .page-link{border-color:var(--teal);background:var(--teal);color:#fff}
 </style>
 @endsection

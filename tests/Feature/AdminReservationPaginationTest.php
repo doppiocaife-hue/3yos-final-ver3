@@ -40,7 +40,7 @@ class AdminReservationPaginationTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('17 matching reservations');
-        $response->assertSeeText('Showing 1–10 of 17 reservations');
+        $response->assertSeeText('Showing 1 to 10 of 17 results');
         $response->assertViewHas('reservations', fn ($reservations) => $reservations->count() === 10
             && $reservations->total() === 17
             && $reservations->currentPage() === 1);
@@ -49,7 +49,7 @@ class AdminReservationPaginationTest extends TestCase
         $secondPage = $this->get(route('admin.reservations', ['status' => 'pending', 'page' => 2]));
 
         $secondPage->assertOk();
-        $secondPage->assertSeeText('Showing 11–17 of 17 reservations');
+        $secondPage->assertSeeText('Showing 11 to 17 of 17 results');
         $secondPage->assertViewHas('reservations', fn ($reservations) => $reservations->count() === 7
             && $reservations->total() === 17
             && $reservations->currentPage() === 2);
@@ -69,6 +69,44 @@ class AdminReservationPaginationTest extends TestCase
         ])->get(route('admin.reservations', ['status' => 'pending', 'page' => 3]));
 
         $response->assertRedirect(route('admin.reservations', ['status' => 'pending', 'page' => 2]));
+    }
+
+    public function test_large_result_sets_show_first_and_last_pages_with_ellipsis(): void
+    {
+        foreach (range(1, 176) as $number) {
+            $this->createReservation($number);
+        }
+
+        $response = $this->withSession([
+            'is_admin' => true,
+            'admin_role' => 'full',
+        ])->get(route('admin.reservations'));
+
+        $response->assertOk();
+        $response->assertSeeText('Showing 1 to 10 of 176 results');
+        $response->assertSee('href="'.route('admin.reservations', ['page' => 10]).'"', false);
+        $response->assertSee('href="'.route('admin.reservations', ['page' => 17]).'"', false);
+        $response->assertSee('href="'.route('admin.reservations', ['page' => 18]).'"', false);
+        $response->assertSee('aria-disabled="true" aria-label="Previous page"', false);
+        $response->assertSee('aria-label="Next page"', false);
+        $response->assertViewHas('reservations', fn ($reservations) => $reservations->count() === 10
+            && $reservations->total() === 176
+            && $reservations->lastPage() === 18);
+
+        $middlePage = $this->get(route('admin.reservations', ['page' => 11]));
+
+        $middlePage->assertOk();
+        $middlePage->assertSeeText('Showing 101 to 110 of 176 results');
+        $middlePage->assertSee('href="'.route('admin.reservations', ['page' => 1]).'"', false);
+        $middlePage->assertSee('href="'.route('admin.reservations', ['page' => 7]).'"', false);
+
+        $lastPage = $this->get(route('admin.reservations', ['page' => 18]));
+
+        $lastPage->assertOk();
+        $lastPage->assertSeeText('Showing 171 to 176 of 176 results');
+        $lastPage->assertSee('aria-disabled="true" aria-label="Next page"', false);
+        $lastPage->assertViewHas('reservations', fn ($reservations) => $reservations->count() === 6
+            && $reservations->currentPage() === 18);
     }
 
     private function createReservation(int $number, string $status = 'pending'): Reservation

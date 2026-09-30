@@ -19,9 +19,7 @@ class ActivityLogFilteringTest extends TestCase
             'activity_date' => '2026-09-24',
             'activity_time' => '09:15:00',
             'description' => 'Created a new backup export for the event schedule.',
-            'created_at' => '2026-09-24 09:15:00',
-            'updated_at' => '2026-09-24 09:15:00',
-        ]);
+        ])->forceFill(['created_at' => '2026-09-24 09:15:00'])->save();
 
         ActivityLog::create([
             'actor_name' => 'Jan Cruz',
@@ -31,9 +29,7 @@ class ActivityLogFilteringTest extends TestCase
             'activity_date' => '2026-09-25',
             'activity_time' => '10:00:00',
             'description' => 'Updated reservation details.',
-            'created_at' => '2026-09-25 10:00:00',
-            'updated_at' => '2026-09-25 10:00:00',
-        ]);
+        ])->forceFill(['created_at' => '2026-09-25 10:00:00'])->save();
 
         ActivityLog::create([
             'actor_name' => 'Mario Sison',
@@ -43,9 +39,7 @@ class ActivityLogFilteringTest extends TestCase
             'activity_date' => '2026-09-24',
             'activity_time' => '11:00:00',
             'description' => 'Created a reservation backup import.',
-            'created_at' => '2026-09-24 11:00:00',
-            'updated_at' => '2026-09-24 11:00:00',
-        ]);
+        ])->forceFill(['created_at' => '2026-09-24 11:00:00'])->save();
 
         $response = $this->withSession([
             'is_admin' => true,
@@ -99,6 +93,8 @@ class ActivityLogFilteringTest extends TestCase
         $response->assertOk();
         $response->assertDontSee('Entries per page');
         $response->assertDontSee('name="per_page"');
+        $response->assertSee('admin-pagination');
+        $response->assertSeeText('Showing 1 to 10 of 11 results');
         $response->assertViewHas('logs', function ($logs) {
             return $logs->count() === 10
                 && $logs->total() === 11
