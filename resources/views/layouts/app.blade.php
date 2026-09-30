@@ -47,6 +47,7 @@
         .footer-contact-icon{display:grid;place-items:center;flex:0 0 26px;width:26px;height:26px;border:1px solid rgba(231,183,122,.45);border-radius:50%;color:#e7b77a;font-size:.68rem;font-weight:800}
         .footer-contact small{display:block;color:#c8bdb3;font-size:.7rem;letter-spacing:.04em;text-transform:uppercase}
         .footer-contact a,.footer-contact div>span{font-size:.88rem}
+        .footer-contact a{display:inline-block;padding:.2rem 0;overflow-wrap:anywhere}
         .footer-facebook{display:inline-flex;align-items:center;gap:.5rem;padding:.48rem .85rem;border:1px solid rgba(231,183,122,.6);color:#fff8ef!important;font-size:.82rem;font-weight:700;transition:.2s ease;border-radius:999px}
         .footer-facebook:hover{background:#b66545;border-color:#b66545;color:#fff!important;transform:translateY(-2px)}
         body.dark-mode{--ink:#f5f1e9;--muted:#c9c3b9;--cream:#151515;--paper:#201f1d;--line:#575148;--wine:#e6ad92;--terracotta:#edb18f;--gold:#e7bd72;background:var(--cream);color:var(--ink)}
@@ -117,7 +118,7 @@
                     <div class="footer-title">3YOS Catering</div>
                     <p class="text-white-50 small mt-2 mb-0">Thoughtful food, graceful styling, and dependable service for celebrations that deserve to feel effortless.</p>
                 </div>
-                <div class="col-6 col-md-3 col-lg-2">
+                <div class="col-12 col-sm-6 col-md-3 col-lg-2">
                     <div class="footer-heading mb-2">Explore</div>
                     <div class="footer-links">
                         <a href="{{ route('home') }}">Home</a>
@@ -126,13 +127,27 @@
                         <a href="{{ route('reservation') }}">Book now</a>
                     </div>
                 </div>
-                <div class="col-6 col-md-4 col-lg-3">
+                <div class="col-12 col-sm-6 col-md-4 col-lg-3">
                     <div class="footer-heading mb-2">Get in touch</div>
                     <div class="footer-contact">
                         <span class="footer-contact-icon">AD</span>
                         <div>
                             <small>Address</small>
                             <span>Marikina City, Metro Manila</span>
+                        </div>
+                    </div>
+                    <div class="footer-contact">
+                        <span class="footer-contact-icon">PH</span>
+                        <div>
+                            <small>Phone</small>
+                            <a href="tel:+639982422719">0998 242 2719</a>
+                        </div>
+                    </div>
+                    <div class="footer-contact">
+                        <span class="footer-contact-icon">EM</span>
+                        <div>
+                            <small>Email</small>
+                            <a href="mailto:3yoscatering@gmail.com">3yoscatering@gmail.com</a>
                         </div>
                     </div>
                     <div class="footer-contact">
