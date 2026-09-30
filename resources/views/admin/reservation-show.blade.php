@@ -106,33 +106,66 @@
                 </details>
 
                 <div class="reservation-schedule-group">
-                    <h3 class="reservation-subheading">Schedule</h3>
+                    <h3 class="reservation-subheading">Edit confirmed reservation</h3>
                     @if($reservation->status === 'confirmed')
-                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Update this reservation's schedule and package?">
+                        <p class="text-muted small">Update this existing reservation after the client meeting. Its status, payment history, receipts, and contract files are preserved. Package or guest count changes refresh the estimate; update the contract price separately if agreed.</p>
+                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Save changes to this confirmed reservation?">
                             @csrf @method('PATCH')
                             <input type="hidden" name="status" value="confirmed">
+                            <div class="mb-2">
+                                <label class="form-label" for="schedule-event-type">Event type</label>
+                                <select id="schedule-event-type" name="event_type" class="form-select form-select-sm" required>
+                                    @foreach(['Wedding', 'Birthday', 'Debut', 'Anniversary', 'Corporate Event', 'Baptism', 'Graduation', 'Other'] as $eventType)
+                                        <option value="{{ $eventType }}" @selected(old('event_type', $reservation->event_type) === $eventType)>{{ $eventType }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
                             <div class="mb-2">
                                 <label class="form-label" for="schedule-package">Package</label>
                                 <select id="schedule-package" name="package_id" class="form-select form-select-sm">
                                     @foreach($packages as $package)
-                                        <option value="{{ $package->id }}" @selected($reservation->package_id === $package->id)>{{ $package->name }}</option>
+                                        <option value="{{ $package->id }}" @selected((int) old('package_id', $reservation->package_id) === $package->id)>{{ $package->name }}</option>
                                     @endforeach
                                 </select>
                             </div>
                             <div class="row g-2 mb-2">
-                                <div class="col-6">
+                                <div class="col-sm-6">
                                     <label class="form-label" for="schedule-date">Date</label>
-                                    <input id="schedule-date" type="date" name="event_date" value="{{ $reservation->event_date }}" class="form-control form-control-sm" required>
+                                    <input id="schedule-date" type="date" name="event_date" value="{{ old('event_date', $reservation->event_date) }}" class="form-control form-control-sm" required>
                                 </div>
-                                <div class="col-6">
+                                <div class="col-sm-6">
                                     <label class="form-label" for="schedule-time">Time</label>
-                                    <input id="schedule-time" type="time" name="event_time" value="{{ $reservation->event_time }}" class="form-control form-control-sm" required>
+                                    <input id="schedule-time" type="time" name="event_time" value="{{ old('event_time', \Carbon\Carbon::parse($reservation->event_time)->format('H:i')) }}" class="form-control form-control-sm" required>
                                 </div>
                             </div>
-                            <button class="btn btn-sm luxury-btn" type="submit">Save schedule</button>
+                            <div class="mb-2">
+                                <label class="form-label" for="schedule-venue">Venue</label>
+                                <input id="schedule-venue" type="text" name="venue" value="{{ old('venue', $reservation->venue) }}" class="form-control form-control-sm" minlength="3" maxlength="255" required>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label" for="schedule-guests">Guest count</label>
+                                <input id="schedule-guests" type="number" name="guest_count" value="{{ old('guest_count', $reservation->guest_count) }}" class="form-control form-control-sm" min="1" max="1000" required>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label" for="schedule-services">Additional services</label>
+                                <textarea id="schedule-services" name="additional_services" class="form-control form-control-sm" rows="2" maxlength="1000">{{ old('additional_services', $reservation->additional_services) }}</textarea>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label" for="schedule-special-requests">Special requests</label>
+                                <textarea id="schedule-special-requests" name="special_requests" class="form-control form-control-sm" rows="2" maxlength="1000">{{ old('special_requests', $reservation->special_requests) }}</textarea>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label" for="schedule-additional-notes">Event notes</label>
+                                <textarea id="schedule-additional-notes" name="additional_notes" class="form-control form-control-sm" rows="2" maxlength="1000">{{ old('additional_notes', $reservation->additional_notes) }}</textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="schedule-reason">Reason for change <span class="text-muted fw-normal">(optional)</span></label>
+                                <textarea id="schedule-reason" name="reason" class="form-control form-control-sm" rows="2" maxlength="1000" placeholder="Client meeting, final event details, etc.">{{ old('reason') }}</textarea>
+                            </div>
+                            <button class="btn btn-sm luxury-btn" type="submit">Save changes</button>
                         </form>
                     @else
-                        <p class="text-muted small mb-0">Schedule and package can be edited once this reservation is accepted.</p>
+                        <p class="text-muted small mb-0">Event details can be edited once this reservation is accepted.</p>
                     @endif
                 </div>
             </section>
@@ -215,7 +248,7 @@
                 @forelse($activity as $entry)
                     <div class="activity-entry">
                         <div class="activity-entry-meta"><strong>{{ $entry->actor_name ?? 'Unknown administrator' }}</strong> &middot; {{ \Carbon\Carbon::parse($entry->activity_date.' '.$entry->activity_time)->format('M j, Y g:i A') }}</div>
-                        <p class="mb-0">{{ $entry->description }}</p>
+                        <p class="mb-0 activity-entry-description">{{ $entry->description }}</p>
                     </div>
                 @empty
                     <p class="text-muted small mb-0">No recorded activity for this reservation yet.</p>
@@ -298,6 +331,7 @@
     .activity-entry { padding: .65rem 0; border-top: 1px solid var(--line); font-size: .82rem; }
     .activity-entry:first-child { border-top: 0; padding-top: 0; }
     .activity-entry-meta { margin-bottom: .2rem; color: var(--muted); font-size: .7rem; }
+    .activity-entry-description { white-space: pre-line; overflow-wrap: anywhere; }
 </style>
 <script>
 (() => {

@@ -12,8 +12,15 @@ class CaptureActivity
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
+        $reservationDetailFields = [
+            'event_type', 'event_date', 'event_time', 'package_id', 'venue',
+            'guest_count', 'additional_services', 'special_requests', 'additional_notes',
+        ];
+        $isReservationDetailUpdate = $request->routeIs('admin.reservations.status')
+            && $request->hasAny($reservationDetailFields)
+            && ! $request->hasAny(['payment_status', 'payment_type', 'amount_paid', 'total_cost', 'admin_notes']);
 
-        if (($request->is('admin/*') || $request->is('admin')) && $request->session()->get('is_admin') && ! $request->isMethod('GET')) {
+        if (($request->is('admin/*') || $request->is('admin')) && $request->session()->get('is_admin') && ! $request->isMethod('GET') && ! $isReservationDetailUpdate) {
             ActivityLog::create([
                 'user_id' => $request->session()->get('admin_user_id'),
                 'actor_name' => $request->session()->get('admin_name', 'Unknown administrator'),

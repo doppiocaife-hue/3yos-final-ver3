@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mail\InquiryReplyMail;
 use App\Mail\ReservationAcceptedMail;
 use App\Mail\ReservationCancelledMail;
+use App\Mail\ReservationUpdatedMail;
 use App\Models\ActivityLog;
 use App\Models\Inquiry;
 use App\Models\Package;
@@ -436,16 +437,29 @@ class AdminController extends Controller
             'payment_type' => ['sometimes', 'nullable', 'in:Unpaid,Downpayment,Partial Payment,Final Payment,Full Payment'],
             'total_cost' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'amount_paid' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'event_type' => ['sometimes', 'required', 'string', 'max:100'],
             'event_date' => ['sometimes', 'required', 'date'],
-            'event_time' => ['sometimes', 'required', 'string', 'max:20'],
+            'event_time' => ['sometimes', 'required', 'date_format:H:i'],
             'package_id' => ['sometimes', 'required', 'exists:packages,id'],
+            'venue' => ['sometimes', 'required', 'string', 'min:3', 'max:255'],
+            'guest_count' => ['sometimes', 'required', 'integer', 'min:1', 'max:1000'],
+            'additional_services' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'special_requests' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'additional_notes' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'reason' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'admin_notes' => ['sometimes', 'nullable', 'string', 'max:5000'],
         ]);
 
-        $hasScheduleUpdate = $request->has('event_date') || $request->has('event_time') || $request->has('package_id');
-        if ($hasScheduleUpdate && $reservation->status !== 'confirmed') {
-            return back()->withInput()->withErrors(['schedule' => 'Only accepted reservations can have their schedule or package edited.']);
+        $detailFields = [
+            'event_type', 'event_date', 'event_time', 'package_id', 'venue',
+            'guest_count', 'additional_services', 'special_requests', 'additional_notes',
+        ];
+        $hasDetailUpdate = $request->hasAny($detailFields);
+        if ($hasDetailUpdate && $reservation->status !== 'confirmed') {
+            return back()->withInput()->withErrors(['schedule' => 'Only accepted reservations can have event details edited.']);
         }
+        $reason = trim((string) ($data['reason'] ?? ''));
+        unset($data['reason']);
 
         $hasPaymentUpdate = $request->has('amount_paid') || $request->has('payment_type') || $request->has('payment_status');
         $hasTotalCostUpdate = $request->has('total_cost');
@@ -462,21 +476,31 @@ class AdminController extends Controller
         unset($data['payment_status'], $data['payment_type'], $data['amount_paid']);
 
         $statusTransition = null;
+        $reservationChanges = [];
+        $detailsChanged = false;
 
-        DB::transaction(function () use ($request, $reservation, $data, $requestedPaid, &$statusTransition): void {
-            // Lock the row so a concurrent save can't race past this status comparison.
-            $originalStatus = Reservation::whereKey($reservation->id)->lockForUpdate()->value('status');
+        DB::transaction(function () use ($request, $reservation, $data, $requestedPaid, $reason, $detailFields, $hasDetailUpdate, &$statusTransition, &$reservationChanges, &$detailsChanged): void {
+            $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
+            $originalStatus = $reservation->status;
+            $oldPackage = $reservation->package;
+            $oldPackageName = $oldPackage?->name ?? 'Custom package';
 
-            if (array_key_exists('status', $data) && $data['status'] === 'confirmed') {
-                $eventDate = $data['event_date'] ?? $reservation->event_date;
-                $acceptedCount = Reservation::whereDate('event_date', $eventDate)
+            $targetStatus = $data['status'] ?? $originalStatus;
+            $targetEventDate = $data['event_date'] ?? $reservation->event_date;
+            $scheduleDateChanged = isset($data['event_date'])
+                && Carbon::parse($data['event_date'])->toDateString() !== Carbon::parse($reservation->event_date)->toDateString();
+            if ($targetStatus === 'confirmed' && ($originalStatus !== 'confirmed' || $scheduleDateChanged || $hasDetailUpdate)) {
+                $acceptedCount = Reservation::whereDate('event_date', $targetEventDate)
                     ->where('status', 'confirmed')
                     ->where('id', '!=', $reservation->id)
                     ->count();
 
                 if ($acceptedCount >= Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) {
+                    $message = $originalStatus === 'confirmed'
+                        ? 'Unable to save this schedule because the selected date already has '.Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE.' accepted reservations.'
+                        : 'Maximum accepted bookings for this date has been reached. Only '.Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE.' accepted bookings are allowed per day.';
                     throw ValidationException::withMessages([
-                        'status' => 'Maximum accepted bookings for this date has been reached. Only '.Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE.' accepted bookings are allowed per day.',
+                        ($originalStatus === 'confirmed' ? 'event_date' : 'status') => $message,
                     ]);
                 }
             }
@@ -497,10 +521,95 @@ class AdminController extends Controller
                 ]);
             }
 
+            $before = [
+                'event_type' => $reservation->event_type,
+                'event_date' => $reservation->event_date,
+                'event_time' => $reservation->event_time,
+                'venue' => $reservation->venue,
+                'guest_count' => $reservation->guest_count,
+                'package_id' => $reservation->package_id,
+                'additional_services' => $reservation->additional_services,
+                'special_requests' => $reservation->special_requests,
+                'additional_notes' => $reservation->additional_notes,
+            ];
+            $trackedUpdates = array_intersect_key($data, array_flip($detailFields));
+            $normalizedChanges = [];
+            foreach ($trackedUpdates as $field => $value) {
+                $oldValue = $before[$field] ?? null;
+                $normalizedOld = $this->normalizeReservationDetail($field, $oldValue);
+                $normalizedNew = $this->normalizeReservationDetail($field, $value);
+                if ($normalizedOld !== $normalizedNew) {
+                    $normalizedChanges[$field] = ['before' => $oldValue, 'after' => $value];
+                }
+            }
+
+            if (isset($normalizedChanges['package_id']) || isset($normalizedChanges['guest_count'])) {
+                $updatedPackageId = (int) ($data['package_id'] ?? $reservation->package_id);
+                $updatedGuestCount = (int) ($data['guest_count'] ?? $reservation->guest_count);
+                $updatedPackage = Package::findOrFail($updatedPackageId);
+                $updatedEstimatedBudget = $updatedPackage->estimatedTotalFor($updatedGuestCount);
+                if (Reservation::toCents($updatedEstimatedBudget) !== Reservation::toCents($reservation->estimated_budget)) {
+                    $normalizedChanges['estimated_budget'] = [
+                        'before' => $reservation->estimated_budget,
+                        'after' => $updatedEstimatedBudget,
+                    ];
+                    $data['estimated_budget'] = $updatedEstimatedBudget;
+                }
+            }
+
             $reservation->update($data);
 
             if (array_key_exists('status', $data) && $data['status'] !== $originalStatus && in_array($data['status'], ['confirmed', 'cancelled'], true)) {
                 $statusTransition = $data['status'];
+            }
+
+            if ($normalizedChanges !== []) {
+                $newPackageName = Package::find($reservation->package_id)?->name ?? 'Custom package';
+                $labels = [
+                    'event_type' => 'Event type',
+                    'event_date' => 'Date',
+                    'event_time' => 'Time',
+                    'venue' => 'Venue',
+                    'guest_count' => 'Guest count',
+                    'package_id' => 'Package',
+                    'additional_services' => 'Additional services',
+                    'special_requests' => 'Special requests',
+                    'additional_notes' => 'Additional notes',
+                    'estimated_budget' => 'Estimated package total',
+                ];
+                foreach ($normalizedChanges as $field => $change) {
+                    $oldPackageValue = $field === 'package_id' ? $oldPackageName : null;
+                    $newPackageValue = $field === 'package_id' ? $newPackageName : null;
+                    $reservationChanges[] = [
+                        'label' => $labels[$field],
+                        'before' => $this->formatReservationDetail($field, $change['before'], $oldPackageValue),
+                        'after' => $this->formatReservationDetail($field, $change['after'], $newPackageValue),
+                    ];
+                }
+
+                $descriptionLines = array_map(
+                    fn (array $change) => $change['label'].': '.$change['before'].' → '.$change['after'],
+                    $reservationChanges,
+                );
+                $reservationLabel = $reservation->reservation_code ?: '#'.$reservation->id;
+                $description = 'Updated reservation #'.$reservation->id.' ('.$reservationLabel."):\n".implode("\n", $descriptionLines);
+                if ($reason !== '') {
+                    $description .= "\nReason: ".$reason;
+                }
+
+                ActivityLog::create([
+                    'user_id' => $request->hasSession() ? $request->session()->get('admin_user_id') : null,
+                    'actor_name' => $request->hasSession() ? $request->session()->get('admin_name', 'Unknown administrator') : 'Unknown administrator',
+                    'actor_email' => $request->hasSession() ? $request->session()->get('admin_email') : null,
+                    'actor_role' => $request->hasSession() ? $request->session()->get('admin_role', 'limited') : 'limited',
+                    'action' => 'Updated reservation details',
+                    'method' => $request->method(),
+                    'ip_address' => $request->ip(),
+                    'activity_date' => now()->toDateString(),
+                    'activity_time' => now()->toTimeString(),
+                    'description' => $description,
+                ]);
+                $detailsChanged = true;
             }
 
             // Older forms post a running total; record the increase as a payment history entry.
@@ -525,7 +634,83 @@ class AdminController extends Controller
             return back()->with('success', $this->sendStatusNotification($reservation, $statusTransition));
         }
 
+        if ($detailsChanged) {
+            return back()->with('success', $this->sendReservationUpdatedNotification($reservation->fresh('package')));
+        }
+
         return back()->with('success', 'Reservation saved successfully.');
+    }
+
+    private function normalizeReservationDetail(string $field, mixed $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return match ($field) {
+            'event_date' => Carbon::parse($value)->toDateString(),
+            'event_time' => Carbon::parse($value)->format('H:i'),
+            'guest_count', 'package_id' => (int) $value,
+            default => trim((string) $value) === '' ? null : trim((string) $value),
+        };
+    }
+
+    private function formatReservationDetail(string $field, mixed $value, ?string $packageName = null): string
+    {
+        if ($field === 'package_id') {
+            return $packageName ?? 'Custom package';
+        }
+        if ($value === null || $value === '') {
+            return '—';
+        }
+
+        return match ($field) {
+            'event_date' => Carbon::parse($value)->format('F j, Y'),
+            'event_time' => Carbon::parse($value)->format('g:i A'),
+            'guest_count' => number_format((int) $value),
+            'estimated_budget' => '₱'.number_format((float) $value, 2),
+            default => (string) $value,
+        };
+    }
+
+    private function sendReservationUpdatedNotification(Reservation $reservation): string
+    {
+        $message = 'Reservation updated.';
+        if (! $reservation->email) {
+            ReservationStatusNotification::create([
+                'reservation_id' => $reservation->id,
+                'recipient_email' => '',
+                'notification_type' => 'updated',
+                'status' => 'failed',
+                'error_message' => 'Reservation has no email address on file.',
+            ]);
+
+            return $message.' The client could not be notified because there is no email address on file.';
+        }
+
+        try {
+            Mail::to($reservation->email, $reservation->full_name)->send(new ReservationUpdatedMail($reservation));
+            ReservationStatusNotification::create([
+                'reservation_id' => $reservation->id,
+                'recipient_email' => $reservation->email,
+                'notification_type' => 'updated',
+                'status' => 'sent',
+                'sent_at' => now(),
+            ]);
+
+            return $message.' An update notification was sent to the client.';
+        } catch (\Throwable $exception) {
+            report($exception);
+            ReservationStatusNotification::create([
+                'reservation_id' => $reservation->id,
+                'recipient_email' => $reservation->email,
+                'notification_type' => 'updated',
+                'status' => 'failed',
+                'error_message' => $exception->getMessage(),
+            ]);
+
+            return $message.' The update notification email could not be sent.';
+        }
     }
 
     /**

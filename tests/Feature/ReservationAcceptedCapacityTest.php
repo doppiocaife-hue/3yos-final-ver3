@@ -92,10 +92,16 @@ class ReservationAcceptedCapacityTest extends TestCase
         $this->reservation(['status' => 'confirmed']);
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $second), ['status' => 'confirmed'])
+            ->patch(route('admin.reservations.status', $second), [
+                'status' => 'confirmed',
+                'event_date' => $second->event_date,
+                'event_time' => '19:30',
+                'venue' => 'Updated accepted venue',
+            ])
             ->assertSessionHasNoErrors();
 
         $this->assertSame('confirmed', $second->fresh()->status);
+        $this->assertSame('Updated accepted venue', $second->fresh()->venue);
         $this->assertSame(4, Reservation::whereDate('event_date', self::DATE)->where('status', 'confirmed')->count());
     }
 

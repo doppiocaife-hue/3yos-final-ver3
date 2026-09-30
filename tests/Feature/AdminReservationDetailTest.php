@@ -3,7 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\Package;
+use App\Models\ActivityLog;
 use App\Models\Reservation;
+use App\Models\ReservationPayment;
+use App\Models\ReservationStatusNotification;
+use App\Mail\ReservationUpdatedMail;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -217,5 +221,191 @@ class AdminReservationDetailTest extends TestCase
 
         $response->assertSessionHasErrors('event_date');
         $this->assertDatabaseMissing('reservations', ['email' => 'overflow@example.com']);
+    }
+
+    public function test_admin_can_update_confirmed_reservation_in_place_and_audit_only_changed_fields(): void
+    {
+        Mail::fake();
+        $reservation = $this->reservation([
+            'status' => 'confirmed',
+            'additional_services' => 'Buffet setup',
+            'special_requests' => 'Vegetarian meals',
+            'additional_notes' => 'Keep the original note',
+            'total_cost' => 48000,
+            'service_contract' => 'service-contracts/existing-contract.png',
+        ]);
+        $payment = $reservation->payments()->create([
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'amount' => 1000,
+            'payment_method' => 'Cash',
+            'receipt_image_path' => 'payment-receipts/existing-receipt.png',
+        ]);
+        $newPackage = Package::create(['name' => 'Platinum', 'slug' => 'platinum-'.uniqid(), 'price' => 1200]);
+        $originalId = $reservation->id;
+        $newDate = now()->addMonths(2)->toDateString();
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), [
+                'status' => 'confirmed',
+                'event_type' => 'Wedding',
+                'event_date' => $newDate,
+                'event_time' => '19:30',
+                'venue' => 'Updated Garden Hall',
+                'guest_count' => 70,
+                'package_id' => $newPackage->id,
+                'additional_services' => 'Buffet and styling',
+                'special_requests' => 'Vegetarian meals',
+                'additional_notes' => 'Keep the original note',
+                'reason' => 'Client meeting - final event details',
+            ])
+            ->assertSessionHas('success', 'Reservation updated. An update notification was sent to the client.');
+
+        $updated = $reservation->fresh();
+        $this->assertSame($originalId, $updated->id);
+        $this->assertSame('confirmed', $updated->status);
+        $this->assertSame($newDate, $updated->event_date);
+        $this->assertSame('19:30', $updated->event_time);
+        $this->assertSame('Updated Garden Hall', $updated->venue);
+        $this->assertSame(70, $updated->guest_count);
+        $this->assertSame($newPackage->id, $updated->package_id);
+        $this->assertSame(84000.0, (float) $updated->estimated_budget);
+        $this->assertSame(48000.0, (float) $updated->total_cost);
+        $this->assertSame('service-contracts/existing-contract.png', $updated->service_contract);
+        $this->assertSame('Buffet and styling', $updated->additional_services);
+        $this->assertSame('Keep the original note', $updated->additional_notes);
+        $this->assertSame(1, Reservation::whereKey($originalId)->count());
+        $this->assertSame(1, ReservationPayment::whereKey($payment->id)->count());
+        $this->assertSame('payment-receipts/existing-receipt.png', $payment->fresh()->receipt_image_path);
+
+        $activity = ActivityLog::where('action', 'Updated reservation details')->latest('id')->firstOrFail();
+        $this->assertSame('Detail Tester', $activity->actor_name);
+        $this->assertStringContainsString('Date: '.now()->addMonth()->format('F j, Y').' → '.\Carbon\Carbon::parse($newDate)->format('F j, Y'), $activity->description);
+        $this->assertStringContainsString('Time: 6:00 PM → 7:30 PM', $activity->description);
+        $this->assertStringContainsString('Venue: Detail Hall → Updated Garden Hall', $activity->description);
+        $this->assertStringContainsString('Guest count: 60 → 70', $activity->description);
+        $this->assertStringContainsString('Package: Detail Package → Platinum', $activity->description);
+        $this->assertStringContainsString('Additional services: Buffet setup → Buffet and styling', $activity->description);
+        $this->assertStringContainsString('Reason: Client meeting - final event details', $activity->description);
+        $this->assertStringNotContainsString('Special requests:', $activity->description);
+        $this->assertStringNotContainsString('Additional notes:', $activity->description);
+        $this->assertSame(1, ActivityLog::where('action', 'Updated reservation details')->count());
+
+        Mail::assertSent(ReservationUpdatedMail::class, fn (ReservationUpdatedMail $mail) => $mail->hasTo($updated->email)
+            && str_contains($mail->render(), 'Your reservation has been updated.')
+            && str_contains($mail->render(), '7:30 PM'));
+        $this->assertDatabaseHas('reservation_status_notifications', [
+            'reservation_id' => $originalId,
+            'notification_type' => 'updated',
+            'status' => 'sent',
+        ]);
+    }
+
+    public function test_unchanged_confirmed_reservation_fields_do_not_create_an_audit_or_send_email(): void
+    {
+        Mail::fake();
+        $reservation = $this->reservation(['status' => 'confirmed']);
+        $fields = [
+            'status' => 'confirmed',
+            'event_type' => $reservation->event_type,
+            'event_date' => $reservation->event_date,
+            'event_time' => '18:00',
+            'venue' => $reservation->venue,
+            'guest_count' => $reservation->guest_count,
+            'package_id' => $reservation->package_id,
+            'additional_services' => $reservation->additional_services,
+            'special_requests' => $reservation->special_requests,
+            'additional_notes' => $reservation->additional_notes,
+        ];
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), $fields)
+            ->assertSessionHas('success', 'Reservation saved successfully.');
+
+        $this->assertSame(0, ActivityLog::where('action', 'Updated reservation details')->count());
+        Mail::assertNothingSent();
+        $this->assertSame('confirmed', $reservation->fresh()->status);
+    }
+
+    public function test_confirmed_reservation_date_change_respects_four_confirmed_per_day_capacity(): void
+    {
+        Mail::fake();
+        $reservation = $this->reservation(['status' => 'confirmed']);
+        $targetDate = now()->addMonths(3)->toDateString();
+        foreach (range(1, Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) as $number) {
+            $this->reservation(['status' => 'confirmed', 'event_date' => $targetDate]);
+        }
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), [
+                'status' => 'confirmed',
+                'event_date' => $targetDate,
+                'event_time' => '19:30',
+            ])
+            ->assertSessionHasErrors([
+                'event_date' => 'Unable to save this schedule because the selected date already has 4 accepted reservations.',
+            ]);
+
+        $this->assertSame('confirmed', $reservation->fresh()->status);
+        $this->assertNotSame($targetDate, $reservation->fresh()->event_date);
+        $this->assertSame(0, ActivityLog::where('action', 'Updated reservation details')->count());
+        Mail::assertNothingSent();
+    }
+
+    public function test_guest_cannot_edit_a_confirmed_reservation(): void
+    {
+        $reservation = $this->reservation(['status' => 'confirmed']);
+
+        $this->patch(route('admin.reservations.status', $reservation), [
+            'status' => 'confirmed',
+            'event_date' => now()->addMonths(2)->toDateString(),
+            'event_time' => '19:30',
+            'venue' => 'Unauthorized venue',
+        ])->assertRedirect(route('admin.login'));
+
+        $this->assertSame('Detail Hall', $reservation->fresh()->venue);
+    }
+
+    public function test_failed_update_email_does_not_undo_reservation_change(): void
+    {
+        Mail::shouldReceive('to')->andThrow(new \RuntimeException('SMTP connection refused'));
+        $reservation = $this->reservation(['status' => 'confirmed']);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), [
+                'status' => 'confirmed',
+                'event_time' => '19:30',
+            ])
+            ->assertSessionHas('success', 'Reservation updated. The update notification email could not be sent.');
+
+        $this->assertSame('19:30', $reservation->fresh()->event_time);
+        $this->assertDatabaseHas('reservation_status_notifications', [
+            'reservation_id' => $reservation->id,
+            'notification_type' => 'updated',
+            'status' => 'failed',
+            'error_message' => 'SMTP connection refused',
+        ]);
+        $this->assertDatabaseHas('activity_logs', [
+            'action' => 'Updated reservation details',
+            'actor_name' => 'Detail Tester',
+        ]);
+        $activity = ActivityLog::where('action', 'Updated reservation details')->firstOrFail();
+        $this->assertStringContainsString('Time: 6:00 PM → 7:30 PM', $activity->description);
+        $this->assertStringNotContainsString('Date:', $activity->description);
+        $this->assertStringNotContainsString('Venue:', $activity->description);
+    }
+
+    public function test_confirmed_schedule_edit_requires_a_valid_24_hour_time_value(): void
+    {
+        $reservation = $this->reservation(['status' => 'confirmed']);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), [
+                'status' => 'confirmed',
+                'event_time' => '7:30 PM',
+            ])
+            ->assertSessionHasErrors('event_time');
+
+        $this->assertSame('18:00', $reservation->fresh()->event_time);
     }
 }
