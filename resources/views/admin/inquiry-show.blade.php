@@ -1,12 +1,23 @@
 @extends('layouts.admin')
 
 @section('content')
+@php
+    $statusBadgeClass = match ($inquiry->status) {
+        'new' => 'status-badge--pending',
+        'in_progress' => 'status-badge--completed',
+        'responded' => 'status-badge--confirmed',
+        'closed' => 'status-badge--neutral',
+        default => 'status-badge--neutral',
+    };
+    $statusLabel = ucwords(str_replace('_', ' ', $inquiry->status));
+@endphp
 <div class="content-card p-4">
     <div class="page-header">
         <div>
             <a class="back-link" href="{{ route('admin.inquiries') }}">← Back to inquiries</a>
             <h1 class="fw-bold mb-1">{{ $inquiry->subject }}</h1>
-            <p class="text-muted mb-0">{{ $inquiry->category }} · received {{ $inquiry->created_at->format('M j, Y g:i A') }}</p>
+            <p class="text-muted mb-2">{{ $inquiry->category }} · received {{ $inquiry->created_at->format('M j, Y g:i A') }}</p>
+            <span class="status-badge {{ $statusBadgeClass }}">{{ $statusLabel }}</span>
         </div>
         <form method="POST" action="{{ route('admin.inquiries.destroy', $inquiry) }}" onsubmit="return confirm('Delete this inquiry? This cannot be undone.');">
             @csrf @method('DELETE')

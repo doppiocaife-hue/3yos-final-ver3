@@ -87,4 +87,27 @@ class InquiryReplyStatusTest extends TestCase
     {
         $this->assertFalse(\Illuminate\Support\Facades\Route::has('admin.inquiries.status'));
     }
+
+    public function test_the_mobile_card_shows_the_status_without_a_dropdown(): void
+    {
+        $inquiry = $this->inquiry(['status' => 'responded']);
+
+        $response = $this->withSession(self::ADMIN)->get(route('admin.inquiries'));
+
+        $response->assertOk();
+        $response->assertSee('inquiry-mobile-card', false);
+        $response->assertSee('Status:', false);
+        $response->assertSeeInOrder([$inquiry->full_name, $inquiry->email, $inquiry->subject, 'Responded'], false);
+        $response->assertDontSee('<select', false);
+    }
+
+    public function test_the_inquiry_detail_page_shows_the_current_status(): void
+    {
+        $inquiry = $this->inquiry(['status' => 'responded']);
+
+        $this->withSession(self::ADMIN)->get(route('admin.inquiries.show', $inquiry))
+            ->assertOk()
+            ->assertSee('status-badge--confirmed', false)
+            ->assertSee('Responded');
+    }
 }
