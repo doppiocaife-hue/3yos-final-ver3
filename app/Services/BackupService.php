@@ -16,6 +16,7 @@ class BackupService
         'clients',
         'reservations',
         'reservation_payments',
+        'reservation_refunds',
         'inquiries',
         'activity_logs',
         'settings',
@@ -147,6 +148,9 @@ class BackupService
                 // ones so they cannot attach to different restored reservations with the same ids.
                 if (in_array('reservations', $restoreTables, true) && ! in_array('reservation_payments', $restoreTables, true) && Schema::hasTable('reservation_payments')) {
                     DB::table('reservation_payments')->delete();
+                }
+                if (in_array('reservations', $restoreTables, true) && ! in_array('reservation_refunds', $restoreTables, true) && Schema::hasTable('reservation_refunds')) {
+                    DB::table('reservation_refunds')->delete();
                 }
 
                 foreach (array_reverse($restoreTables) as $table) {

@@ -54,12 +54,48 @@ class AnalyticsTest extends TestCase
             ->get(route('admin.analytics'));
 
         $response->assertOk();
-        $response->assertViewHas('monthlyRevenue', function ($monthlyRevenue) {
-            return $monthlyRevenue->last()->revenue === 18000.0;
-        });
-        $response->assertSee('&#8369;18,000', false);
+        $totals = $response->viewData('totals');
+        $this->assertSame(4, $totals['reservations']);
+        $this->assertEquals(58000.0, $totals['paid']);
+        $this->assertEquals(0.0, $totals['refunded']);
+        $this->assertEquals(58000.0, $totals['net']);
         $response->assertSee('Celebration Package');
+        $response->assertSee('&#8369;58,000.00', false);
         $response->assertSee("new Chart(document.getElementById('revenueChart')", false);
+    }
+
+    public function test_analytics_account_for_refunds_and_match_reports(): void
+    {
+        Carbon::setTestNow('2026-09-23 12:00:00');
+
+        $package = Package::create([
+            'name' => 'Celebration Package',
+            'slug' => 'celebration-package',
+            'price' => 500,
+            'min_guests' => 20,
+            'max_guests' => 200,
+        ]);
+        $this->createReservation($package->id, ['status' => 'confirmed', 'total_cost' => 50000]);
+        $reservation = Reservation::first();
+        $reservation->payments()->create(['payment_date' => '2026-09-20', 'payment_type' => 'Downpayment', 'amount' => 10000, 'payment_method' => 'Cash']);
+        $reservation->refunds()->create(['refund_date' => '2026-09-21', 'amount' => 3000, 'refund_method' => 'Cash', 'status' => 'completed', 'request_key' => (string) \Illuminate\Support\Str::uuid()]);
+
+        $response = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])->get(route('admin.analytics'));
+
+        $response->assertOk();
+        $totals = $response->viewData('totals');
+        $this->assertEquals(10000.0, $totals['paid']);
+        $this->assertEquals(3000.0, $totals['refunded']);
+        $this->assertEquals(7000.0, $totals['net']);
+        $this->assertEquals(43000.0, $totals['outstanding']);
+        $this->assertSame(1, $totals['refunded_reservations']);
+        $september = $response->viewData('monthly')->last();
+        $this->assertEquals([10000.0, 3000.0, 7000.0], [$september->paid, $september->refunded, $september->net]);
+
+        $summary = app(\App\Services\ReportService::class)->getSummary('yearly');
+        $this->assertEquals($summary['gross_paid'], $totals['paid']);
+        $this->assertEquals($summary['total_refunded'], $totals['refunded']);
+        $this->assertEquals($summary['net_paid'], $totals['net']);
     }
 
     /**

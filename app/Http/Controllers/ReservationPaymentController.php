@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Reservation;
 use App\Models\ReservationPayment;
+use App\Models\ReservationRefund;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -16,14 +19,19 @@ class ReservationPaymentController extends Controller
     {
         $reservation->ensurePaymentLedger();
         $reservation->recalculatePaymentTotals();
-        $reservation->load('payments', 'package');
+        $reservation->load('payments', 'refunds', 'package');
+        $transactions = $this->transactions($reservation);
 
         return view('admin.reservation-payments', [
             'reservation' => $reservation,
             'payments' => $reservation->payments,
+            'refunds' => $reservation->refunds,
+            'transactions' => $transactions,
+            'financials' => $reservation->financials(),
             'types' => ReservationPayment::TYPES,
             'methods' => ReservationPayment::METHODS,
             'suggestedType' => $reservation->payments->isEmpty() ? 'Downpayment' : 'Partial Payment',
+            'refundRequestKey' => (string) Str::uuid(),
         ]);
     }
 
@@ -31,9 +39,16 @@ class ReservationPaymentController extends Controller
     {
         $reservation->ensurePaymentLedger();
         $reservation->recalculatePaymentTotals();
-        $reservation->load('payments', 'package');
+        $reservation->load('payments', 'refunds', 'package');
+        $transactions = $this->transactions($reservation);
 
-        return view('admin.reservation-payments-print', ['reservation' => $reservation, 'payments' => $reservation->payments]);
+        return view('admin.reservation-payments-print', [
+            'reservation' => $reservation,
+            'payments' => $reservation->payments,
+            'refunds' => $reservation->refunds,
+            'transactions' => $transactions,
+            'financials' => $reservation->financials(),
+        ]);
     }
 
     public function store(Request $request, Reservation $reservation): RedirectResponse
@@ -85,11 +100,20 @@ class ReservationPaymentController extends Controller
 
             DB::transaction(function () use ($reservation, $payment, $data) {
                 $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
+                $payment = $reservation->payments()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
+                $reservation->ensurePaymentLedger();
                 $reservation->recalculatePaymentTotals();
 
                 // This payment's current amount is freed up before checking the new one.
-                $available = $reservation->remainingBalanceCents() + Reservation::toCents($payment->amount);
+                $financials = $reservation->financials();
+                $available = ($financials['remaining_balance_cents'] ?? 0) + Reservation::toCents($payment->amount);
                 $this->assertWithinBalance($data['amount'], $available, true);
+                $grossAfterEdit = $financials['gross_paid_cents'] - Reservation::toCents($payment->amount) + Reservation::toCents($data['amount']);
+                if ($grossAfterEdit < $financials['total_refunded_cents']) {
+                    throw ValidationException::withMessages([
+                        'amount' => 'The edited payment cannot be lower than the refunds already processed.',
+                    ]);
+                }
 
                 $payment->update($data);
                 $reservation->recalculatePaymentTotals();
@@ -108,6 +132,17 @@ class ReservationPaymentController extends Controller
     public function destroy(Reservation $reservation, ReservationPayment $payment): RedirectResponse
     {
         DB::transaction(function () use ($reservation, $payment) {
+            $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
+            $payment = $reservation->payments()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            $reservation->ensurePaymentLedger();
+            $financials = $reservation->financials();
+
+            if ($financials['gross_paid_cents'] - Reservation::toCents($payment->amount) < $financials['total_refunded_cents']) {
+                throw ValidationException::withMessages([
+                    'payment' => 'This payment cannot be deleted because processed refunds depend on the total amount received.',
+                ]);
+            }
+
             $payment->delete();
             $reservation->recalculatePaymentTotals();
         });
@@ -130,9 +165,10 @@ class ReservationPaymentController extends Controller
             $reservation->ensurePaymentLedger();
             $reservation->recalculatePaymentTotals();
 
-            if (Reservation::toCents($data['total_cost']) < Reservation::toCents($reservation->amount_paid)) {
+            $financials = $reservation->financials();
+            if (Reservation::toCents($data['total_cost']) < $financials['net_paid_cents']) {
                 throw ValidationException::withMessages([
-                    'total_cost' => 'The contract price cannot be lower than the '.$this->peso($reservation->amount_paid).' already paid. Remove or edit payments first.',
+                    'total_cost' => 'The contract price cannot be lower than the '.$this->peso($financials['net_paid_cents'] / 100).' net amount paid.',
                 ]);
             }
 
@@ -141,6 +177,85 @@ class ReservationPaymentController extends Controller
         });
 
         return redirect()->route('admin.reservations.payments', $reservation)->with('success', 'Contract price and payment due date saved.');
+    }
+
+    public function storeRefund(Request $request, Reservation $reservation): RedirectResponse
+    {
+        $data = $request->validate([
+            'request_key' => ['required', 'uuid'],
+            'refund_date' => ['required', 'date', 'before_or_equal:today'],
+            'refund_amount' => ['required', 'numeric', 'gt:0', 'max:9999999999', 'decimal:0,2'],
+            'refund_method' => ['required', Rule::in(ReservationPayment::METHODS)],
+            'reason' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'refund_date.required' => 'Choose the refund date.',
+            'refund_date.before_or_equal' => 'The refund date cannot be in the future.',
+            'refund_amount.required' => 'Enter the refund amount.',
+            'refund_amount.gt' => 'The refund amount must be greater than ₱0.00.',
+            'refund_amount.decimal' => 'The refund amount can have at most two decimal places.',
+            'refund_method.required' => 'Choose the refund method.',
+            'refund_method.in' => 'Choose Cash, GCash, Bank Transfer, or Other.',
+        ]);
+        $data['refund_amount'] = round((float) $data['refund_amount'], 2);
+
+        $created = DB::transaction(function () use ($request, $reservation, $data): bool {
+            $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
+            $reservation->ensurePaymentLedger();
+
+            $duplicate = ReservationRefund::where('request_key', $data['request_key'])->first();
+            if ($duplicate) {
+                if ($duplicate->reservation_id !== $reservation->id) {
+                    throw ValidationException::withMessages([
+                        'refund_amount' => 'This refund submission has already been used. Refresh the page and try again.',
+                    ]);
+                }
+
+                return false;
+            }
+
+            $financials = $reservation->financials();
+            $amountCents = Reservation::toCents($data['refund_amount']);
+            if ($amountCents > $financials['net_paid_cents']) {
+                throw ValidationException::withMessages([
+                    'refund_amount' => 'Refund cannot exceed the total amount paid.',
+                ]);
+            }
+
+            $refund = $reservation->refunds()->create([
+                'refund_date' => $data['refund_date'],
+                'amount' => $data['refund_amount'],
+                'refund_method' => $data['refund_method'],
+                'reason' => $data['reason'] ?? null,
+                'status' => 'completed',
+                'request_key' => $data['request_key'],
+                'recorded_by_user_id' => $request->session()->get('admin_user_id'),
+                'recorded_by_name' => $request->session()->get('admin_name', 'Administrator'),
+            ]);
+
+            $reservation->recalculatePaymentTotals();
+
+            ActivityLog::create([
+                'user_id' => $request->session()->get('admin_user_id'),
+                'actor_name' => $request->session()->get('admin_name', 'Unknown administrator'),
+                'actor_email' => $request->session()->get('admin_email'),
+                'actor_role' => $request->session()->get('admin_role', 'limited'),
+                'action' => 'Processed refund',
+                'method' => $request->method(),
+                'ip_address' => $request->ip(),
+                'activity_date' => now()->toDateString(),
+                'activity_time' => now()->toTimeString(),
+                'description' => 'Processed a ₱'.number_format($data['refund_amount'], 2).' '.$data['refund_method'].' refund dated '.$refund->refund_date->format('Y-m-d').' for reservation '.($reservation->reservation_code ?: '#'.$reservation->id).'.',
+            ]);
+
+            return true;
+        });
+
+        return redirect()->route('admin.reservations.payments', $reservation)->with(
+            'success',
+            $created
+                ? 'Refund of '.$this->peso($data['refund_amount']).' processed.'
+                : 'That refund submission was already processed.',
+        );
     }
 
     private function validatePayment(Request $request): array
@@ -187,5 +302,40 @@ class ReservationPaymentController extends Controller
     private function peso(float|int|null $amount): string
     {
         return '₱'.number_format((float) $amount, 2);
+    }
+
+    private function transactions(Reservation $reservation)
+    {
+        $payments = $reservation->payments->map(fn (ReservationPayment $payment) => (object) [
+            'kind' => 'payment',
+            'date' => $payment->payment_date,
+            'type' => $payment->payment_type,
+            'amount' => $payment->amount,
+            'method' => $payment->payment_method,
+            'notes' => $payment->notes,
+            'recorded_by_name' => $payment->recorded_by_name,
+            'created_at' => $payment->created_at,
+            'id' => $payment->id,
+            'payment' => $payment,
+        ]);
+
+        $refunds = $reservation->refunds->map(fn (ReservationRefund $refund) => (object) [
+            'kind' => 'refund',
+            'date' => $refund->refund_date,
+            'type' => 'Refund',
+            'amount' => $refund->amount,
+            'method' => $refund->refund_method,
+            'notes' => $refund->reason,
+            'recorded_by_name' => $refund->recorded_by_name,
+            'created_at' => $refund->created_at,
+            'id' => $refund->id,
+            'payment' => null,
+        ]);
+
+        return $payments->concat($refunds)->sortBy([
+            ['date', 'asc'],
+            ['created_at', 'asc'],
+            ['id', 'asc'],
+        ])->values();
     }
 }

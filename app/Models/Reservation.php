@@ -66,6 +66,16 @@ class Reservation extends Model
         return $this->hasMany(ReservationPayment::class)->orderBy('payment_date')->orderBy('id');
     }
 
+    public function refunds()
+    {
+        return $this->hasMany(ReservationRefund::class)->orderBy('refund_date')->orderBy('id');
+    }
+
+    public function financials(): array
+    {
+        return app(\App\Services\ReservationFinancialService::class)->calculate($this);
+    }
+
     /** Display label for the stored payment_status ("Unpaid" is kept in storage for existing filters and reports). */
     public static function paymentStatusLabel(?string $status): string
     {
@@ -103,32 +113,15 @@ class Reservation extends Model
         ]);
     }
 
-    /** Recomputes the stored totals and status from the payment history. */
+    /** Recomputes the stored net totals and status from the payment and refund history. */
     public function recalculatePaymentTotals(): void
     {
-        $payments = $this->payments()->get();
-        $paidCents = (int) $payments->sum(fn (ReservationPayment $payment) => self::toCents($payment->amount));
-        $contractCents = $this->total_cost === null ? null : self::toCents($this->total_cost);
-        $latest = $payments->sortBy([['payment_date', 'desc'], ['id', 'desc']])->first();
-
-        $status = match (true) {
-            $paidCents <= 0 => 'Unpaid',
-            $contractCents !== null && $paidCents >= $contractCents => 'Fully Paid',
-            $payments->count() === 1 => 'Downpayment',
-            default => 'Partial Payment',
-        };
-
-        $this->forceFill([
-            'amount_paid' => $paidCents / 100,
-            'balance' => $contractCents === null ? 0 : max(0, $contractCents - $paidCents) / 100,
-            'payment_status' => $status,
-            'payment_type' => $latest?->payment_type ?? 'Unpaid',
-        ])->save();
+        app(\App\Services\ReservationFinancialService::class)->recalculate($this);
     }
 
     public function remainingBalanceCents(): ?int
     {
-        return $this->total_cost === null ? null : max(0, self::toCents($this->total_cost) - self::toCents($this->amount_paid ?? 0));
+        return $this->financials()['remaining_balance_cents'];
     }
 
     public static function toCents(float|int|string|null $amount): int

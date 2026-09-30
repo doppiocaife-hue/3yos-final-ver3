@@ -1,5 +1,6 @@
 <div class="reservation-actions">
-    @php($outstandingBalance = $reservation->total_cost === null ? null : max(0, (float) $reservation->total_cost - (float) ($reservation->amount_paid ?? 0)))
+    @php($reservationFinancials = $reservation->financials())
+    @php($outstandingBalance = $reservationFinancials['remaining_balance_cents'] === null ? null : $reservationFinancials['remaining_balance_cents'] / 100)
     @if($reservation->status === 'pending')
         <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}">@csrf @method('PATCH')<input type="hidden" name="status" value="confirmed"><button class="btn btn-sm btn-success quick-action" type="submit">Accept</button></form>
         <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}">@csrf @method('PATCH')<input type="hidden" name="status" value="cancelled"><button class="btn btn-sm btn-danger quick-action" type="submit">Cancel</button></form>
@@ -45,7 +46,7 @@
         <span class="reservation-action-label">Payment</span>
         <div class="d-flex flex-wrap align-items-center gap-2">
             <span class="status-badge status-badge--{{ \App\Models\Reservation::paymentStatusBadge($reservation->payment_status) }}">{{ \App\Models\Reservation::paymentStatusLabel($reservation->payment_status) }}</span>
-            <span class="small text-muted">Paid &#8369;{{ number_format((float) ($reservation->amount_paid ?? 0), 2) }}@if($reservation->payment_due_date) · Due {{ $reservation->payment_due_date->format('M j, Y') }}@endif</span>
+            <span class="small text-muted">Paid &#8369;{{ number_format($reservationFinancials['gross_paid_cents'] / 100, 2) }}@if($reservationFinancials['total_refunded_cents'] > 0) · Refunded &#8369;{{ number_format($reservationFinancials['total_refunded_cents'] / 100, 2) }} · Net &#8369;{{ number_format($reservationFinancials['net_paid_cents'] / 100, 2) }}@endif @if($reservation->payment_due_date)· Due {{ $reservation->payment_due_date->format('M j, Y') }}@endif</span>
             <a class="btn btn-sm btn-outline-secondary ms-auto" href="{{ route('admin.reservations.payments', $reservation) }}">Manage payments</a>
         </div>
         @if($outstandingBalance > 0)

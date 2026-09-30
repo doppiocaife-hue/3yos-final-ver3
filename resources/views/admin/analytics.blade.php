@@ -1,129 +1,148 @@
 @extends('layouts.admin')
 
 @section('content')
+@php
+$peso = fn ($amount) => '&#8369;' . number_format($amount, 2);
+$chartValues = [$totals['paid'], $totals['refunded'], $totals['net'], $totals['outstanding']];
+@endphp
 <div class="content-card p-4">
     <div class="page-header"><div>
         <h1 class="fw-bold mb-1">Analytics</h1>
-        <p class="text-muted mb-0">A live view of bookings, confirmed revenue, and client activity.</p>
+        <p class="text-muted mb-0">Understand reservations, payments, refunds, and revenue at a glance.</p>
     </div></div>
-    
+
+    <div class="row g-3 mb-4">
+        @foreach([
+            ['Total Reservations', $totals['reservations'], 'All bookings'],
+            ['Accepted', $statusCounts['confirmed'], 'Confirmed bookings'],
+            ['Pending', $statusCounts['pending'], 'Waiting for review'],
+            ['Cancelled', $statusCounts['cancelled'], 'Cancelled bookings'],
+        ] as [$label, $value, $hint])
+            <div class="col-lg-3 col-sm-6">
+                <div class="stat-card p-4 h-100">
+                    <div class="badge-soft mb-2">{{ $label }}</div>
+                    <h3 class="fw-bold">{{ $value }}</h3>
+                    <p class="mb-0 text-muted">{{ $hint }}</p>
+                </div>
+            </div>
+        @endforeach
+        @foreach([
+            ['Total Revenue', $totals['paid'], 'Payments received'],
+            ['Unpaid Balance', $totals['outstanding'], 'Still to be collected'],
+            ['Total Refunds', $totals['refunded'], $totals['refunded_reservations'] . ' reservation(s) refunded'],
+            ['Net Revenue', $totals['net'], 'Payments minus refunds'],
+        ] as [$label, $value, $hint])
+            <div class="col-lg-3 col-sm-6">
+                <div class="stat-card p-4 h-100">
+                    <div class="badge-soft mb-2">{{ $label }}</div>
+                    <h3 class="fw-bold" style="font-size:1.5rem">{!! $peso($value) !!}</h3>
+                    <p class="mb-0 text-muted">{{ $hint }}</p>
+                </div>
+            </div>
+        @endforeach
+    </div>
+
     <div class="row g-4 mb-4">
-        <div class="col-md-4 col-sm-6">
-            <div class="stat-card p-4 h-100">
-                <div class="badge-soft mb-2">Reservations</div>
-                <h3 class="fw-bold">{{ $monthlyReservations->sum('total') }}</h3>
-                <p class="mb-0 text-muted">Bookings in the past 12 months</p>
+        <div class="col-lg-7">
+            <div class="card p-4 h-100">
+                <h4 class="fw-semibold mb-3">Revenue Overview</h4>
+                <canvas id="revenueChart" style="max-height:260px;"></canvas>
             </div>
         </div>
-        <div class="col-md-4 col-sm-6">
-            <div class="stat-card p-4 h-100">
-                <div class="badge-soft mb-2">Confirmed revenue</div>
-                <h3 class="fw-bold">&#8369;{{ number_format($monthlyRevenue->sum('revenue'), 0) }}</h3>
-                <p class="mb-0 text-muted">Fully paid completed events</p>
-            </div>
-        </div>
-        <div class="col-md-4 col-sm-12">
-            <div class="stat-card p-4 h-100">
-                <div class="badge-soft mb-2">Top package</div>
-                <h3 class="fw-bold" style="font-size:1.3rem">{{ str($topPackages->first()?->name ?? 'No bookings yet')->limit(20) }}</h3>
-                <p class="mb-0 text-muted">Most requested package</p>
+        <div class="col-lg-5">
+            <div class="card p-4 h-100">
+                <h4 class="fw-semibold mb-3">Reservation Status</h4>
+                @php $maxStatus = max(1, $statusCounts->max()); @endphp
+                @foreach(['pending' => 'Pending', 'confirmed' => 'Accepted', 'completed' => 'Completed', 'cancelled' => 'Cancelled'] as $key => $label)
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between"><span>{{ $label }}</span><strong>{{ $statusCounts[$key] }}</strong></div>
+                        <div class="progress" style="height:10px"><div class="progress-bar" style="width:{{ $statusCounts[$key] / $maxStatus * 100 }}%;background:#b66545"></div></div>
+                    </div>
+                @endforeach
             </div>
         </div>
     </div>
-    
-    <div class="row g-4">
-        <div class="col-lg-6">
-            <div class="card p-4 h-100">
-                <h4 class="fw-semibold mb-3">Monthly Reservations</h4>
-                <canvas id="reservationsChart" style="max-height:300px;"></canvas>
-            </div>
-        </div>
-        <div class="col-lg-6">
-            <div class="card p-4 h-100">
-                <h4 class="fw-semibold mb-3">Fully Paid Revenue</h4>
-                <canvas id="revenueChart" style="max-height:300px;"></canvas>
-            </div>
-        </div>
-        <div class="col-lg-6">
-            <div class="card p-4 h-100">
-                <h4 class="fw-semibold mb-3">Package Popularity</h4>
-                <canvas id="packageChart" style="max-height:300px;"></canvas>
-            </div>
-        </div>
-        <div class="col-lg-6">
-            <div class="card p-4 h-100">
-                <h4 class="fw-semibold mb-3">Inquiry Activity</h4>
-                <canvas id="activityChart" style="max-height:300px;"></canvas>
-            </div>
-        </div>
-    </div>
-    
-    <div class="card p-4 mt-4">
-        <h4 class="fw-semibold mb-3">Top Packages</h4>
+
+    <div class="card p-4 mb-4">
+        <h4 class="fw-semibold mb-3">Popular Packages</h4>
         <div class="table-responsive">
             <table class="table table-hover mb-0">
-                <thead>
-                    <tr>
-                        <th>Package</th>
-                        <th class="text-end">Bookings</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>Package</th><th class="text-end">Reservations</th><th class="text-end">Revenue</th></tr></thead>
                 <tbody>
                     @forelse($topPackages as $package)
-                        <tr>
-                            <td>{{ $package->name }}</td>
-                            <td class="text-end"><strong>{{ $package->total }}</strong></td>
-                        </tr>
+                        <tr><td>{{ $package->name }}</td><td class="text-end">{{ $package->total }}</td><td class="text-end">{!! $peso($package->revenue) !!}</td></tr>
                     @empty
-                        <tr><td colspan="2" class="text-center text-muted py-3">No package bookings yet.</td></tr>
+                        <tr><td colspan="3" class="text-center text-muted py-3">No package bookings yet.</td></tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
     </div>
-</div>
 
+    <div class="card p-4 mb-4">
+        <h4 class="fw-semibold mb-3">Monthly Overview</h4>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead><tr><th>Month</th><th class="text-end">Reservations</th><th class="text-end">Paid</th><th class="text-end">Refunds</th><th class="text-end">Net Revenue</th></tr></thead>
+                <tbody>
+                    @foreach($monthly as $row)
+                        <tr>
+                            <td>{{ $row->label }}</td>
+                            <td class="text-end">{{ $row->reservations }}</td>
+                            <td class="text-end">{!! $peso($row->paid) !!}</td>
+                            <td class="text-end">{!! $peso($row->refunded) !!}</td>
+                            <td class="text-end"><strong>{!! $peso($row->net) !!}</strong></td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-4">
+            <div class="card p-4 h-100">
+                <h4 class="fw-semibold mb-3">Latest Reservations</h4>
+                @forelse($recentReservations as $reservation)
+                    <div class="mb-2"><strong>{{ $reservation->full_name }}</strong><br>
+                        <small class="text-muted">{{ ucfirst($reservation->status) }} &middot; {{ $reservation->created_at->format('M d, Y') }}</small></div>
+                @empty
+                    <p class="text-muted mb-0">No reservations yet.</p>
+                @endforelse
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card p-4 h-100">
+                <h4 class="fw-semibold mb-3">Latest Payments</h4>
+                @forelse($recentPayments as $payment)
+                    <div class="mb-2"><strong>{{ $payment->reservation?->full_name ?? 'Deleted reservation' }}</strong><br>
+                        <small class="text-muted">Payment received &middot; {!! $peso($payment->amount) !!} &middot; {{ $payment->payment_date->format('M d, Y') }}</small></div>
+                @empty
+                    <p class="text-muted mb-0">No payments yet.</p>
+                @endforelse
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card p-4 h-100">
+                <h4 class="fw-semibold mb-3">Latest Refunds</h4>
+                @forelse($recentRefunds as $refund)
+                    <div class="mb-2"><strong>{{ $refund->reservation?->full_name ?? 'Deleted reservation' }}</strong><br>
+                        <small class="text-muted">Refund issued &middot; {!! $peso($refund->amount) !!} &middot; {{ $refund->refund_date->format('M d, Y') }}</small></div>
+                @empty
+                    <p class="text-muted mb-0">No refunds yet.</p>
+                @endforelse
+            </div>
+        </div>
+    </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const labels=@json($monthlyReservations->pluck('label')), 
-    reservationData=@json($monthlyReservations->pluck('total')), 
-    revenueData=@json($monthlyRevenue->pluck('revenue')), 
-    packageLabels=@json($topPackages->pluck('name')), 
-    packageData=@json($topPackages->pluck('total')), 
-    activityLabels=@json($activityLabels), 
-    activityData=@json($activityData); 
-
 const chartText=getComputedStyle(document.body).color;
-const base={
-    responsive:true,
-    maintainAspectRatio:true,
-    plugins:{legend:{labels:{color:chartText}}},
-    scales:{x:{ticks:{color:chartText}},y:{beginAtZero:true,ticks:{color:chartText}}}
-};
-
-new Chart(document.getElementById('reservationsChart'),{
-    type:'bar',
-    data:{labels,datasets:[{data:reservationData,backgroundColor:'#b66545',borderRadius:5}]},
-    options:{...base,plugins:{legend:{display:false}}}
-});
-
 new Chart(document.getElementById('revenueChart'),{
-    type:'line',
-    data:{labels,datasets:[{data:revenueData,borderColor:'#b66545',backgroundColor:'rgba(182,101,69,.18)',fill:true,tension:.35}]},
-    options:{...base,plugins:{legend:{display:false}}}
-});
-
-new Chart(document.getElementById('packageChart'),{
-    type:'doughnut',
-    data:{labels:packageLabels,datasets:[{data:packageData,backgroundColor:['#6d3024','#b66545','#c7984b','#66727a']}]},
-    options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{color:chartText}}}}
-});
-
-new Chart(document.getElementById('activityChart'),{
-    type:'line',
-    data:{labels:activityLabels,datasets:[{label:'Inquiries',data:activityData,borderColor:'#c7984b',backgroundColor:'rgba(199,152,75,.18)',fill:true,tension:.35}]},
-    options:base
+    type:'bar',
+    data:{labels:['Payments','Refunds','Net Revenue','Unpaid'],datasets:[{data:@json($chartValues),backgroundColor:['#b66545','#66727a','#6d3024','#c7984b'],borderRadius:5}]},
+    options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:chartText}},y:{beginAtZero:true,ticks:{color:chartText}}}}
 });
 </script>
 @endsection

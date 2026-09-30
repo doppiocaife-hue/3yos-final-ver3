@@ -1,6 +1,9 @@
 @php
     $peso = fn ($amount) => '₱' . number_format((float) $amount, 2);
-    $balanceCents = $reservation->remainingBalanceCents();
+    $balanceCents = $financials['remaining_balance_cents'];
+    $grossPaid = $financials['gross_paid_cents'] / 100;
+    $totalRefunded = $financials['total_refunded_cents'] / 100;
+    $netPaid = $financials['net_paid_cents'] / 100;
 @endphp
 <!DOCTYPE html>
 <html lang="en">
@@ -29,6 +32,7 @@
         th, td { padding: .55rem .5rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
         th { color: var(--muted); font-size: .68rem; letter-spacing: .07em; text-transform: uppercase; }
         .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .refund-row, .refund-amount { color: #a94242; }
         .totals { width: min(340px, 100%); margin: 1rem 0 0 auto; }
         .totals div strong { font-variant-numeric: tabular-nums; }
         .totals .grand { border-bottom: 2px solid var(--navy); font-size: 1rem; }
@@ -65,17 +69,19 @@
         <table>
             <thead><tr><th>Date</th><th>Payment type</th><th>Method</th><th>Notes</th><th class="num">Amount</th></tr></thead>
             <tbody>
-                @forelse($payments as $payment)
-                    <tr><td>{{ $payment->payment_date->format('m/d/Y') }}</td><td>{{ $payment->payment_type }}</td><td>{{ $payment->payment_method }}</td><td>{{ $payment->notes }}</td><td class="num">{{ $peso($payment->amount) }}</td></tr>
+                @forelse($transactions as $transaction)
+                        <tr class="{{ $transaction->kind === 'refund' ? 'refund-row' : '' }}"><td>{{ $transaction->date->format('m/d/Y') }}</td><td>{{ $transaction->type }}</td><td>{{ $transaction->method }}</td><td>{{ $transaction->notes }}</td><td class="num">{{ $transaction->kind === 'refund' ? '−' : '' }}{{ $peso($transaction->amount) }}</td></tr>
                 @empty
-                    <tr><td colspan="5">No payments recorded yet.</td></tr>
+                        <tr><td colspan="5">No payments or refunds recorded yet.</td></tr>
                 @endforelse
             </tbody>
         </table>
 
         <section class="totals">
             <div><span>Contract price</span><strong>{{ $reservation->total_cost !== null ? $peso($reservation->total_cost) : 'Not set' }}</strong></div>
-            <div><span>Total paid</span><strong>{{ $peso($reservation->amount_paid) }}</strong></div>
+            <div><span>Gross paid</span><strong>{{ $peso($grossPaid) }}</strong></div>
+            <div><span>Total refunded</span><strong class="refund-amount">−{{ $peso($totalRefunded) }}</strong></div>
+            <div><span>Net paid</span><strong>{{ $peso($netPaid) }}</strong></div>
             <div class="grand"><span>Remaining balance</span><strong>{{ $balanceCents !== null ? $peso($balanceCents / 100) : '—' }}</strong></div>
         </section>
 

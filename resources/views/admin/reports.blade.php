@@ -45,6 +45,20 @@
                         <strong>₱{{ number_format($summary['estimated_revenue'], 2) }}</strong>
                     </div>
 
+                    <details class="report-financials">
+                        <summary>Payments, refunds &amp; balances</summary>
+                        <dl class="report-financial-metrics">
+                            <div><dt>Contract value <small>(bookings created in period)</small></dt><dd>₱{{ number_format($summary['contract_value'], 2) }}</dd></div>
+                            <div><dt>Gross paid <small>(bookings created in period)</small></dt><dd>₱{{ number_format($summary['gross_paid'], 2) }}</dd></div>
+                            <div><dt>Refunded <small>(bookings created in period)</small></dt><dd class="report-refunded">−₱{{ number_format($summary['total_refunded'], 2) }}</dd></div>
+                            <div><dt>Net paid <small>(bookings created in period)</small></dt><dd>₱{{ number_format($summary['net_paid'], 2) }}</dd></div>
+                            <div><dt>Outstanding <small>(current bookings)</small></dt><dd>₱{{ number_format($summary['outstanding_balance'], 2) }}</dd></div>
+                            <div><dt>Gross payments <small>(transactions in period)</small></dt><dd>₱{{ number_format($summary['gross_payments_in_period'], 2) }}</dd></div>
+                            <div><dt>Refunds <small>(transactions in period)</small></dt><dd class="report-refunded">−₱{{ number_format($summary['refunds_in_period'], 2) }}</dd></div>
+                            <div><dt>Net collected <small>(transactions in period)</small></dt><dd>₱{{ number_format($summary['net_collected_in_period'], 2) }}</dd></div>
+                        </dl>
+                    </details>
+
                     <footer class="report-downloads">
                         <a class="btn btn-report-primary" href="{{ route('admin.reports.export.excel', ['period' => $key]) }}" data-report-download aria-label="Download {{ strtolower($label) }} report as Excel">
                             <span data-download-label>Download Excel</span>
@@ -72,6 +86,14 @@
 .report-revenue{display:flex;flex-direction:column;gap:.25rem;margin-top:auto;padding:1rem 1.1rem;border-left:3px solid var(--teal);border-radius:0 6px 6px 0;background:#edf7f4}
 .report-revenue span{color:var(--teal-dark);font-size:.67rem;font-weight:800;text-transform:uppercase}
 .report-revenue strong{color:#164c49;font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums}
+.report-financials{margin-top:1rem;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
+.report-financials summary{padding:.7rem .8rem;color:var(--teal-dark);font-size:.78rem;font-weight:800;cursor:pointer}
+.report-financial-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem 1rem;margin:0;padding:.15rem .8rem .8rem}
+.report-financial-metrics div{min-width:0}
+.report-financial-metrics dt{color:var(--muted);font-size:.62rem;font-weight:800;text-transform:uppercase}
+.report-financial-metrics dt small{display:block;font-size:.58rem;font-weight:500;text-transform:none}
+.report-financial-metrics dd{margin:.12rem 0 0;color:var(--ink);font-size:.9rem;font-weight:750;font-variant-numeric:tabular-nums}
+.report-financial-metrics .report-refunded{color:var(--danger)}
 .report-downloads{display:grid;grid-template-columns:1fr 1fr;gap:.65rem;margin-top:1rem}
 .btn-report-primary,.btn-report-secondary{display:inline-flex;min-height:42px;align-items:center;justify-content:center;border-radius:6px;font-size:.83rem;font-weight:700}
 .btn-report-primary{border:1px solid var(--teal-dark);background:var(--teal-dark);color:#fff}
@@ -84,6 +106,7 @@ body.dark-mode .report-card{background:var(--surface);box-shadow:none}
 body.dark-mode .report-period-tag{background:#203f48;color:#9ae0d3}
 body.dark-mode .report-revenue{background:#203f48}
 body.dark-mode .report-revenue strong{color:#b8ece1}
+body.dark-mode .report-financial-metrics .report-refunded{color:#ffb0b0}
 body.dark-mode .btn-report-secondary{color:var(--ink)}
 @media(max-width:575.98px){
     .report-card{min-height:0;padding:1rem}

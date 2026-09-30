@@ -6,6 +6,7 @@ use App\Models\Inquiry;
 use App\Models\Reservation;
 use App\Services\ReportService;
 use Carbon\Carbon;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class ReportServiceTest extends TestCase
@@ -106,9 +107,70 @@ class ReportServiceTest extends TestCase
         }
     }
 
-    private function createReservation(string $createdAt, string $status, int $budget): void
+    public function test_reports_separate_booking_financials_from_payment_and_refund_transactions(): void
     {
-        Reservation::unguarded(fn () => Reservation::create([
+        Carbon::setTestNow('2026-09-29 15:30:00');
+        config(['app.timezone' => 'Asia/Manila']);
+
+        $reservation = $this->createReservation('2026-09-29 09:00:00', 'confirmed', 1000);
+        $reservation->update(['total_cost' => 1000]);
+        $session = ['is_admin' => true, 'admin_role' => 'full', 'admin_name' => 'Report Tester'];
+
+        $this->withSession($session)->post(route('admin.reservations.payments.store', $reservation), [
+            'payment_date' => '2026-09-29',
+            'payment_type' => 'Downpayment',
+            'amount' => 800,
+            'payment_method' => 'Cash',
+        ])->assertRedirect();
+
+        $this->withSession($session)->post(route('admin.reservations.refunds.store', $reservation), [
+            'request_key' => (string) Str::uuid(),
+            'refund_date' => '2026-09-29',
+            'refund_amount' => 300,
+            'refund_method' => 'Cash',
+        ])->assertRedirect();
+
+        $this->assertSame('2026-09-29', $reservation->payments()->firstOrFail()->payment_date->toDateString());
+        $this->assertSame('2026-09-29', $reservation->refunds()->firstOrFail()->refund_date->toDateString());
+        $summary = app(ReportService::class)->getSummary('daily');
+        $this->assertSame('2026-09-29', $summary['period_start']->toDateString());
+        $this->assertEquals(1000.0, $summary['contract_value']);
+        $this->assertEquals(800.0, $summary['gross_paid']);
+        $this->assertEquals(300.0, $summary['total_refunded']);
+        $this->assertEquals(500.0, $summary['net_paid']);
+        $this->assertEquals(500.0, $summary['outstanding_balance']);
+        $this->assertEquals(800.0, $summary['gross_payments_in_period']);
+        $this->assertEquals(300.0, $summary['refunds_in_period']);
+        $this->assertEquals(500.0, $summary['net_collected_in_period']);
+
+        $page = $this->withSession($session)->get(route('admin.reports'));
+        $page->assertOk()
+            ->assertSee('Payments, refunds & balances')
+            ->assertSee('Gross paid')
+            ->assertSee('−₱300.00')
+            ->assertSee('₱500.00');
+
+        $csv = $this->withSession($session)->get(route('admin.reports.export', ['period' => 'daily']));
+        $csv->assertOk()
+            ->assertSee('"Gross Paid (Bookings Created in Period)",800', false)
+            ->assertSee('"Refunded (Bookings Created in Period)",300', false)
+            ->assertSee('"Net Collected (Transactions in Period)",500', false);
+
+        $excel = $this->withSession($session)->get(route('admin.reports.export.excel', ['period' => 'daily']));
+        $excel->assertDownload();
+        $archive = new \ZipArchive();
+        $this->assertSame(true, $archive->open($excel->baseResponse->getFile()->getPathname()));
+        $sheet = $archive->getFromName('xl/worksheets/sheet1.xml');
+        $this->assertNotFalse($sheet);
+        $this->assertStringContainsString('Gross Paid (Bookings Created in Period)', $sheet);
+        $this->assertStringContainsString('Refunds (Transactions in Period)', $sheet);
+        $this->assertStringContainsString('500', $sheet);
+        $archive->close();
+    }
+
+    private function createReservation(string $createdAt, string $status, int $budget): Reservation
+    {
+        return Reservation::unguarded(fn () => Reservation::create([
             'full_name' => 'Report Client',
             'contact_number' => '09171234567',
             'email' => 'report@example.com',

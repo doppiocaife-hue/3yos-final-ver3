@@ -3,10 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Mail\InquiryReplyMail;
+use App\Mail\ReservationAcceptedMail;
+use App\Mail\ReservationCancelledMail;
 use App\Models\Inquiry;
 use App\Models\Package;
 use App\Models\Reservation;
+use App\Models\ReservationPayment;
+use App\Models\ReservationRefund;
+use App\Models\ReservationStatusNotification;
 use App\Models\Service;
+use App\Services\ReservationFinancialService;
 use Illuminate\Database\Eloquent\Builder;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -49,7 +55,7 @@ class AdminController extends Controller
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
-        $query = Reservation::with('client', 'package')->latest();
+        $query = Reservation::with('client', 'package', 'payments', 'refunds')->latest();
 
         if ($status && in_array($status, ['pending', 'confirmed', 'completed', 'cancelled'], true)) {
             $query->where('status', $status);
@@ -111,9 +117,10 @@ class AdminController extends Controller
         ]);
     }
 
-    public function exportReservationsCsv(Request $request)
+    public function exportReservationsCsv(Request $request, ?ReservationFinancialService $financialService = null)
     {
-        $query = Reservation::query()->latest();
+        $financialService ??= app(ReservationFinancialService::class);
+        $query = Reservation::with('payments', 'refunds')->latest();
 
         $status = $request->input('status');
         $paymentStatus = $request->input('payment_status');
@@ -144,9 +151,10 @@ class AdminController extends Controller
         $reservations = $query->get();
 
         $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, ['Reservation Code', 'Customer Name', 'Email', 'Contact Number', 'Event Type', 'Event Date', 'Venue', 'Status', 'Payment Status', 'Contract Price', 'Amount Paid', 'Balance']);
+        fputcsv($handle, ['Reservation Code', 'Customer Name', 'Email', 'Contact Number', 'Event Type', 'Event Date', 'Venue', 'Status', 'Payment Status', 'Contract Price', 'Gross Paid', 'Refunded', 'Net Paid', 'Balance']);
 
         foreach ($reservations as $reservation) {
+            $amounts = $financialService->amounts($reservation);
             fputcsv($handle, [
                 $reservation->reservation_code ?? '',
                 $reservation->full_name ?? '',
@@ -158,8 +166,10 @@ class AdminController extends Controller
                 $reservation->status ?? '',
                 $reservation->payment_status ?? '',
                 (string) ($reservation->total_cost ?? 0),
-                (string) ($reservation->amount_paid ?? 0),
-                (string) ($reservation->balance ?? 0),
+                number_format($amounts['gross_paid'], 2, '.', ''),
+                number_format($amounts['total_refunded'], 2, '.', ''),
+                number_format($amounts['net_paid'], 2, '.', ''),
+                number_format($amounts['remaining_balance'] ?? 0, 2, '.', ''),
             ]);
         }
 
@@ -236,43 +246,60 @@ class AdminController extends Controller
         return redirect()->route('admin.inquiries')->with('success', 'Inquiry deleted.');
     }
 
-    public function analytics()
+    public function analytics(ReservationFinancialService $financialService)
     {
-        $months = collect(range(0, 11))->map(fn ($offset) => now()->startOfMonth()->subMonths(11 - $offset));
-        $reservations = Reservation::select([
-            'id',
-            'package_id',
-            'status',
-            'payment_status',
-            'amount_paid',
-            'created_at',
-        ])->get();
-        $monthlyReservations = $months->map(fn ($month) => (object) [
-            'label' => $month->format('M'),
-            'total' => $reservations->filter(fn ($reservation) => $reservation->created_at->format('Y-m') === $month->format('Y-m'))->count(),
-        ]);
-        $monthlyRevenue = $months->map(fn ($month) => (object) [
-            'label' => $month->format('M'),
-            'revenue' => $reservations
-                ->filter(fn (Reservation $reservation) => $reservation->created_at->format('Y-m') === $month->format('Y-m')
-                    && $reservation->status === 'completed'
-                    && $reservation->payment_status === 'Fully Paid')
-                ->sum('amount_paid'),
+        $reservations = Reservation::with('payments', 'refunds', 'package:id,name')->get();
+        $financials = $reservations->mapWithKeys(fn (Reservation $reservation) => [
+            $reservation->id => $financialService->calculate($reservation),
         ]);
 
-        $topPackages = Reservation::join('packages', 'packages.id', '=', 'reservations.package_id')
-            ->select('packages.name', DB::raw('COUNT(*) as total'))
-            ->groupBy('packages.name')
-            ->orderByDesc('total')
+        $cents = fn (string $key) => (int) $financials->sum($key);
+        $totals = [
+            'reservations' => $reservations->count(),
+            'paid' => $cents('gross_paid_cents') / 100,
+            'refunded' => $cents('total_refunded_cents') / 100,
+            'net' => $cents('net_paid_cents') / 100,
+            'outstanding' => (int) $financials->sum(fn (array $f) => $f['remaining_balance_cents'] ?? 0) / 100,
+            'refunded_reservations' => $financials->filter(fn (array $f) => $f['total_refunded_cents'] > 0)->count(),
+        ];
+
+        $statusCounts = collect(['pending', 'confirmed', 'completed', 'cancelled'])
+            ->mapWithKeys(fn ($status) => [$status => $reservations->where('status', $status)->count()]);
+
+        $topPackages = $reservations->filter(fn (Reservation $r) => $r->package)
+            ->groupBy('package_id')
+            ->map(fn ($group) => (object) [
+                'name' => $group->first()->package->name,
+                'total' => $group->count(),
+                'revenue' => $group->sum(fn (Reservation $r) => $financials[$r->id]['net_paid_cents']) / 100,
+            ])
+            ->sortByDesc('total')
             ->take(5)
-            ->get();
+            ->values();
 
-        $activity = Inquiry::where('created_at', '>=', now()->subDays(6)->startOfDay())->get()
-            ->groupBy(fn ($inquiry) => $inquiry->created_at->toDateString());
-        $activityLabels = collect(range(0, 6))->map(fn ($offset) => now()->subDays(6 - $offset)->format('D'));
-        $activityData = collect(range(0, 6))->map(fn ($offset) => $activity->get(now()->subDays(6 - $offset)->toDateString(), collect())->count());
+        $months = collect(range(5, 0))->map(fn ($ago) => now()->startOfMonth()->subMonths($ago));
+        $start = $months->first()->toDateString();
+        $payments = ReservationPayment::with('reservation:id,full_name')->whereDate('payment_date', '>=', $start)->get();
+        $refunds = ReservationRefund::with('reservation:id,full_name')->where('status', 'completed')->whereDate('refund_date', '>=', $start)->get();
+        $monthly = $months->map(function ($month) use ($reservations, $payments, $refunds) {
+            $key = $month->format('Y-m');
+            $paid = $payments->filter(fn ($p) => $p->payment_date->format('Y-m') === $key)->sum(fn ($p) => Reservation::toCents($p->amount));
+            $refunded = $refunds->filter(fn ($r) => $r->refund_date->format('Y-m') === $key)->sum(fn ($r) => Reservation::toCents($r->amount));
 
-        return view('admin.analytics', compact('monthlyReservations', 'monthlyRevenue', 'topPackages', 'activityLabels', 'activityData'));
+            return (object) [
+                'label' => $month->format('F Y'),
+                'reservations' => $reservations->filter(fn ($r) => $r->created_at->format('Y-m') === $key)->count(),
+                'paid' => $paid / 100,
+                'refunded' => $refunded / 100,
+                'net' => ($paid - $refunded) / 100,
+            ];
+        });
+
+        $recentReservations = $reservations->sortByDesc('created_at')->take(5)->values();
+        $recentPayments = ReservationPayment::with('reservation:id,full_name')->latest('payment_date')->latest('id')->take(5)->get();
+        $recentRefunds = ReservationRefund::with('reservation:id,full_name')->where('status', 'completed')->latest('refund_date')->latest('id')->take(5)->get();
+
+        return view('admin.analytics', compact('totals', 'statusCounts', 'topPackages', 'monthly', 'recentReservations', 'recentPayments', 'recentRefunds'));
     }
 
     public function updateReservationStatus(Request $request, Reservation $reservation)
@@ -307,7 +334,12 @@ class AdminController extends Controller
         $requestedPaid = $request->has('amount_paid') ? round((float) ($data['amount_paid'] ?? 0), 2) : null;
         unset($data['payment_status'], $data['payment_type'], $data['amount_paid']);
 
-        DB::transaction(function () use ($request, $reservation, $data, $requestedPaid): void {
+        $statusTransition = null;
+
+        DB::transaction(function () use ($request, $reservation, $data, $requestedPaid, &$statusTransition): void {
+            // Lock the row so a concurrent save can't race past this status comparison.
+            $originalStatus = Reservation::whereKey($reservation->id)->lockForUpdate()->value('status');
+
             $reservation->ensurePaymentLedger();
             $reservation->recalculatePaymentTotals();
             $paidCents = Reservation::toCents($reservation->amount_paid);
@@ -325,6 +357,10 @@ class AdminController extends Controller
             }
 
             $reservation->update($data);
+
+            if (array_key_exists('status', $data) && $data['status'] !== $originalStatus && in_array($data['status'], ['confirmed', 'cancelled'], true)) {
+                $statusTransition = $data['status'];
+            }
 
             // Older forms post a running total; record the increase as a payment history entry.
             if ($targetPaidCents > $paidCents) {
@@ -344,7 +380,62 @@ class AdminController extends Controller
             $reservation->recalculatePaymentTotals();
         });
 
+        if ($statusTransition !== null) {
+            return back()->with('success', $this->sendStatusNotification($reservation, $statusTransition));
+        }
+
         return back()->with('success', 'Reservation saved successfully.');
+    }
+
+    /**
+     * Send the accepted/cancelled notification email, log the outcome, and return the flash message.
+     */
+    private function sendStatusNotification(Reservation $reservation, string $status): string
+    {
+        $notificationType = $status === 'confirmed' ? 'accepted' : 'cancelled';
+        $savedMessage = $status === 'confirmed' ? 'Reservation accepted' : 'Reservation cancelled';
+
+        if (! $reservation->email) {
+            ReservationStatusNotification::create([
+                'reservation_id' => $reservation->id,
+                'recipient_email' => '',
+                'notification_type' => $notificationType,
+                'status' => 'failed',
+                'error_message' => 'Reservation has no email address on file.',
+            ]);
+
+            return $savedMessage.', but the notification email could not be sent.';
+        }
+
+        try {
+            Mail::to($reservation->email, $reservation->full_name)->send(
+                $notificationType === 'accepted'
+                    ? new ReservationAcceptedMail($reservation)
+                    : new ReservationCancelledMail($reservation)
+            );
+
+            ReservationStatusNotification::create([
+                'reservation_id' => $reservation->id,
+                'recipient_email' => $reservation->email,
+                'notification_type' => $notificationType,
+                'status' => 'sent',
+                'sent_at' => now(),
+            ]);
+
+            return $savedMessage.' and notification email sent.';
+        } catch (\Throwable $e) {
+            report($e);
+
+            ReservationStatusNotification::create([
+                'reservation_id' => $reservation->id,
+                'recipient_email' => $reservation->email,
+                'notification_type' => $notificationType,
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+            ]);
+
+            return $savedMessage.', but the notification email could not be sent.';
+        }
     }
 
     public function uploadReservationContract(Request $request, Reservation $reservation)

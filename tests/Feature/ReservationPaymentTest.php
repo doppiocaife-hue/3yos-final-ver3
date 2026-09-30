@@ -6,8 +6,10 @@ use App\Models\ActivityLog;
 use App\Models\Package;
 use App\Models\Reservation;
 use App\Models\ReservationPayment;
+use App\Models\ReservationRefund;
 use App\Services\BackupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class ReservationPaymentTest extends TestCase
@@ -45,6 +47,16 @@ class ReservationPaymentTest extends TestCase
             'payment_type' => 'Downpayment',
             'amount' => $amount,
             'payment_method' => 'Cash',
+        ]);
+    }
+
+    private function refund(Reservation $reservation, float $amount, array $overrides = [])
+    {
+        return $this->withSession(self::ADMIN)->post(route('admin.reservations.refunds.store', $reservation), $overrides + [
+            'request_key' => (string) Str::uuid(),
+            'refund_date' => now()->toDateString(),
+            'refund_amount' => $amount,
+            'refund_method' => 'Cash',
         ]);
     }
 
@@ -171,7 +183,7 @@ class ReservationPaymentTest extends TestCase
 
         $this->withSession(self::ADMIN)->get(route('admin.reservations.payments', $reservation))
             ->assertOk()
-            ->assertSeeInOrder(['Contract price', '₱1,000.00', 'Payment status', 'Downpayment', 'Total paid', '₱100.00', 'Remaining balance', '₱900.00', 'Payment due date', 'October 15, 2026'])
+            ->assertSeeInOrder(['Contract price', '₱1,000.00', 'Payment status', 'Downpayment', 'Gross paid', '₱100.00', 'Net paid', '₱100.00', 'Remaining balance', '₱900.00', 'Payment due date', 'October 15, 2026'])
             ->assertSee('Reference 12345')
             ->assertSee('Payment history');
 
@@ -182,6 +194,126 @@ class ReservationPaymentTest extends TestCase
             ->assertOk()->assertSee(route('admin.reservations.payments', $reservation), false);
 
         $this->assertTrue(ActivityLog::where('action', 'Recorded payment')->where('description', 'like', '%₱100.00 Cash payment%')->exists());
+    }
+
+    public function test_partial_refunds_preserve_the_payment_ledger_and_are_idempotent(): void
+    {
+        $reservation = $this->reservation();
+        $this->pay($reservation, 800);
+        $requestKey = (string) Str::uuid();
+
+        $this->refund($reservation, 200, ['request_key' => $requestKey, 'reason' => 'Event change'])
+            ->assertRedirect(route('admin.reservations.payments', $reservation))
+            ->assertSessionHas('success', 'Refund of ₱200.00 processed.');
+
+        $refund = $reservation->refunds()->firstOrFail();
+        $this->assertSame(200.0, (float) $refund->amount);
+        $this->assertSame('Event change', $refund->reason);
+        $this->assertSame('Payment Tester', $refund->recorded_by_name);
+        $this->assertSame(1, $reservation->payments()->count());
+        $this->assertSame('confirmed', $reservation->fresh()->status);
+        $this->assertTotals($reservation, 600.0, 400.0, 'Partial Payment');
+        $this->assertSame(1, ActivityLog::where('action', 'Processed refund')->count());
+
+        $this->withSession(self::ADMIN)->get(route('admin.reservations.payments', $reservation))
+            ->assertOk()
+            ->assertSee('Gross paid')
+            ->assertSee('Total refunded')
+            ->assertSee('Net paid')
+            ->assertSee('Event change')
+            ->assertSee('−₱200.00');
+        $this->withSession(self::ADMIN)->get(route('admin.reservations.payments.print', $reservation))
+            ->assertOk()
+            ->assertSee('Refund')
+            ->assertSee('−₱200.00')
+            ->assertSee('Remaining balance');
+        $this->withSession(self::ADMIN)->get(route('admin.reservations'))
+            ->assertOk()
+            ->assertSee('Refunded')
+            ->assertSee('&#8369;200.00', false);
+        $this->withSession(self::ADMIN)->get(route('admin.reservations.export'))
+            ->assertOk()
+            ->assertSee('"Gross Paid",Refunded,"Net Paid",Balance', false)
+            ->assertSee(',800.00,200.00,600.00,400.00', false);
+
+        $this->refund($reservation, 200, ['request_key' => $requestKey])
+            ->assertSessionHas('success', 'That refund submission was already processed.');
+        $this->assertSame(1, $reservation->refunds()->count());
+        $this->assertSame(1, ActivityLog::where('action', 'Processed refund')->count());
+        $this->assertTotals($reservation, 600.0, 400.0, 'Partial Payment');
+    }
+
+    public function test_full_refund_resets_net_paid_without_changing_reservation_status(): void
+    {
+        $reservation = $this->reservation();
+        $this->pay($reservation, 1000, ['payment_type' => 'Full Payment']);
+
+        $this->refund($reservation, 400)->assertSessionHas('success', 'Refund of ₱400.00 processed.');
+        $this->assertTotals($reservation, 600.0, 400.0, 'Partial Payment');
+        $this->refund($reservation, 600)->assertSessionHas('success', 'Refund of ₱600.00 processed.');
+
+        $this->assertTotals($reservation, 0.0, 1000.0, 'Unpaid');
+        $this->assertSame('confirmed', $reservation->fresh()->status);
+        $this->assertSame(1000.0, (float) $reservation->payments()->firstOrFail()->amount);
+        $this->assertSame(2, $reservation->refunds()->count());
+        $this->assertEquals(1000.0, $reservation->refunds()->sum('amount'));
+    }
+
+    public function test_customer_can_pay_again_after_a_partial_refund(): void
+    {
+        $reservation = $this->reservation();
+        $this->pay($reservation, 800);
+        $this->refund($reservation, 300);
+
+        $this->pay($reservation, 500, ['payment_type' => 'Final Payment'])
+            ->assertSessionHas('success', 'Payment of ₱500.00 recorded.');
+
+        $this->assertTotals($reservation, 1000.0, 0.0, 'Fully Paid');
+        $this->assertEquals(1300.0, $reservation->payments()->sum('amount'));
+        $this->assertEquals(300.0, $reservation->refunds()->sum('amount'));
+    }
+
+    public function test_refunds_cannot_exceed_net_paid_or_use_invalid_amounts_or_methods(): void
+    {
+        $reservation = $this->reservation();
+        $this->pay($reservation, 500);
+
+        $this->refund($reservation, 600)->assertSessionHasErrors(['refund_amount' => 'Refund cannot exceed the total amount paid.']);
+        $this->refund($reservation, 0)->assertSessionHasErrors('refund_amount');
+        $this->refund($reservation, 10.555)->assertSessionHasErrors('refund_amount');
+        $this->refund($reservation, 100, ['refund_method' => 'Crypto'])->assertSessionHasErrors('refund_method');
+        $this->refund($reservation, 100, ['refund_date' => now()->addDay()->toDateString()])->assertSessionHasErrors('refund_date');
+
+        $this->assertSame(0, $reservation->refunds()->count());
+        $this->assertSame(0, ActivityLog::where('action', 'Processed refund')->count());
+        $this->assertTotals($reservation, 500.0, 500.0, 'Downpayment');
+    }
+
+    public function test_refunded_amounts_cannot_be_undone_by_editing_or_deleting_payments(): void
+    {
+        $reservation = $this->reservation();
+        $this->pay($reservation, 800);
+        $this->refund($reservation, 300);
+        $payment = $reservation->payments()->firstOrFail();
+        $paymentFields = [
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'payment_method' => 'Cash',
+        ];
+
+        $this->withSession(self::ADMIN)
+            ->put(route('admin.reservations.payments.update', [$reservation, $payment]), $paymentFields + ['amount' => 200])
+            ->assertSessionHasErrorsIn('editPayment', 'amount');
+        $this->withSession(self::ADMIN)
+            ->delete(route('admin.reservations.payments.destroy', [$reservation, $payment]))
+            ->assertSessionHasErrors('payment');
+
+        $this->assertModelExists($payment);
+        $this->assertTotals($reservation, 500.0, 500.0, 'Partial Payment');
+
+        $this->withSession(self::ADMIN)->patch(route('admin.reservations.payments.details', $reservation), ['total_cost' => 500])
+            ->assertSessionHas('success');
+        $this->assertTotals($reservation, 500.0, 0.0, 'Fully Paid');
     }
 
     public function test_bookings_paid_before_the_ledger_keep_their_totals(): void
@@ -195,6 +327,16 @@ class ReservationPaymentTest extends TestCase
 
         $this->pay($reservation, 2000, ['payment_type' => 'Partial Payment']);
         $this->assertTotals($reservation, 10000.0, 20000.0, 'Partial Payment');
+
+        $fullyPaidWithoutContract = $this->reservation([
+            'total_cost' => null,
+            'amount_paid' => 8000,
+            'balance' => 0,
+            'payment_status' => 'Fully Paid',
+            'payment_type' => 'Full Payment',
+        ]);
+        $this->withSession(self::ADMIN)->get(route('admin.reservations.payments', $fullyPaidWithoutContract))->assertOk();
+        $this->assertTotals($fullyPaidWithoutContract, 8000.0, 0.0, 'Fully Paid');
     }
 
     public function test_guests_cannot_see_or_change_payments(): void
@@ -214,6 +356,12 @@ class ReservationPaymentTest extends TestCase
             $this->delete(route('admin.reservations.payments.destroy', [$reservation, $payment])),
             $this->patch(route('admin.reservations.payments.details', $reservation), ['total_cost' => 1]),
             $this->patch(route('admin.reservations.status', $reservation), ['amount_paid' => 1000]),
+            $this->post(route('admin.reservations.refunds.store', $reservation), [
+                'request_key' => (string) Str::uuid(),
+                'refund_date' => now()->toDateString(),
+                'refund_amount' => 50,
+                'refund_method' => 'Cash',
+            ]),
         ];
         foreach ($requests as $response) {
             $response->assertRedirect(route('admin.login'));
@@ -239,10 +387,11 @@ class ReservationPaymentTest extends TestCase
         $this->assertModelExists($payment);
     }
 
-    public function test_backups_include_payment_history(): void
+    public function test_backups_include_payment_and_refund_history(): void
     {
         $reservation = $this->reservation();
         $this->pay($reservation, 300);
+        $this->refund($reservation, 100);
 
         $service = app(BackupService::class);
         $path = $service->pathFor(basename($service->create()));
@@ -254,6 +403,9 @@ class ReservationPaymentTest extends TestCase
 
         $this->assertCount(1, $contents['tables']['reservation_payments']);
         $this->assertSame(300.0, (float) $contents['tables']['reservation_payments'][0]['amount']);
+        $this->assertArrayHasKey('reservation_refunds', $contents['tables']);
+        $this->assertCount(1, $contents['tables']['reservation_refunds']);
+        $this->assertSame(100.0, (float) $contents['tables']['reservation_refunds'][0]['amount']);
     }
 
     public function test_restoring_a_backup_made_before_payment_history_clears_stale_payments(): void
@@ -267,10 +419,13 @@ class ReservationPaymentTest extends TestCase
             // Simulate an older backup file that predates the payments table.
             $backup = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
             unset($backup['tables']['reservation_payments']);
+            unset($backup['tables']['reservation_refunds']);
             file_put_contents($path, json_encode($backup, JSON_THROW_ON_ERROR), LOCK_EX);
 
             $this->pay($reservation, 500);
             $this->assertSame(2, ReservationPayment::count());
+            $this->refund($reservation, 100);
+            $this->assertSame(1, ReservationRefund::count());
 
             $service->restore($name);
         } finally {
@@ -278,6 +433,7 @@ class ReservationPaymentTest extends TestCase
         }
 
         $this->assertSame(0, ReservationPayment::count());
+        $this->assertSame(0, ReservationRefund::count());
         $this->withSession(self::ADMIN)->get(route('admin.reservations.payments', $reservation))->assertOk();
         $this->assertTotals($reservation, 2000.0, 3000.0, 'Downpayment');
     }

@@ -62,13 +62,14 @@
                         <div class="col-md-6"><label class="form-label">Email address</label><input type="email" name="email" value="{{ old('email') }}" class="form-control" required></div>
                         <div class="col-md-6"><label class="form-label">Complete address</label><input type="text" name="address" value="{{ old('address') }}" class="form-control" required></div>
                         <div class="col-md-6"><label class="form-label">Event type</label><select name="event_type" class="form-select" required><option value="">Select an event type</option>@foreach(['Wedding','Birthday','Debut','Anniversary','Corporate Event','Baptism','Graduation','Other'] as $type)<option value="{{ $type }}" @selected(old('event_type') === $type)>{{ $type }}</option>@endforeach</select></div>
-                        @php($selectedPackage = $packages->firstWhere('id', old('package_id')))
+                        @php($preselectedPackageId = old('package_id', request()->query('package')))
+                        @php($selectedPackage = $packages->firstWhere('id', $preselectedPackageId))
                         <div class="col-md-6 package-picker-field">
                             <label class="form-label" for="package-picker-toggle">Catering package</label>
                             <select name="package_id" id="package_id" class="form-select" required>
                                 <option value="">Select a package</option>
                                 @foreach($packages as $package)
-                                    <option value="{{ $package->id }}" data-price="{{ $package->price }}" @selected(old('package_id') == $package->id)>{{ $package->name }}</option>
+                                    <option value="{{ $package->id }}" data-price="{{ $package->price }}" @selected($preselectedPackageId == $package->id)>{{ $package->name }}</option>
                                 @endforeach
                             </select>
                             <div class="package-picker" id="package-picker" hidden>
@@ -78,7 +79,7 @@
                                 <div class="package-picker-panel" id="package-picker-panel" hidden>
                                     <div class="package-picker-options" role="listbox" aria-label="Catering packages">
                                         @foreach($packages as $package)
-                                            <button type="button" class="package-picker-option" role="option" id="package-option-{{ $package->id }}" data-package-option data-value="{{ $package->id }}" data-name="{{ $package->name }}" data-description="{{ $package->description }}" data-menu="{{ $package->menu }}" data-freebies="{{ $package->freebies }}" data-addons="{{ $package->addons }}" aria-selected="{{ (string) old('package_id') === (string) $package->id ? 'true' : 'false' }}" tabindex="-1">
+                                            <button type="button" class="package-picker-option" role="option" id="package-option-{{ $package->id }}" data-package-option data-value="{{ $package->id }}" data-name="{{ $package->name }}" data-description="{{ $package->description }}" data-menu="{{ $package->menu }}" data-freebies="{{ $package->freebies }}" data-addons="{{ $package->addons }}" aria-selected="{{ (string) $preselectedPackageId === (string) $package->id ? 'true' : 'false' }}" tabindex="-1">
                                                 <span>{{ $package->name }}</span>
                                                 <small>Preview package</small>
                                             </button>
@@ -130,7 +131,7 @@
                             <small class="form-text">Choose a time using the clock.</small>
                         </div>
                         <div class="col-md-6"><label class="form-label">Venue</label><input type="text" name="venue" value="{{ old('venue') }}" class="form-control" required></div>
-                        <div class="col-md-6"><label class="form-label">Expected guests</label><input type="number" name="guest_count" id="guest_count" value="{{ old('guest_count') }}" min="1" max="1000" class="form-control" required><small class="form-text">Enter the total number of attendees.</small></div>
+                        <div class="col-md-6"><label class="form-label">Expected guests</label><input type="number" name="guest_count" id="guest_count" value="{{ old('guest_count', request()->query('guests')) }}" min="1" max="1000" class="form-control" required><small class="form-text">Enter the total number of attendees.</small></div>
                         <div class="col-md-6"><label class="form-label" for="estimated-budget-display">Estimated package total</label><output id="estimated-budget-display" class="form-control" aria-live="polite">Choose a package and guest count to see an estimate.</output><small class="form-text">Calculated automatically from the package rate and guest count; the final contract price is confirmed by our team.</small></div>
                         <div class="col-12"><label class="form-label">Additional services</label><textarea name="additional_services" class="form-control" rows="2">{{ old('additional_services') }}</textarea></div>
                         <div class="col-12"><label class="form-label">Special requests</label><textarea name="special_requests" class="form-control" rows="2">{{ old('special_requests') }}</textarea></div>

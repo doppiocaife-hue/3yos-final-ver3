@@ -129,6 +129,7 @@ class ReportController extends Controller
         $headerStyle = (new Style())->setFontBold()->setFontColor(Color::WHITE)->setBackgroundColor('244A57')->setBorder($tableBorder);
         $labelStyle = (new Style())->setFontColor('24353D')->setBorder($tableBorder);
         $valueStyle = (new Style())->setFontBold()->setFontColor('24353D')->setCellAlignment('right')->setFormat('#,##0')->setBorder($tableBorder);
+        $financialValueStyle = (new Style())->setFontBold()->setFontColor('24353D')->setCellAlignment('right')->setFormat('"₱"#,##0.00')->setBorder($tableBorder);
         $revenueLabelStyle = (new Style())->setFontBold()->setFontSize(12)->setFontColor('176B68')->setBackgroundColor('E7F4F1')->setBorder($tableBorder);
         $revenueValueStyle = (new Style())->setFontBold()->setFontSize(13)->setFontColor('176B68')->setBackgroundColor('E7F4F1')->setCellAlignment('right')->setFormat('"₱"#,##0.00')->setBorder($tableBorder);
         $periodStart = $summary['period_start'];
@@ -151,10 +152,29 @@ class ReportController extends Controller
             ['Completed', $summary['completed_events']],
             ['Cancelled', $summary['cancelled_reservations']],
             ['Inquiries', $summary['inquiry_count']],
+            ['Contract Value (Bookings Created in Period)', $summary['contract_value']],
+            ['Gross Paid (Bookings Created in Period)', $summary['gross_paid']],
+            ['Refunded (Bookings Created in Period)', $summary['total_refunded']],
+            ['Net Paid (Bookings Created in Period)', $summary['net_paid']],
+            ['Outstanding Balance (Current Bookings)', $summary['outstanding_balance']],
+            ['Gross Payments (Transactions in Period)', $summary['gross_payments_in_period']],
+            ['Refunds (Transactions in Period)', $summary['refunds_in_period']],
+            ['Net Collected (Transactions in Period)', $summary['net_collected_in_period']],
+        ];
+        $financialLabels = [
+            'Contract Value (Bookings Created in Period)',
+            'Gross Paid (Bookings Created in Period)',
+            'Refunded (Bookings Created in Period)',
+            'Net Paid (Bookings Created in Period)',
+            'Outstanding Balance (Current Bookings)',
+            'Gross Payments (Transactions in Period)',
+            'Refunds (Transactions in Period)',
+            'Net Collected (Transactions in Period)',
         ];
 
         foreach ($metrics as [$label, $value]) {
-            $writer->addRow(Row::fromValuesWithStyles([$label, $value], null, [$labelStyle, $valueStyle])->setHeight(21));
+            $metricValueStyle = in_array($label, $financialLabels, true) ? $financialValueStyle : $valueStyle;
+            $writer->addRow(Row::fromValuesWithStyles([$label, $value], null, [$labelStyle, $metricValueStyle])->setHeight(21));
         }
 
         $writer->addRow(Row::fromValuesWithStyles(['Estimated Revenue', $summary['estimated_revenue']], null, [$revenueLabelStyle, $revenueValueStyle])->setHeight(28));
@@ -171,6 +191,14 @@ class ReportController extends Controller
             ['Cancelled Reservations', $summary['cancelled_reservations']],
             ['Inquiries', $summary['inquiry_count']],
             ['Estimated Revenue', $summary['estimated_revenue']],
+            ['Contract Value (Bookings Created in Period)', $summary['contract_value']],
+            ['Gross Paid (Bookings Created in Period)', $summary['gross_paid']],
+            ['Refunded (Bookings Created in Period)', $summary['total_refunded']],
+            ['Net Paid (Bookings Created in Period)', $summary['net_paid']],
+            ['Outstanding Balance (Current Bookings)', $summary['outstanding_balance']],
+            ['Gross Payments (Transactions in Period)', $summary['gross_payments_in_period']],
+            ['Refunds (Transactions in Period)', $summary['refunds_in_period']],
+            ['Net Collected (Transactions in Period)', $summary['net_collected_in_period']],
         ];
 
         $handle = fopen('php://temp', 'r+');

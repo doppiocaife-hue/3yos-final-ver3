@@ -2,9 +2,12 @@
 
 @php
     $peso = fn ($amount) => '₱' . number_format((float) $amount, 2);
-    $balanceCents = $reservation->remainingBalanceCents();
+    $balanceCents = $financials['remaining_balance_cents'];
+    $grossPaid = $financials['gross_paid_cents'] / 100;
+    $totalRefunded = $financials['total_refunded_cents'] / 100;
+    $netPaid = $financials['net_paid_cents'] / 100;
     $contractSet = $reservation->total_cost !== null;
-    $fullyPaid = $contractSet && $balanceCents === 0 && $payments->isNotEmpty();
+    $fullyPaid = $financials['payment_status'] === 'Fully Paid';
     $lastPayment = $payments->last();
     $dueDate = $reservation->payment_due_date;
     $overdue = $dueDate && $dueDate->isPast() && ! $dueDate->isToday() && ($balanceCents ?? 0) > 0;
@@ -32,7 +35,9 @@
     <div class="summary-grid" aria-label="Payment summary">
         <div class="summary-item summary-item--accent"><span>Contract price</span><strong>{{ $contractSet ? $peso($reservation->total_cost) : 'Not set' }}</strong></div>
         <div class="summary-item"><span>Payment status</span><strong><span class="status-badge status-badge--{{ \App\Models\Reservation::paymentStatusBadge($reservation->payment_status) }}">{{ \App\Models\Reservation::paymentStatusLabel($reservation->payment_status) }}</span></strong></div>
-        <div class="summary-item"><span>Total paid</span><strong>{{ $peso($reservation->amount_paid) }}</strong></div>
+        <div class="summary-item"><span>Gross paid</span><strong>{{ $peso($grossPaid) }}</strong></div>
+        <div class="summary-item"><span>Total refunded</span><strong>{{ $peso($totalRefunded) }}</strong></div>
+        <div class="summary-item"><span>Net paid</span><strong>{{ $peso($netPaid) }}</strong></div>
         <div class="summary-item {{ ($balanceCents ?? 0) > 0 ? 'summary-item--warn' : '' }}"><span>Remaining balance</span><strong>{{ $contractSet ? $peso($balanceCents / 100) : '—' }}</strong></div>
         <div class="summary-item"><span>Payment due date</span><strong>{{ $dueDate ? $dueDate->format('F j, Y') : 'Not set' }}</strong>@if($overdue)<span class="status-badge status-badge--cancelled mt-2">Overdue</span>@endif</div>
         <div class="summary-item"><span>Last payment method</span><strong>{{ $lastPayment?->payment_method ?? '—' }}</strong></div>
@@ -88,8 +93,8 @@
                     @csrf @method('PATCH')
                     <div class="mb-3">
                         <label class="form-label" for="total_cost">Contract price (₱)</label>
-                        <input class="form-control @error('total_cost') is-invalid @enderror" type="number" id="total_cost" name="total_cost" value="{{ old('total_cost', $reservation->total_cost) }}" min="{{ number_format((float) $reservation->amount_paid, 2, '.', '') }}" step="0.01" inputmode="decimal" required>
-                        @if((float) $reservation->amount_paid > 0)<div class="form-text">Cannot be lower than the {{ $peso($reservation->amount_paid) }} already paid.</div>@endif
+                        <input class="form-control @error('total_cost') is-invalid @enderror" type="number" id="total_cost" name="total_cost" value="{{ old('total_cost', $reservation->total_cost) }}" min="{{ number_format($netPaid, 2, '.', '') }}" step="0.01" inputmode="decimal" required>
+                        @if($netPaid > 0)<div class="form-text">Cannot be lower than the {{ $peso($netPaid) }} net amount paid.</div>@endif
                     </div>
                     <div class="mb-3">
                         <label class="form-label" for="payment_due_date">Payment due date</label>
@@ -102,6 +107,48 @@
         </div>
     </div>
 
+    <section class="card mb-4 refund-panel" aria-labelledby="refund-payment-title">
+        <div class="panel-header">
+            <div>
+                <h5 class="fw-bold mb-1" id="refund-payment-title">Refund payment</h5>
+                <p class="text-muted small mb-0">Record money returned to the customer. The original payments remain in the history.</p>
+            </div>
+        </div>
+        @if($netPaid <= 0)
+            <div class="alert alert-info mb-0">A refund can be recorded after a payment has been received.</div>
+        @else
+            <form method="POST" id="refund-payment-form" action="{{ route('admin.reservations.refunds.store', $reservation) }}" data-submit-once data-confirm-message="Confirm this refund?" data-refund-confirm>
+                @csrf
+                <input type="hidden" name="request_key" value="{{ $refundRequestKey }}">
+                <div class="row g-3">
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label" for="refund_amount">Amount (₱)</label>
+                        <input class="form-control @error('refund_amount') is-invalid @enderror" type="number" id="refund_amount" name="refund_amount" value="{{ old('refund_amount') }}" min="0.01" max="{{ number_format($netPaid, 2, '.', '') }}" step="0.01" inputmode="decimal" placeholder="0.00" required>
+                        <div class="form-text">Maximum refundable: {{ $peso($netPaid) }}</div>
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label" for="refund_method">Refund method</label>
+                        <select class="form-select @error('refund_method') is-invalid @enderror" id="refund_method" name="refund_method" required>
+                            @foreach($methods as $method)<option value="{{ $method }}" @selected(old('refund_method', 'Cash') === $method)>{{ $method }}</option>@endforeach
+                        </select>
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label" for="refund_date">Refund date</label>
+                        <input class="form-control @error('refund_date') is-invalid @enderror" type="date" id="refund_date" name="refund_date" value="{{ old('refund_date', now()->toDateString()) }}" max="{{ now()->toDateString() }}" required>
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label" for="refund_reason">Reason / notes <span class="text-muted fw-normal">(optional)</span></label>
+                        <input class="form-control @error('reason') is-invalid @enderror" type="text" id="refund_reason" name="reason" value="{{ old('reason') }}" maxlength="1000" placeholder="Reason for refund">
+                    </div>
+                </div>
+                <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mt-3">
+                    <span class="small text-muted">Current net paid: {{ $peso($netPaid) }}</span>
+                    <button class="btn btn-outline-danger" type="submit">Process Refund</button>
+                </div>
+            </form>
+        @endif
+    </section>
+
     <section aria-labelledby="history-title">
         <h5 class="fw-bold mb-2" id="history-title">Payment history</h5>
         <div class="table-responsive">
@@ -110,29 +157,39 @@
                     <tr><th>Date</th><th>Payment type</th><th class="text-end">Amount</th><th>Method</th><th>Notes</th><th>Recorded by</th><th class="text-end">Actions</th></tr>
                 </thead>
                 <tbody>
-                    @forelse($payments as $payment)
+                    @forelse($transactions as $transaction)
                         <tr>
-                            <td class="text-nowrap">{{ $payment->payment_date->format('m/d/Y') }}</td>
-                            <td>{{ $payment->payment_type }}</td>
-                            <td class="text-end money fw-bold">{{ $peso($payment->amount) }}</td>
-                            <td>{{ $payment->payment_method }}</td>
-                            <td class="text-muted payment-notes">{{ $payment->notes ?: '—' }}</td>
-                            <td class="text-muted">{{ $payment->recorded_by_name ?: '—' }}<br><small>{{ $payment->created_at?->format('M j, Y g:i A') }}</small></td>
+                            <td class="text-nowrap">{{ $transaction->date->format('m/d/Y') }}</td>
+                            <td>
+                                @if($transaction->kind === 'refund')
+                                    <span class="refund-type">Refund</span>
+                                @else
+                                    {{ $transaction->type }}
+                                @endif
+                            </td>
+                            <td class="text-end money fw-bold {{ $transaction->kind === 'refund' ? 'refund-amount' : '' }}">{{ $transaction->kind === 'refund' ? '−' : '' }}{{ $peso($transaction->amount) }}</td>
+                            <td>{{ $transaction->method }}</td>
+                            <td class="text-muted payment-notes">{{ $transaction->notes ?: '—' }}</td>
+                            <td class="text-muted">{{ $transaction->recorded_by_name ?: '—' }}<br><small>{{ $transaction->created_at?->format('M j, Y g:i A') }}</small></td>
                             <td class="text-end">
-                                <div class="table-actions">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-payment
-                                        data-action="{{ route('admin.reservations.payments.update', [$reservation, $payment]) }}"
-                                        data-id="{{ $payment->id }}"
-                                        data-date="{{ $payment->payment_date->toDateString() }}"
-                                        data-type="{{ $payment->payment_type }}"
-                                        data-amount="{{ number_format($payment->amount, 2, '.', '') }}"
-                                        data-method="{{ $payment->payment_method }}"
-                                        data-notes="{{ $payment->notes }}">Edit</button>
-                                    <form method="POST" action="{{ route('admin.reservations.payments.destroy', [$reservation, $payment]) }}" data-submit-once data-confirm-message="Delete this {{ $peso($payment->amount) }} payment? The total paid and balance will be recalculated.">
-                                        @csrf @method('DELETE')
-                                        <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
-                                    </form>
-                                </div>
+                                @if($transaction->kind === 'payment')
+                                    <div class="table-actions">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-payment
+                                            data-action="{{ route('admin.reservations.payments.update', [$reservation, $transaction->payment]) }}"
+                                            data-id="{{ $transaction->payment->id }}"
+                                            data-date="{{ $transaction->payment->payment_date->toDateString() }}"
+                                            data-type="{{ $transaction->payment->payment_type }}"
+                                            data-amount="{{ number_format($transaction->payment->amount, 2, '.', '') }}"
+                                            data-method="{{ $transaction->payment->payment_method }}"
+                                            data-notes="{{ $transaction->payment->notes }}">Edit</button>
+                                        <form method="POST" action="{{ route('admin.reservations.payments.destroy', [$reservation, $transaction->payment]) }}" data-submit-once data-confirm-message="Delete this {{ $peso($transaction->payment->amount) }} payment? The total paid and balance will be recalculated.">
+                                            @csrf @method('DELETE')
+                                            <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                                        </form>
+                                    </div>
+                                @else
+                                    <span class="text-muted">—</span>
+                                @endif
                             </td>
                         </tr>
                     @empty
@@ -140,7 +197,9 @@
                     @endforelse
                 </tbody>
                 <tfoot>
-                    <tr><th colspan="2">Total paid</th><th class="text-end money">{{ $peso($reservation->amount_paid) }}</th><th colspan="4"></th></tr>
+                    <tr><th colspan="2">Gross paid</th><th class="text-end money">{{ $peso($grossPaid) }}</th><th colspan="4"></th></tr>
+                    <tr><th colspan="2">Total refunded</th><th class="text-end money refund-amount">−{{ $peso($totalRefunded) }}</th><th colspan="4"></th></tr>
+                    <tr><th colspan="2">Net paid</th><th class="text-end money">{{ $peso($netPaid) }}</th><th colspan="4"></th></tr>
                     <tr><th colspan="2">Balance</th><th class="text-end money">{{ $contractSet ? $peso($balanceCents / 100) : '—' }}</th><th colspan="4"></th></tr>
                 </tfoot>
             </table>
@@ -175,7 +234,32 @@
     body.dark-mode .payment-history tfoot th { background: #223641; }
     .payment-notes { max-width: 260px; overflow-wrap: anywhere; }
     .summary-item .status-badge { font-family: "DM Sans", sans-serif; }
+    .refund-panel { border-color: rgba(185, 71, 71, .28); }
+    .refund-type, .refund-amount { color: var(--danger) !important; }
+    body.dark-mode .refund-type, body.dark-mode .refund-amount { color: #ffb0b0 !important; }
 </style>
+<script>
+(() => {
+    const form = document.getElementById('refund-payment-form');
+    if (!form) return;
+
+    const amount = form.querySelector('[name="refund_amount"]');
+    const maximum = Number(amount.max);
+    const peso = (value) => `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const updateConfirmation = () => {
+        const refund = Number(amount.value);
+        form.dataset.confirmMessage = [
+            'Confirm Refund',
+            `Refund amount: ${peso(refund)}`,
+            `Current net paid: ${peso(maximum)}`,
+            `Remaining after refund: ${peso(Math.max(0, maximum - refund))}`,
+        ].join('\n');
+    };
+
+    amount.addEventListener('input', updateConfirmation);
+    updateConfirmation();
+})();
+</script>
 <script>
 (() => {
     const dialog = document.getElementById('edit-payment-dialog');

@@ -98,7 +98,8 @@
                 @forelse($reservations as $reservation)
                     @php($statusLabel = $reservation->status === 'confirmed' ? 'Accepted' : ucfirst($reservation->status))
                     @php($paymentType = $reservation->payment_type ?? $reservation->payment_status ?? 'Unpaid')
-                    @php($outstandingBalance = $reservation->total_cost === null ? null : max(0, (float) $reservation->total_cost - (float) ($reservation->amount_paid ?? 0)))
+                    @php($reservationFinancials = $reservation->financials())
+                    @php($outstandingBalance = $reservationFinancials['remaining_balance_cents'] === null ? null : $reservationFinancials['remaining_balance_cents'] / 100)
                     <tr>
                         <td>
                             <span class="reservation-code">{{ $reservation->reservation_code ?? '—' }}</span>
@@ -192,7 +193,11 @@
                         <td>
                             <div class="payment-cell">
                                 <span class="status-badge status-badge--{{ \App\Models\Reservation::paymentStatusBadge($reservation->payment_status) }}">{{ \App\Models\Reservation::paymentStatusLabel($reservation->payment_status) }}</span>
-                                <span class="cell-note">Paid <span class="money">&#8369;{{ number_format((float) ($reservation->amount_paid ?? 0), 2) }}</span></span>
+                                <span class="cell-note">Gross paid <span class="money">&#8369;{{ number_format($reservationFinancials['gross_paid_cents'] / 100, 2) }}</span></span>
+                                @if($reservationFinancials['total_refunded_cents'] > 0)
+                                    <span class="cell-note">Refunded <span class="money">&#8369;{{ number_format($reservationFinancials['total_refunded_cents'] / 100, 2) }}</span></span>
+                                @endif
+                                <span class="cell-note">Net paid <span class="money">&#8369;{{ number_format($reservationFinancials['net_paid_cents'] / 100, 2) }}</span></span>
                                 @if($outstandingBalance > 0)
                                     <span class="cell-note payment-warning" role="alert">Unpaid balance: &#8369;{{ number_format($outstandingBalance, 2) }}</span>
                                 @else
@@ -218,7 +223,8 @@
         @forelse($reservations as $reservation)
             @php($statusLabel = $reservation->status === 'confirmed' ? 'Accepted' : ucfirst($reservation->status))
             @php($paymentType = $reservation->payment_type ?? $reservation->payment_status ?? 'Unpaid')
-            @php($outstandingBalance = $reservation->total_cost === null ? null : max(0, (float) $reservation->total_cost - (float) ($reservation->amount_paid ?? 0)))
+            @php($reservationFinancials = $reservation->financials())
+            @php($outstandingBalance = $reservationFinancials['remaining_balance_cents'] === null ? null : $reservationFinancials['remaining_balance_cents'] / 100)
             <article class="reservation-mobile-card">
                 <div class="d-flex justify-content-between gap-3">
                     <div>
