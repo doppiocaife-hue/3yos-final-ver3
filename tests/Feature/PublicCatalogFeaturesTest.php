@@ -12,6 +12,17 @@ use Tests\TestCase;
 
 class PublicCatalogFeaturesTest extends TestCase
 {
+    public function test_reservation_time_has_a_native_required_input_and_desktop_clock_fallback(): void
+    {
+        $response = $this->get(route('reservation'));
+
+        $response->assertOk();
+        $response->assertSee('for="event_time">Event time</label>', false);
+        $response->assertSee('type="time" name="event_time" id="event_time"', false);
+        $response->assertSee('id="event_time" value="" class="form-control" required', false);
+        $response->assertSee('id="clock-time-picker" hidden', false);
+    }
+
     public function test_homepage_replaces_unverified_metrics_with_service_and_package_sections(): void
     {
         $response = $this->get(route('home'));

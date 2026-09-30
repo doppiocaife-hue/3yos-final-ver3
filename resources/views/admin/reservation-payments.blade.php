@@ -52,7 +52,7 @@
                 @elseif($fullyPaid)
                     <div class="alert alert-success mb-0">This booking is fully paid. Edit or delete a payment below to make changes.</div>
                 @else
-                    <form method="POST" action="{{ route('admin.reservations.payments.store', $reservation) }}" data-submit-once data-confirm-message="Record this payment? The balance and status will be recalculated.">
+                    <form method="POST" enctype="multipart/form-data" action="{{ route('admin.reservations.payments.store', $reservation) }}" data-submit-once data-confirm-message="Record this payment? The balance and status will be recalculated.">
                         @csrf
                         <div class="row g-3">
                             <div class="col-sm-6">
@@ -75,6 +75,11 @@
                                 <select class="form-select @error('payment_method') is-invalid @enderror" id="payment_method" name="payment_method" required>
                                     @foreach($methods as $method)<option value="{{ $method }}" @selected(old('payment_method', 'Cash') === $method)>{{ $method }}</option>@endforeach
                                 </select>
+                            </div>
+                            <div class="col-12 receipt-upload-field">
+                                <label class="form-label" for="receipt_image">Official Receipt Image <span class="text-muted fw-normal">(optional)</span></label>
+                                <input class="form-control @error('receipt_image') is-invalid @enderror" type="file" id="receipt_image" name="receipt_image" accept="image/jpeg,image/png,image/webp">
+                                <div class="form-text">Upload proof of payment. JPG, PNG, or WEBP; maximum 5MB.</div>
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="notes">Notes <span class="text-muted fw-normal">(optional)</span></label>
@@ -154,7 +159,7 @@
         <div class="table-responsive">
             <table class="table align-middle payment-history">
                 <thead>
-                    <tr><th>Date</th><th>Payment type</th><th class="text-end">Amount</th><th>Method</th><th>Notes</th><th>Recorded by</th><th class="text-end">Actions</th></tr>
+            <tr><th>Date</th><th>Payment type</th><th class="text-end">Amount</th><th>Method</th><th>Receipt</th><th>Notes</th><th>Recorded by</th><th class="text-end">Actions</th></tr>
                 </thead>
                 <tbody>
                     @forelse($transactions as $transaction)
@@ -169,6 +174,17 @@
                             </td>
                             <td class="text-end money fw-bold {{ $transaction->kind === 'refund' ? 'refund-amount' : '' }}">{{ $transaction->kind === 'refund' ? '−' : '' }}{{ $peso($transaction->amount) }}</td>
                             <td>{{ $transaction->method }}</td>
+                            <td>
+                                @if($transaction->kind === 'payment' && $transaction->payment->receipt_image_path)
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-view-receipt
+                                        data-receipt-url="{{ route('admin.reservations.payments.receipt', [$reservation, $transaction->payment]) }}"
+                                        aria-label="View receipt for payment {{ $peso($transaction->amount) }}">View Receipt</button>
+                                @elseif($transaction->kind === 'payment')
+                                    <span class="text-muted">No receipt</span>
+                                @else
+                                    <span class="text-muted">—</span>
+                                @endif
+                            </td>
                             <td class="text-muted payment-notes">{{ $transaction->notes ?: '—' }}</td>
                             <td class="text-muted">{{ $transaction->recorded_by_name ?: '—' }}<br><small>{{ $transaction->created_at?->format('M j, Y g:i A') }}</small></td>
                             <td class="text-end">
@@ -181,7 +197,8 @@
                                             data-type="{{ $transaction->payment->payment_type }}"
                                             data-amount="{{ number_format($transaction->payment->amount, 2, '.', '') }}"
                                             data-method="{{ $transaction->payment->payment_method }}"
-                                            data-notes="{{ $transaction->payment->notes }}">Edit</button>
+                                            data-notes="{{ $transaction->payment->notes }}"
+                                            data-receipt-url="{{ $transaction->payment->receipt_image_path ? route('admin.reservations.payments.receipt', [$reservation, $transaction->payment]) : '' }}">Edit</button>
                                         <form method="POST" action="{{ route('admin.reservations.payments.destroy', [$reservation, $transaction->payment]) }}" data-submit-once data-confirm-message="Delete this {{ $peso($transaction->payment->amount) }} payment? The total paid and balance will be recalculated.">
                                             @csrf @method('DELETE')
                                             <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
@@ -193,32 +210,49 @@
                             </td>
                         </tr>
                     @empty
-                        <tr><td colspan="7" class="text-center text-muted py-4">No payments recorded yet.</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted py-4">No payments recorded yet.</td></tr>
                     @endforelse
                 </tbody>
                 <tfoot>
-                    <tr><th colspan="2">Gross paid</th><th class="text-end money">{{ $peso($grossPaid) }}</th><th colspan="4"></th></tr>
-                    <tr><th colspan="2">Total refunded</th><th class="text-end money refund-amount">−{{ $peso($totalRefunded) }}</th><th colspan="4"></th></tr>
-                    <tr><th colspan="2">Net paid</th><th class="text-end money">{{ $peso($netPaid) }}</th><th colspan="4"></th></tr>
-                    <tr><th colspan="2">Balance</th><th class="text-end money">{{ $contractSet ? $peso($balanceCents / 100) : '—' }}</th><th colspan="4"></th></tr>
+                    <tr><th colspan="2">Gross paid</th><th class="text-end money">{{ $peso($grossPaid) }}</th><th colspan="5"></th></tr>
+                    <tr><th colspan="2">Total refunded</th><th class="text-end money refund-amount">−{{ $peso($totalRefunded) }}</th><th colspan="5"></th></tr>
+                    <tr><th colspan="2">Net paid</th><th class="text-end money">{{ $peso($netPaid) }}</th><th colspan="5"></th></tr>
+                    <tr><th colspan="2">Balance</th><th class="text-end money">{{ $contractSet ? $peso($balanceCents / 100) : '—' }}</th><th colspan="5"></th></tr>
                 </tfoot>
             </table>
         </div>
     </section>
 </div>
 
+<dialog id="payment-receipt-dialog" aria-labelledby="payment-receipt-title" class="payment-receipt-dialog">
+    <div class="receipt-dialog-header">
+        <h2 id="payment-receipt-title" class="h5 mb-0">Official receipt</h2>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-close-receipt>Close</button>
+    </div>
+    <div class="receipt-dialog-body">
+        <img id="payment-receipt-image" alt="Official receipt image" hidden>
+        <p id="payment-receipt-error" class="alert alert-warning mb-0" hidden>The receipt image could not be displayed.</p>
+    </div>
+</dialog>
+
 <dialog id="edit-payment-dialog" aria-labelledby="edit-payment-title">
     <h2 id="edit-payment-title" class="h5 mb-3">Edit payment</h2>
     @if($errors->editPayment->any())
         <div class="alert alert-danger" role="alert"><ul class="mb-0 ps-3">@foreach($errors->editPayment->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
-    <form method="POST" id="edit-payment-form" action="" data-submit-once data-confirm-message="Save changes to this payment? The balance will be recalculated.">
+    <form method="POST" enctype="multipart/form-data" id="edit-payment-form" action="" data-submit-once data-confirm-message="Save changes to this payment? The balance will be recalculated.">
         @csrf @method('PUT')
         <div class="row g-3">
             <div class="col-sm-6"><label class="form-label" for="edit_payment_date">Payment date</label><input class="form-control" type="date" id="edit_payment_date" name="payment_date" max="{{ now()->toDateString() }}" required></div>
             <div class="col-sm-6"><label class="form-label" for="edit_payment_type">Payment type</label><select class="form-select" id="edit_payment_type" name="payment_type" required>@foreach($types as $type)<option value="{{ $type }}">{{ $type }}</option>@endforeach</select></div>
             <div class="col-sm-6"><label class="form-label" for="edit_amount">Amount (₱)</label><input class="form-control" type="number" id="edit_amount" name="amount" min="0.01" step="0.01" inputmode="decimal" required></div>
             <div class="col-sm-6"><label class="form-label" for="edit_payment_method">Payment method</label><select class="form-select" id="edit_payment_method" name="payment_method" required>@foreach($methods as $method)<option value="{{ $method }}">{{ $method }}</option>@endforeach</select></div>
+            <div class="col-12 receipt-upload-field">
+                <label class="form-label" for="edit_receipt_image">Official Receipt Image <span class="text-muted fw-normal">(optional)</span></label>
+                <div class="current-receipt mb-2"><span id="edit-receipt-empty" class="text-muted small">No receipt uploaded.</span><button id="edit-view-receipt" type="button" class="btn btn-sm btn-outline-secondary" data-view-receipt hidden>View current receipt</button></div>
+                <input class="form-control" type="file" id="edit_receipt_image" name="receipt_image" accept="image/jpeg,image/png,image/webp">
+                <div class="form-text">Choose a new JPG, PNG, or WEBP image (maximum 5MB) to replace the current receipt.</div>
+            </div>
             <div class="col-12"><label class="form-label" for="edit_notes">Notes <span class="text-muted fw-normal">(optional)</span></label><textarea class="form-control" id="edit_notes" name="notes" rows="2" maxlength="1000"></textarea></div>
         </div>
         <div class="d-flex justify-content-end gap-2 mt-4">
@@ -229,7 +263,7 @@
 </dialog>
 
 <style>
-    .payment-history { min-width: 760px; }
+    .payment-history { min-width: 900px; }
     .payment-history tfoot th { border-top: 1px solid var(--line); background: #f7f9fa; font-size: .8rem; }
     body.dark-mode .payment-history tfoot th { background: #223641; }
     .payment-notes { max-width: 260px; overflow-wrap: anywhere; }
@@ -237,6 +271,21 @@
     .refund-panel { border-color: rgba(185, 71, 71, .28); }
     .refund-type, .refund-amount { color: var(--danger) !important; }
     body.dark-mode .refund-type, body.dark-mode .refund-amount { color: #ffb0b0 !important; }
+    .receipt-upload-field { min-width: 0; }
+    .current-receipt { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+    .payment-receipt-dialog { width: min(900px, calc(100vw - 2rem)); max-width: none; max-height: calc(100dvh - 2rem); padding: 0; overflow: hidden; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+    .payment-receipt-dialog::backdrop { background: rgba(16, 20, 24, .72); }
+    .receipt-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem 1rem; border-bottom: 1px solid var(--line); }
+    .receipt-dialog-body { display: grid; place-items: center; min-height: 140px; max-height: calc(100dvh - 6rem); overflow: auto; padding: .75rem; }
+    .receipt-dialog-body img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100dvh - 8rem); object-fit: contain; }
+    .receipt-dialog-body img[hidden], #payment-receipt-error[hidden] { display: none; }
+    #edit-payment-dialog { width: min(640px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+    @media (max-width: 575px) {
+        .payment-receipt-dialog { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); }
+        .receipt-dialog-header { padding: .65rem .75rem; }
+        .receipt-dialog-body { max-height: calc(100dvh - 5rem); padding: .5rem; }
+        .receipt-dialog-body img { max-height: calc(100dvh - 7rem); }
+    }
 </style>
 <script>
 (() => {
@@ -262,8 +311,53 @@
 </script>
 <script>
 (() => {
+    const dialog = document.getElementById('payment-receipt-dialog');
+    const image = document.getElementById('payment-receipt-image');
+    const error = document.getElementById('payment-receipt-error');
+    if (!dialog || !image || !error) return;
+
+    const open = (url) => {
+        if (!url) return;
+        image.hidden = true;
+        error.hidden = true;
+        image.src = url;
+        dialog.showModal();
+    };
+
+    document.querySelectorAll('[data-view-receipt]').forEach((button) => {
+        button.addEventListener('click', () => open(button.dataset.receiptUrl));
+    });
+    image.addEventListener('load', () => {
+        image.hidden = false;
+        error.hidden = true;
+    });
+    image.addEventListener('error', () => {
+        image.hidden = true;
+        error.hidden = false;
+    });
+    dialog.querySelector('[data-close-receipt]').addEventListener('click', () => dialog.close());
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && dialog.open) {
+            event.preventDefault();
+            dialog.close();
+        }
+    });
+    dialog.addEventListener('close', () => {
+        image.removeAttribute('src');
+        image.hidden = true;
+        error.hidden = true;
+    });
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+    });
+})();
+</script>
+<script>
+(() => {
     const dialog = document.getElementById('edit-payment-dialog');
     const form = document.getElementById('edit-payment-form');
+    const currentReceiptButton = document.getElementById('edit-view-receipt');
+    const currentReceiptEmpty = document.getElementById('edit-receipt-empty');
     const fields = {
         date: document.getElementById('edit_payment_date'),
         type: document.getElementById('edit_payment_type'),
@@ -278,6 +372,9 @@
         fields.amount.value = values.amount;
         fields.method.value = values.method;
         fields.notes.value = values.notes || '';
+        currentReceiptButton.dataset.receiptUrl = values.receiptUrl || '';
+        currentReceiptButton.hidden = ! values.receiptUrl;
+        currentReceiptEmpty.hidden = Boolean(values.receiptUrl);
         dialog.showModal();
         fields.amount.focus();
     };

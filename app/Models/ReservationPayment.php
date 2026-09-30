@@ -17,6 +17,7 @@ class ReservationPayment extends Model
         'amount',
         'payment_method',
         'notes',
+        'receipt_image_path',
         'recorded_by_user_id',
         'recorded_by_name',
     ];

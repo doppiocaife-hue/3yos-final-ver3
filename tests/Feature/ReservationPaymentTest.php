@@ -9,6 +9,8 @@ use App\Models\ReservationPayment;
 use App\Models\ReservationRefund;
 use App\Services\BackupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -60,6 +62,14 @@ class ReservationPaymentTest extends TestCase
         ]);
     }
 
+    private function pngUpload(string $name = 'receipt.png'): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent(
+            $name,
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='),
+        );
+    }
+
     private function assertTotals(Reservation $reservation, float $paid, float $balance, string $status): void
     {
         $fresh = $reservation->fresh();
@@ -85,6 +95,137 @@ class ReservationPaymentTest extends TestCase
         $this->assertTotals($reservation, 1000.0, 0.0, 'Fully Paid');
         $this->assertSame('Final Payment', $reservation->fresh()->payment_type);
         $this->assertSame(3, $reservation->payments()->count());
+    }
+
+    public function test_receipt_image_is_optional_and_payment_totals_remain_unchanged(): void
+    {
+        Storage::fake('local');
+        $reservation = $this->reservation();
+
+        $this->pay($reservation, 100)->assertRedirect();
+
+        $payment = $reservation->payments()->firstOrFail();
+        $this->assertNull($payment->receipt_image_path);
+        $this->assertTotals($reservation, 100.0, 900.0, 'Downpayment');
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.reservations.payments', $reservation))
+            ->assertOk()
+            ->assertSee('No receipt');
+    }
+
+    public function test_admin_can_upload_preview_replace_and_delete_payment_receipts(): void
+    {
+        Storage::fake('local');
+        Storage::fake('public');
+        $reservation = $this->reservation();
+        $url = route('admin.reservations.payments.store', $reservation);
+
+        $this->withSession(self::ADMIN)->post($url, [
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'amount' => 100,
+            'payment_method' => 'GCash',
+            'receipt_image' => $this->pngUpload(),
+        ])->assertRedirect();
+
+        $payment = $reservation->payments()->firstOrFail();
+        $oldPath = $payment->receipt_image_path;
+        $this->assertNotNull($oldPath);
+        Storage::disk('local')->assertExists($oldPath);
+        Storage::disk('public')->assertMissing($oldPath);
+        $this->assertTotals($reservation, 100.0, 900.0, 'Downpayment');
+
+        $receiptUrl = route('admin.reservations.payments.receipt', [$reservation, $payment]);
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.reservations.payments', $reservation))
+            ->assertOk()
+            ->assertSee('View Receipt')
+            ->assertSee($receiptUrl);
+        $this->withSession(self::ADMIN)
+            ->get($receiptUrl)
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->flushSession();
+        $this->get($receiptUrl)->assertRedirect(route('admin.login'));
+
+        $this->withSession(self::ADMIN)->post(route('admin.reservations.payments.update', [$reservation, $payment]), [
+            '_method' => 'PUT',
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'amount' => 100,
+            'payment_method' => 'GCash',
+        ])->assertRedirect();
+        $this->assertSame($oldPath, $payment->fresh()->receipt_image_path);
+        Storage::disk('local')->assertExists($oldPath);
+
+        $this->withSession(self::ADMIN)->post(route('admin.reservations.payments.update', [$reservation, $payment]), [
+            '_method' => 'PUT',
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'amount' => 100,
+            'payment_method' => 'GCash',
+            'receipt_image' => $this->pngUpload('replacement.png'),
+        ])->assertRedirect();
+
+        $newPath = $payment->fresh()->receipt_image_path;
+        $this->assertNotSame($oldPath, $newPath);
+        Storage::disk('local')->assertMissing($oldPath);
+        Storage::disk('local')->assertExists($newPath);
+        $this->assertTotals($reservation, 100.0, 900.0, 'Downpayment');
+
+        Storage::disk('local')->delete($newPath);
+        $this->withSession(self::ADMIN)->get($receiptUrl)->assertNotFound();
+
+        $this->withSession(self::ADMIN)
+            ->delete(route('admin.reservations.payments.destroy', [$reservation, $payment]))
+            ->assertRedirect();
+        Storage::disk('local')->assertMissing($newPath);
+        $this->assertTotals($reservation, 0.0, 1000.0, 'Unpaid');
+    }
+
+    public function test_payment_receipt_upload_validates_images_and_receipt_preview_requires_admin(): void
+    {
+        Storage::fake('local');
+        $reservation = $this->reservation();
+        $fields = [
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'amount' => 100,
+            'payment_method' => 'Cash',
+            'receipt_image' => UploadedFile::fake()->create('receipt.txt', 10, 'text/plain'),
+        ];
+
+        $this->withSession(self::ADMIN)
+            ->post(route('admin.reservations.payments.store', $reservation), $fields)
+            ->assertSessionHasErrors('receipt_image');
+        $this->assertSame(0, $reservation->payments()->count());
+
+        $this->pay($reservation, 100);
+        $payment = $reservation->payments()->firstOrFail();
+        $this->flushSession();
+        $this->get(route('admin.reservations.payments.receipt', [$reservation, $payment]))
+            ->assertRedirect(route('admin.login'));
+    }
+
+    public function test_payment_receipt_image_cannot_exceed_five_megabytes(): void
+    {
+        Storage::fake('local');
+        $reservation = $this->reservation();
+        $validPng = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+
+        $this->withSession(self::ADMIN)
+            ->post(route('admin.reservations.payments.store', $reservation), [
+                'payment_date' => now()->toDateString(),
+                'payment_type' => 'Downpayment',
+                'amount' => 100,
+                'payment_method' => 'Cash',
+                'receipt_image' => UploadedFile::fake()->createWithContent('large.png', $validPng.str_repeat('0', 5 * 1024 * 1024)),
+            ])
+            ->assertSessionHasErrors('receipt_image');
+
+        $this->assertSame(0, $reservation->payments()->count());
+        $this->assertSame([], Storage::disk('local')->allFiles('payment-receipts'));
     }
 
     public function test_payment_larger_than_the_remaining_balance_is_rejected(): void

@@ -8,10 +8,15 @@ use App\Models\ReservationPayment;
 use App\Models\ReservationRefund;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\HeaderUtils;
+use Throwable;
 
 class ReservationPaymentController extends Controller
 {
@@ -54,38 +59,51 @@ class ReservationPaymentController extends Controller
     public function store(Request $request, Reservation $reservation): RedirectResponse
     {
         $data = $this->validatePayment($request);
+        $receiptImage = $data['receipt_image'] ?? null;
+        unset($data['receipt_image']);
+        $newReceiptPath = null;
 
-        $created = DB::transaction(function () use ($request, $reservation, $data) {
-            $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
-            $reservation->ensurePaymentLedger();
-            $reservation->recalculatePaymentTotals();
+        try {
+            $created = DB::transaction(function () use ($request, $reservation, $data, $receiptImage, &$newReceiptPath) {
+                $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
+                $reservation->ensurePaymentLedger();
+                $reservation->recalculatePaymentTotals();
 
-            if ($reservation->total_cost === null) {
-                throw ValidationException::withMessages(['amount' => 'Set the contract price before recording payments.']);
-            }
+                if ($reservation->total_cost === null) {
+                    throw ValidationException::withMessages(['amount' => 'Set the contract price before recording payments.']);
+                }
 
-            // A double-clicked Save posts the same payment twice within moments; keep only the first.
-            $duplicate = $reservation->payments()
-                ->where('amount', $data['amount'])
-                ->whereDate('payment_date', $data['payment_date'])
-                ->where('payment_method', $data['payment_method'])
-                ->where('payment_type', $data['payment_type'])
-                ->where('created_at', '>=', now()->subSeconds(15))
-                ->exists();
-            if ($duplicate) {
-                return false;
-            }
+                // A double-clicked Save posts the same payment twice within moments; keep only the first.
+                $duplicate = $reservation->payments()
+                    ->where('amount', $data['amount'])
+                    ->whereDate('payment_date', $data['payment_date'])
+                    ->where('payment_method', $data['payment_method'])
+                    ->where('payment_type', $data['payment_type'])
+                    ->where('created_at', '>=', now()->subSeconds(15))
+                    ->exists();
+                if ($duplicate) {
+                    return false;
+                }
 
-            $this->assertWithinBalance($data['amount'], $reservation->remainingBalanceCents());
+                $this->assertWithinBalance($data['amount'], $reservation->remainingBalanceCents());
 
-            $reservation->payments()->create($data + [
-                'recorded_by_user_id' => $request->session()->get('admin_user_id'),
-                'recorded_by_name' => $request->session()->get('admin_name', 'Administrator'),
-            ]);
-            $reservation->recalculatePaymentTotals();
+                if ($receiptImage) {
+                    $newReceiptPath = $this->storeReceiptImage($receiptImage);
+                }
 
-            return true;
-        });
+                $reservation->payments()->create($data + [
+                    'receipt_image_path' => $newReceiptPath,
+                    'recorded_by_user_id' => $request->session()->get('admin_user_id'),
+                    'recorded_by_name' => $request->session()->get('admin_name', 'Administrator'),
+                ]);
+                $reservation->recalculatePaymentTotals();
+
+                return true;
+            });
+        } catch (Throwable $exception) {
+            $this->deleteReceiptImage($newReceiptPath);
+            throw $exception;
+        }
 
         return redirect()->route('admin.reservations.payments', $reservation)->with(
             'success',
@@ -95,10 +113,15 @@ class ReservationPaymentController extends Controller
 
     public function update(Request $request, Reservation $reservation, ReservationPayment $payment): RedirectResponse
     {
+        $newReceiptPath = null;
+        $oldReceiptPath = null;
+
         try {
             $data = $this->validatePayment($request);
+            $receiptImage = $data['receipt_image'] ?? null;
+            unset($data['receipt_image']);
 
-            DB::transaction(function () use ($reservation, $payment, $data) {
+            DB::transaction(function () use ($reservation, $payment, $data, $receiptImage, &$newReceiptPath, &$oldReceiptPath) {
                 $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
                 $payment = $reservation->payments()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
                 $reservation->ensurePaymentLedger();
@@ -115,15 +138,30 @@ class ReservationPaymentController extends Controller
                     ]);
                 }
 
+                if ($receiptImage) {
+                    $oldReceiptPath = $payment->receipt_image_path;
+                    $newReceiptPath = $this->storeReceiptImage($receiptImage);
+                    $data['receipt_image_path'] = $newReceiptPath;
+                }
+
                 $payment->update($data);
                 $reservation->recalculatePaymentTotals();
             });
         } catch (ValidationException $exception) {
+            $this->deleteReceiptImage($newReceiptPath);
+
             // Reopen the edit dialog with its own errors instead of flagging the add-payment form.
             return redirect()->route('admin.reservations.payments', $reservation)
                 ->withErrors($exception->errors(), 'editPayment')
                 ->withInput()
                 ->with('editing_payment', $payment->id);
+        } catch (Throwable $exception) {
+            $this->deleteReceiptImage($newReceiptPath);
+            throw $exception;
+        }
+
+        if ($newReceiptPath !== null) {
+            $this->deleteReceiptImage($oldReceiptPath);
         }
 
         return redirect()->route('admin.reservations.payments', $reservation)->with('success', 'Payment updated and balance recalculated.');
@@ -131,7 +169,9 @@ class ReservationPaymentController extends Controller
 
     public function destroy(Reservation $reservation, ReservationPayment $payment): RedirectResponse
     {
-        DB::transaction(function () use ($reservation, $payment) {
+        $receiptPath = null;
+
+        DB::transaction(function () use ($reservation, $payment, &$receiptPath) {
             $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
             $payment = $reservation->payments()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
             $reservation->ensurePaymentLedger();
@@ -143,11 +183,45 @@ class ReservationPaymentController extends Controller
                 ]);
             }
 
+            $receiptPath = $payment->receipt_image_path;
             $payment->delete();
             $reservation->recalculatePaymentTotals();
         });
 
+        $this->deleteReceiptImage($receiptPath);
+
         return redirect()->route('admin.reservations.payments', $reservation)->with('success', 'Payment of '.$this->peso($payment->amount).' deleted and balance recalculated.');
+    }
+
+    public function receipt(Reservation $reservation, ReservationPayment $payment)
+    {
+        $payment = $reservation->payments()->whereKey($payment->id)->firstOrFail();
+        $path = $payment->receipt_image_path;
+        abort_unless($path && str_starts_with($path, 'payment-receipts/'), 404);
+
+        $disk = Storage::disk('local');
+        abort_unless($disk->exists($path), 404);
+        $mimeType = $disk->mimeType($path);
+        abort_unless(in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true), 415);
+
+        $stream = $disk->readStream($path);
+        abort_if($stream === false, 404);
+
+        return response()->stream(
+            static function () use ($stream): void {
+                fpassthru($stream);
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            },
+            200,
+            [
+                'Content-Type' => $mimeType,
+                'Content-Disposition' => HeaderUtils::makeDisposition('inline', basename($path), Str::ascii(basename($path)) ?: 'payment-receipt'),
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ],
+        );
     }
 
     public function updateDetails(Request $request, Reservation $reservation): RedirectResponse
@@ -266,6 +340,7 @@ class ReservationPaymentController extends Controller
             'amount' => ['required', 'numeric', 'gt:0', 'max:9999999999', 'decimal:0,2'],
             'payment_method' => ['required', Rule::in(ReservationPayment::METHODS)],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'receipt_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ], [
             'payment_date.required' => 'Choose the payment date.',
             'payment_date.before_or_equal' => 'The payment date cannot be in the future.',
@@ -280,6 +355,27 @@ class ReservationPaymentController extends Controller
         $data['amount'] = round((float) $data['amount'], 2);
 
         return $data;
+    }
+
+    private function storeReceiptImage(UploadedFile $file): string
+    {
+        $path = $file->store('payment-receipts', 'local');
+        if (! is_string($path) || $path === '') {
+            throw new RuntimeException('The official receipt image could not be stored.');
+        }
+
+        return $path;
+    }
+
+    private function deleteReceiptImage(?string $path): void
+    {
+        if (! $path || ! str_starts_with($path, 'payment-receipts/')) {
+            return;
+        }
+
+        if (Storage::disk('local')->exists($path) && ! Storage::disk('local')->delete($path)) {
+            report(new RuntimeException('The official receipt image could not be deleted: '.$path));
+        }
     }
 
     private function assertWithinBalance(float $amount, ?int $availableCents, bool $editing = false): void

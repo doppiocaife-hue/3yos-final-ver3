@@ -118,7 +118,7 @@
                                 <div class="col-md-6"><label class="form-label">Event type</label><select name="event_type" class="form-select" required><option value="">Select an event type</option>@foreach(['Wedding','Birthday','Debut','Anniversary','Corporate Event','Baptism','Graduation','Other'] as $type)<option value="{{ $type }}" @selected(old('event_type') === $type)>{{ $type }}</option>@endforeach</select></div>
                                 <div class="col-md-6"><label class="form-label">Event date</label><input type="date" name="event_date" id="event_date" value="{{ old('event_date') }}" min="{{ now()->addDays(2)->toDateString() }}" class="form-control" required><div id="date-availability" class="date-availability form-text">Choose a date at least 2 days in advance.</div></div>
                                 <div class="col-md-6 clock-time-field">
-                                    <label class="form-label" for="clock-time-toggle">Event time</label>
+                                    <label class="form-label" for="event_time">Event time</label>
                                     <input type="time" name="event_time" id="event_time" value="{{ old('event_time') }}" class="form-control" required>
                                     <div class="clock-time-picker" id="clock-time-picker" hidden>
                                         <button type="button" id="clock-time-toggle" class="form-control clock-time-toggle" aria-haspopup="dialog" aria-expanded="false" aria-required="true" aria-controls="clock-time-panel">
@@ -147,7 +147,7 @@
                                         </section>
                                     </div>
                                     <small id="clock-time-error" class="form-text text-danger" hidden>Select an event time to continue.</small>
-                                    <small class="form-text">Choose a time using the clock.</small>
+                                    <small id="event-time-help" class="form-text">Use your device's time picker.</small>
                                 </div>
                                 <div class="col-md-6"><label class="form-label">Venue</label><input type="text" name="venue" value="{{ old('venue') }}" class="form-control" required></div>
                                 <div class="col-md-6"><label class="form-label">Expected guests</label><input type="number" name="guest_count" id="guest_count" value="{{ old('guest_count', request()->query('guests')) }}" min="1" max="1000" class="form-control" required><small class="form-text">Enter the total number of attendees.</small></div>
@@ -503,18 +503,14 @@ const clockTimeFace = document.getElementById('clock-time-face');
 const clockTimeHand = document.getElementById('clock-time-hand');
 const selectedHourOutput = document.getElementById('clock-current-hour');
 const selectedMinuteOutput = document.getElementById('clock-current-minute');
+const eventTimeHelp = document.getElementById('event-time-help');
+const nativeTimeQuery = window.matchMedia('(max-width: 767.98px)');
 let selectedHour = 12;
 let selectedMinute = 0;
 let selectedPeriod = 'AM';
 let clockMode = 'hours';
 
 if (timeInput && clockTimePicker && clockTimeToggle && clockTimePanel) {
-    timeInput.hidden = true;
-    timeInput.required = false;
-    timeInput.setAttribute('aria-hidden', 'true');
-    timeInput.tabIndex = -1;
-    clockTimePicker.hidden = false;
-
     const updateClockReadout = () => {
         selectedHourOutput.textContent = String(selectedHour);
         selectedMinuteOutput.textContent = String(selectedMinute).padStart(2, '0');
@@ -577,13 +573,45 @@ if (timeInput && clockTimePicker && clockTimeToggle && clockTimePanel) {
         document.querySelector(`.clock-time-number[aria-pressed="true"]`)?.focus();
     };
 
-    if (timeInput.value) {
+    const syncClockFromInput = () => {
+        if (!timeInput.value) {
+            clockTimeValue.textContent = 'Select a time';
+            return;
+        }
+
         const [hours, minutes] = timeInput.value.split(':').map(Number);
         selectedHour = hours % 12 || 12;
         selectedMinute = minutes;
         selectedPeriod = hours < 12 ? 'AM' : 'PM';
         clockTimeValue.textContent = `${selectedHour}:${String(selectedMinute).padStart(2, '0')} ${selectedPeriod}`;
-    }
+        updateClockReadout();
+    };
+    const configureTimeInput = () => {
+        const useNativeInput = nativeTimeQuery.matches;
+        timeInput.hidden = !useNativeInput;
+        timeInput.required = useNativeInput;
+        timeInput.tabIndex = useNativeInput ? 0 : -1;
+
+        if (useNativeInput) {
+            timeInput.removeAttribute('aria-hidden');
+            clockTimePicker.hidden = true;
+            clockTimeToggle.setAttribute('aria-expanded', 'false');
+            clockTimePanel.hidden = true;
+            document.getElementById('clock-time-error').hidden = true;
+            clockTimeToggle.removeAttribute('aria-invalid');
+            eventTimeHelp.textContent = "Use your device's time picker.";
+        } else {
+            timeInput.setAttribute('aria-hidden', 'true');
+            clockTimePicker.hidden = false;
+            syncClockFromInput();
+            eventTimeHelp.textContent = 'Choose a time using the clock.';
+        }
+    };
+    syncClockFromInput();
+    configureTimeInput();
+    nativeTimeQuery.addEventListener('change', configureTimeInput);
+    window.addEventListener('resize', configureTimeInput);
+    timeInput.addEventListener('input', syncClockFromInput);
     updateClockReadout();
     renderClockFace();
     clockTimeToggle.addEventListener('click', () => {
@@ -615,6 +643,7 @@ if (timeInput && clockTimePicker && clockTimeToggle && clockTimePanel) {
     window.addEventListener('resize', () => { if (!clockTimePanel.hidden) alignClockPanel(); });
     window.addEventListener('scroll', () => { if (!clockTimePanel.hidden) alignClockPanel(); }, true);
     document.getElementById('reservation-form').addEventListener('submit', (event) => {
+        if (nativeTimeQuery.matches) return;
         if (timeInput.value) return;
 
         event.preventDefault();

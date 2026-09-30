@@ -56,6 +56,7 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
         Route::get('/reservations/{reservation}/payments', [ReservationPaymentController::class, 'index'])->name('admin.reservations.payments');
         Route::get('/reservations/{reservation}/payments/print', [ReservationPaymentController::class, 'print'])->name('admin.reservations.payments.print');
         Route::post('/reservations/{reservation}/payments', [ReservationPaymentController::class, 'store'])->name('admin.reservations.payments.store');
+        Route::get('/reservations/{reservation}/payments/{payment}/receipt', [ReservationPaymentController::class, 'receipt'])->name('admin.reservations.payments.receipt');
         Route::post('/reservations/{reservation}/refunds', [ReservationPaymentController::class, 'storeRefund'])
             ->withoutMiddleware('capture.activity')
             ->name('admin.reservations.refunds.store');
