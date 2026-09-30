@@ -16,6 +16,9 @@
     @if(session('success'))
         <div class="alert alert-success">{{ session('success') }}</div>
     @endif
+    @if($errors->any())
+        <div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
+    @endif
 
     <form id="reservation-filter-form" method="GET" action="{{ route('admin.reservations') }}" class="filter-bar" data-live-filter data-live-filter-target="#reservation-results">
         <div class="filter-field filter-field--wide">

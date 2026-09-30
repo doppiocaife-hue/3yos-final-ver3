@@ -356,6 +356,20 @@ class AdminController extends Controller
             // Lock the row so a concurrent save can't race past this status comparison.
             $originalStatus = Reservation::whereKey($reservation->id)->lockForUpdate()->value('status');
 
+            if (array_key_exists('status', $data) && $data['status'] === 'confirmed') {
+                $eventDate = $data['event_date'] ?? $reservation->event_date;
+                $acceptedCount = Reservation::whereDate('event_date', $eventDate)
+                    ->where('status', 'confirmed')
+                    ->where('id', '!=', $reservation->id)
+                    ->count();
+
+                if ($acceptedCount >= Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) {
+                    throw ValidationException::withMessages([
+                        'status' => 'Maximum accepted bookings for this date has been reached. Only '.Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE.' accepted bookings are allowed per day.',
+                    ]);
+                }
+            }
+
             $reservation->ensurePaymentLedger();
             $reservation->recalculatePaymentTotals();
             $paidCents = Reservation::toCents($reservation->amount_paid);

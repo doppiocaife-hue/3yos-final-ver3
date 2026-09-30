@@ -8,7 +8,7 @@ The 3YOS Catering System is a specialized platform built to handle the end-to-en
 1. **Clients (Guests):** Who need an intuitive way to explore catering packages, view past event galleries, check date availability, and submit booking requests or inquiries.
 2. **Administrators (Staff):** Who require a robust backend to review incoming reservations, manage service contracts, track business analytics, and maintain website content.
 
-By replacing manual booking processes with an automated online reservation system, 3YOS Catering solves issues like double-booking (enforcing a maximum of 3 events per day) and lead-time constraints (enforcing a minimum 2-day advance notice for bookings). 
+By replacing manual booking processes with an automated online reservation system, 3YOS Catering solves issues like double-booking (enforcing a maximum of 4 accepted events per day) and lead-time constraints (enforcing a minimum 2-day advance notice for bookings). 
 
 ## Features
 

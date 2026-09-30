@@ -7,7 +7,7 @@
     <div class="page-heading">
         <div class="eyebrow">Reservation request</div>
         <h1 class="fw-bold mt-2 mb-2">Plan your perfect event.</h1>
-        <p class="text-muted mb-0">We accept up to three events each day so every celebration gets the attention it deserves.</p>
+        <p class="text-muted mb-0">We accept up to four events each day so every celebration gets the attention it deserves.</p>
     </div>
 
     @if(session('reservation_code') || (isset($reservation) && $reservation))

@@ -79,7 +79,8 @@ class PublicCatalogFeaturesTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('gallery-admin-preview');
-        $response->assertSee('Image controls');
+        $response->assertSee('Replace image');
+        $response->assertDontSee('Image controls');
         $response->assertDontSee('name="title"');
         $response->assertDontSee('name="event_type"');
         $response->assertDontSee('name="description"');

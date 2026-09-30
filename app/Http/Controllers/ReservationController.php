@@ -8,7 +8,9 @@ use App\Models\Client;
 use App\Models\Package;
 use App\Models\Reservation;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\ValidationException;
 use ReCaptcha\ReCaptcha;
 
 class ReservationController extends Controller
@@ -24,10 +26,14 @@ class ReservationController extends Controller
             }],
         ]);
         $bookings = Reservation::whereDate('event_date', $data['date'])
-            ->where('status', '!=', 'cancelled')
+            ->where('status', 'confirmed')
             ->count();
 
-        return response()->json(['bookings' => $bookings, 'remaining' => max(0, 3 - $bookings), 'available' => $bookings < 3]);
+        return response()->json([
+            'bookings' => $bookings,
+            'remaining' => max(0, Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE - $bookings),
+            'available' => $bookings < Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE,
+        ]);
     }
 
     public function store(StoreReservationRequest $request)
@@ -44,45 +50,49 @@ class ReservationController extends Controller
             return back()->withInput()->withErrors(['g-recaptcha-response' => 'Please verify that you are not a robot.']);
         }
 
-        $bookings = Reservation::whereDate('event_date', $request->input('event_date'))
-            ->where('status', '!=', 'cancelled')
-            ->count();
+        // Locks matching rows so a concurrent submission for the same date can't race past this count.
+        $reservation = DB::transaction(function () use ($request) {
+            $acceptedCount = Reservation::whereDate('event_date', $request->input('event_date'))
+                ->where('status', 'confirmed')
+                ->lockForUpdate()
+                ->count();
 
-        if ($bookings >= 3) {
-            return back()->withInput()->withErrors(['event_date' => 'This date is fully booked. Please select another date.']);
-        }
+            if ($acceptedCount >= Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) {
+                throw ValidationException::withMessages(['event_date' => 'This date is fully booked. Please choose another date.']);
+            }
 
-        $client = Client::firstOrCreate(
-            ['email' => $request->input('email')],
-            [
-                'name' => $request->input('full_name'),
-                'phone' => $request->input('contact_number'),
+            $client = Client::firstOrCreate(
+                ['email' => $request->input('email')],
+                [
+                    'name' => $request->input('full_name'),
+                    'phone' => $request->input('contact_number'),
+                    'address' => $request->input('address'),
+                ]
+            );
+
+            $reservationCode = $this->generateReservationCode();
+            $package = Package::findOrFail($request->input('package_id'));
+
+            return Reservation::create([
+                'client_id' => $client->id,
+                'package_id' => $request->input('package_id'),
+                'full_name' => $request->input('full_name'),
+                'contact_number' => $request->input('contact_number'),
+                'email' => $request->input('email'),
                 'address' => $request->input('address'),
-            ]
-        );
-
-        $reservationCode = $this->generateReservationCode();
-        $package = Package::findOrFail($request->input('package_id'));
-
-        $reservation = Reservation::create([
-            'client_id' => $client->id,
-            'package_id' => $request->input('package_id'),
-            'full_name' => $request->input('full_name'),
-            'contact_number' => $request->input('contact_number'),
-            'email' => $request->input('email'),
-            'address' => $request->input('address'),
-            'event_type' => $request->input('event_type'),
-            'event_date' => $request->input('event_date'),
-            'event_time' => $request->input('event_time'),
-            'venue' => $request->input('venue'),
-            'guest_count' => $request->input('guest_count'),
-            'estimated_budget' => $package->estimatedTotalFor((int) $request->input('guest_count')),
-            'additional_services' => $request->input('additional_services'),
-            'special_requests' => $request->input('special_requests'),
-            'additional_notes' => $request->input('additional_notes'),
-            'status' => 'pending',
-            'reservation_code' => $reservationCode,
-        ]);
+                'event_type' => $request->input('event_type'),
+                'event_date' => $request->input('event_date'),
+                'event_time' => $request->input('event_time'),
+                'venue' => $request->input('venue'),
+                'guest_count' => $request->input('guest_count'),
+                'estimated_budget' => $package->estimatedTotalFor((int) $request->input('guest_count')),
+                'additional_services' => $request->input('additional_services'),
+                'special_requests' => $request->input('special_requests'),
+                'additional_notes' => $request->input('additional_notes'),
+                'status' => 'pending',
+                'reservation_code' => $reservationCode,
+            ]);
+        });
 
         $mailSent = false;
         $mailError = null;
@@ -95,10 +105,10 @@ class ReservationController extends Controller
             report($exception);
         }
 
-        $request->session()->flash('reservation_code', $reservationCode);
+        $request->session()->flash('reservation_code', $reservation->reservation_code);
         $request->session()->flash('reservation_status', 'pending');
 
-        $message = 'Your reservation request has been received. Your reservation ID is '.$reservationCode.'. Please keep this code to check your reservation status.';
+        $message = 'Your reservation request has been received. Your reservation ID is '.$reservation->reservation_code.'. Please keep this code to check your reservation status.';
 
         if ($mailSent) {
             $message .= ' A confirmation email was sent to '.$reservation->email.'.';

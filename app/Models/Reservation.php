@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class Reservation extends Model
 {
+    /** The single source of truth for how many reservations may hold status = confirmed (Accepted) on the same event date. */
+    public const MAX_ACCEPTED_BOOKINGS_PER_DATE = 4;
+
     protected $fillable = [
         'client_id',
         'package_id',
