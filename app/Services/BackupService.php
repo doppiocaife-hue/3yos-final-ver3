@@ -15,6 +15,7 @@ class BackupService
         'packages',
         'clients',
         'reservations',
+        'reservation_payments',
         'inquiries',
         'activity_logs',
         'settings',
@@ -142,6 +143,12 @@ class BackupService
 
         try {
             DB::transaction(function () use ($restoreTables, $rowsByTable, &$restoredRows): void {
+                // Backups made before payment history existed carry no payment rows; clear the current
+                // ones so they cannot attach to different restored reservations with the same ids.
+                if (in_array('reservations', $restoreTables, true) && ! in_array('reservation_payments', $restoreTables, true) && Schema::hasTable('reservation_payments')) {
+                    DB::table('reservation_payments')->delete();
+                }
+
                 foreach (array_reverse($restoreTables) as $table) {
                     DB::table($table)->delete();
                 }

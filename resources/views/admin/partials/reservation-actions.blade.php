@@ -43,16 +43,11 @@
     </div>
     <div class="reservation-action-group">
         <span class="reservation-action-label">Payment</span>
-        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Update payment details for this reservation?">@csrf @method('PATCH')
-            <input type="hidden" name="status" value="{{ $reservation->status }}">
-            <select name="payment_type" class="form-select form-select-sm">
-                <option value="Unpaid" @selected(($reservation->payment_type ?? $reservation->payment_status) === 'Unpaid')>Unpaid</option>
-                <option value="Downpayment" @selected(($reservation->payment_type ?? $reservation->payment_status) === 'Downpayment')>Downpayment</option>
-                <option value="Full Payment" @selected(($reservation->payment_type ?? $reservation->payment_status) === 'Full Payment')>Full Payment</option>
-            </select>
-            <input type="number" name="amount_paid" min="0" step="1" value="{{ old('amount_paid', (int) ($reservation->amount_paid ?? 0)) }}" class="form-control form-control-sm" placeholder="Amount">
-            <button class="btn btn-sm luxury-btn" type="submit">Save</button>
-        </form>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="status-badge status-badge--{{ \App\Models\Reservation::paymentStatusBadge($reservation->payment_status) }}">{{ \App\Models\Reservation::paymentStatusLabel($reservation->payment_status) }}</span>
+            <span class="small text-muted">Paid &#8369;{{ number_format((float) ($reservation->amount_paid ?? 0), 2) }}@if($reservation->payment_due_date) · Due {{ $reservation->payment_due_date->format('M j, Y') }}@endif</span>
+            <a class="btn btn-sm btn-outline-secondary ms-auto" href="{{ route('admin.reservations.payments', $reservation) }}">Manage payments</a>
+        </div>
         @if($outstandingBalance > 0)
             <div class="payment-warning" role="alert">Unpaid balance: &#8369;{{ number_format($outstandingBalance, 2) }}</div>
         @endif

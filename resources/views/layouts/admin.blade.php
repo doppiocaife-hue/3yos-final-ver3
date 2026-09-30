@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ asset('css/admin-workspace.css') }}?v={{ filemtime(public_path('css/admin-workspace.css')) }}">
+    <link rel="stylesheet" href="{{ asset('css/scroll-header.css') }}?v={{ filemtime(public_path('css/scroll-header.css')) }}">
 </head>
 <body>
 <button class="admin-nav-backdrop" id="adminNavBackdrop" type="button" aria-label="Close navigation"></button>
@@ -43,7 +44,7 @@
         </nav>
     </aside>
     <div class="admin-main">
-        <header class="header-bar">
+        <header class="header-bar" data-scroll-header>
             <div class="admin-heading">
                 <button class="header-btn" type="button" id="adminMobileMenu" aria-label="Open navigation" aria-controls="adminSidebar" aria-expanded="false" title="Open navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
                 <div><div class="page-kicker">Catering management</div><h4 class="mb-0">Operations workspace</h4></div>
@@ -70,6 +71,7 @@
     </form>
 </dialog>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ asset('js/scroll-header.js') }}?v={{ filemtime(public_path('js/scroll-header.js')) }}"></script>
 <script>
 (() => {
     const sidebar = document.getElementById('adminSidebar');
@@ -144,6 +146,24 @@ document.addEventListener('submit', (event) => {
     if (!message && /^(save|update)\b/.test(label)) message = 'Update this item with the changes entered?';
 
     if (message && !window.confirm(message)) event.preventDefault();
+});
+// Registered after the confirm handler so a cancelled confirmation leaves the form usable.
+document.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.hasAttribute('data-submit-once') || event.defaultPrevented) return;
+    if (form.dataset.submitting === 'true') {
+        event.preventDefault();
+        return;
+    }
+    form.dataset.submitting = 'true';
+    form.querySelectorAll('button[type="submit"], button:not([type])').forEach((button) => {
+        button.disabled = true;
+        button.textContent = 'Saving…';
+    });
+});
+window.addEventListener('pageshow', (event) => {
+    // Returning via the back button restores a frozen, disabled form; reload it fresh instead.
+    if (event.persisted && document.querySelector('form[data-submit-once][data-submitting="true"]')) window.location.reload();
 });
 document.querySelectorAll('form input:not([type="hidden"]), form select, form textarea').forEach((field) => {
     if (field.title) return;

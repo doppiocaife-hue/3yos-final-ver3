@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ asset('css/scroll-header.css') }}?v={{ filemtime(public_path('css/scroll-header.css')) }}">
     <style>
         :root{--ink:#20201d;--muted:#6f6d66;--cream:#f8f6f1;--paper:#fffdf9;--wine:#6d3024;--terracotta:#b66545;--gold:#c7984b;--line:#e7e1d7;--public-header-offset:4.5rem;--public-content-gap:clamp(2.5rem,4vw,4rem)}
         *{box-sizing:border-box}
@@ -18,8 +19,7 @@
         a{text-decoration:none}
         .container,.container-fluid{padding-left:clamp(1rem,2vw,2rem);padding-right:clamp(1rem,2vw,2rem)}
         .row{margin-left:0;margin-right:0}
-        .navbar{position:fixed;top:0;left:0;right:0;z-index:1035;width:100%;margin:0;background:rgba(255,253,249,.94)!important;border-bottom:1px solid rgba(32,32,29,.07);backdrop-filter:blur(14px);transition:transform .28s ease, box-shadow .28s ease;transform:translateY(0)}
-        .navbar.header-hidden{transform:translateY(-120%)}
+        .navbar{position:fixed;top:0;left:0;right:0;z-index:1035;width:100%;margin:0;background:rgba(255,253,249,.94)!important;border-bottom:1px solid rgba(32,32,29,.07);backdrop-filter:blur(14px)}
         main.page-content{padding-top:calc(var(--public-header-offset) + var(--public-content-gap))}
         main.page-content > :first-child.container,main.page-content > .about-hero > .container:first-child,main.page-content > .status-page > .container:first-child{padding-top:0!important}
         main.page-content > :first-child:is(.about-hero,.gallery-page,.status-page){margin-top:calc(-1 * (var(--public-header-offset) + var(--public-content-gap)));padding-top:calc(var(--public-header-offset) + var(--public-content-gap))!important}
@@ -79,7 +79,7 @@
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg sticky-top py-2">
+    <nav class="navbar navbar-expand-lg sticky-top py-2" data-scroll-header>
         <div class="container">
             <a class="navbar-brand" href="{{ route('home') }}">
                 <img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png" alt="3YOS Catering Services" style="height:48px;width:auto;object-fit:contain;border-radius:50%;background:transparent">
@@ -182,43 +182,7 @@
             });
         })();
     </script>
-    <script>
-        (() => {
-            const header = document.querySelector('.navbar');
-            if (!header) return;
-
-            let previousScrollY = window.scrollY;
-            const threshold = 12;
-
-            const showHeader = () => header.classList.remove('header-hidden');
-            const hideHeader = () => header.classList.add('header-hidden');
-
-            const handleScroll = () => {
-                const currentScrollY = window.scrollY;
-
-                if (currentScrollY <= 0) {
-                    showHeader();
-                    previousScrollY = currentScrollY;
-                    return;
-                }
-
-                if (Math.abs(currentScrollY - previousScrollY) < threshold) {
-                    return;
-                }
-
-                if (currentScrollY > previousScrollY) {
-                    hideHeader();
-                } else {
-                    showHeader();
-                }
-
-                previousScrollY = currentScrollY;
-            };
-
-            window.addEventListener('scroll', handleScroll, { passive: true });
-            handleScroll();
-        })();
-    </script>
+    <script src="{{ asset('js/scroll-header.js') }}?v={{ filemtime(public_path('js/scroll-header.js')) }}"></script>
     <script>
         document.querySelectorAll('form input:not([type="hidden"]), form select, form textarea').forEach((field) => {
             if (field.title) return;

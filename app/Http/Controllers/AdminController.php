@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class AdminController extends Controller
 {
@@ -54,7 +55,7 @@ class AdminController extends Controller
             $query->where('status', $status);
         }
 
-        if ($paymentStatus && in_array($paymentStatus, ['Unpaid', 'Downpayment', 'Fully Paid'], true)) {
+        if ($paymentStatus && in_array($paymentStatus, ['Unpaid', 'Downpayment', 'Partial Payment', 'Fully Paid'], true)) {
             $query->where('payment_status', $paymentStatus);
         }
 
@@ -114,7 +115,7 @@ class AdminController extends Controller
             $query->where('status', $status);
         }
 
-        if ($paymentStatus && in_array($paymentStatus, ['Unpaid', 'Downpayment', 'Fully Paid'], true)) {
+        if ($paymentStatus && in_array($paymentStatus, ['Unpaid', 'Downpayment', 'Partial Payment', 'Fully Paid'], true)) {
             $query->where('payment_status', $paymentStatus);
         }
 
@@ -268,8 +269,8 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'status' => ['sometimes', 'required', 'in:pending,confirmed,completed,cancelled'],
-            'payment_status' => ['sometimes', 'nullable', 'in:Unpaid,Downpayment,Fully Paid'],
-            'payment_type' => ['sometimes', 'nullable', 'in:Unpaid,Downpayment,Full Payment'],
+            'payment_status' => ['sometimes', 'nullable', 'in:Unpaid,Downpayment,Partial Payment,Fully Paid'],
+            'payment_type' => ['sometimes', 'nullable', 'in:Unpaid,Downpayment,Partial Payment,Final Payment,Full Payment'],
             'total_cost' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'amount_paid' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'event_date' => ['sometimes', 'required', 'date'],
@@ -288,37 +289,50 @@ class AdminController extends Controller
             return back()->withInput()->withErrors(['total_cost' => 'Enter the contract price before saving payment details.']);
         }
 
-        $amountPaid = (float) ($data['amount_paid'] ?? $reservation->amount_paid ?? 0);
-        $totalAmount = (float) ($data['total_cost'] ?? $reservation->total_cost ?? 0);
-
-        if ($hasPaymentUpdate || $hasTotalCostUpdate) {
-            if ($hasTotalCostUpdate && $data['total_cost'] === null) {
-                return back()->withInput()->withErrors(['total_cost' => 'Enter the contract price before saving payment details.']);
-            }
-
-            if ($hasPaymentUpdate) {
-                if ($amountPaid <= 0) {
-                    $data['payment_status'] = 'Unpaid';
-                    $data['payment_type'] = $data['payment_type'] ?? 'Unpaid';
-                } elseif ($amountPaid >= $totalAmount) {
-                    $data['payment_status'] = 'Fully Paid';
-                    $data['payment_type'] = $data['payment_type'] ?? 'Full Payment';
-                } else {
-                    $data['payment_status'] = 'Downpayment';
-                    $data['payment_type'] = $data['payment_type'] ?? 'Downpayment';
-                }
-
-                $data['amount_paid'] = $amountPaid;
-            }
-
-            $data['balance'] = round(max(0, $totalAmount - ($hasPaymentUpdate ? $amountPaid : ($reservation->amount_paid ?? 0))), 2);
+        if ($hasTotalCostUpdate && $data['total_cost'] === null) {
+            return back()->withInput()->withErrors(['total_cost' => 'Enter the contract price before saving payment details.']);
         }
 
-        if (! isset($data['balance']) && $reservation->amount_paid !== null && $reservation->total_cost !== null) {
-            $data['balance'] = round(max(0, $totalAmount - ($reservation->amount_paid ?? 0)), 2);
-        }
+        // Payment totals and status are derived from the payment history, never written directly.
+        $requestedPaid = $request->has('amount_paid') ? round((float) ($data['amount_paid'] ?? 0), 2) : null;
+        unset($data['payment_status'], $data['payment_type'], $data['amount_paid']);
 
-        $reservation->update($data);
+        DB::transaction(function () use ($request, $reservation, $data, $requestedPaid): void {
+            $reservation->ensurePaymentLedger();
+            $reservation->recalculatePaymentTotals();
+            $paidCents = Reservation::toCents($reservation->amount_paid);
+            $targetPaidCents = $requestedPaid === null ? $paidCents : Reservation::toCents($requestedPaid);
+            $contractKnown = array_key_exists('total_cost', $data) || $reservation->total_cost !== null;
+            $contractCents = Reservation::toCents($data['total_cost'] ?? $reservation->total_cost);
+
+            if ($targetPaidCents < $paidCents) {
+                throw ValidationException::withMessages(['amount_paid' => 'To lower the amount paid, edit or delete entries in the payment history.']);
+            }
+            if ($contractKnown && $targetPaidCents > $contractCents) {
+                throw ValidationException::withMessages([
+                    array_key_exists('total_cost', $data) && $requestedPaid === null ? 'total_cost' : 'amount_paid' => 'The contract price cannot be lower than the total amount paid (₱'.number_format($targetPaidCents / 100, 2).').',
+                ]);
+            }
+
+            $reservation->update($data);
+
+            // Older forms post a running total; record the increase as a payment history entry.
+            if ($targetPaidCents > $paidCents) {
+                $isFirst = ! $reservation->payments()->exists();
+                $reachesContract = $contractKnown && $targetPaidCents >= $contractCents;
+                $reservation->payments()->create([
+                    'payment_date' => now()->toDateString(),
+                    'payment_type' => $reachesContract ? ($isFirst ? 'Full Payment' : 'Final Payment') : ($isFirst ? 'Downpayment' : 'Partial Payment'),
+                    'amount' => ($targetPaidCents - $paidCents) / 100,
+                    'payment_method' => 'Other',
+                    'notes' => 'Recorded from the reservations list.',
+                    'recorded_by_user_id' => $request->hasSession() ? $request->session()->get('admin_user_id') : null,
+                    'recorded_by_name' => $request->hasSession() ? $request->session()->get('admin_name', 'Administrator') : 'Administrator',
+                ]);
+            }
+
+            $reservation->recalculatePaymentTotals();
+        });
 
         return back()->with('success', 'Reservation saved successfully.');
     }

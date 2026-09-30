@@ -13,6 +13,7 @@ use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\PublicController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ReservationController;
+use App\Http\Controllers\ReservationPaymentController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [PublicController::class, 'home'])->name('home');
@@ -48,6 +49,14 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     Route::patch('/reservations/{reservation}/status', [AdminController::class, 'updateReservationStatus'])->name('admin.reservations.status');
     Route::post('/reservations/{reservation}/service-contract', [AdminController::class, 'uploadReservationContract'])->name('admin.reservations.contract');
     Route::delete('/reservations/{reservation}/service-contract/{contract}', [AdminController::class, 'deleteReservationContract'])->name('admin.reservations.contract.delete');
+    Route::scopeBindings()->group(function () {
+        Route::get('/reservations/{reservation}/payments', [ReservationPaymentController::class, 'index'])->name('admin.reservations.payments');
+        Route::get('/reservations/{reservation}/payments/print', [ReservationPaymentController::class, 'print'])->name('admin.reservations.payments.print');
+        Route::post('/reservations/{reservation}/payments', [ReservationPaymentController::class, 'store'])->name('admin.reservations.payments.store');
+        Route::patch('/reservations/{reservation}/payment-details', [ReservationPaymentController::class, 'updateDetails'])->name('admin.reservations.payments.details');
+        Route::put('/reservations/{reservation}/payments/{payment}', [ReservationPaymentController::class, 'update'])->name('admin.reservations.payments.update');
+        Route::delete('/reservations/{reservation}/payments/{payment}', [ReservationPaymentController::class, 'destroy'])->name('admin.reservations.payments.destroy');
+    });
     Route::get('/inquiries', [AdminController::class, 'inquiries'])->name('admin.inquiries');
     Route::get('/inquiries/{inquiry}', [AdminController::class, 'showInquiry'])->name('admin.inquiries.show');
     Route::post('/inquiries/{inquiry}/reply', [AdminController::class, 'replyToInquiry'])->name('admin.inquiries.reply');

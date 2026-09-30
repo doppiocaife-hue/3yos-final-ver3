@@ -22,6 +22,9 @@
     --cell-pad-y: .7rem;
     --cell-pad-x: .8rem;
     --section-gap: 1.5rem;
+    /* Outer shell: the sidebar and header float the same distance from the viewport edge. */
+    --shell-inset: 14px;
+    --sidebar-w: 248px;
 }
 
 * { box-sizing: border-box; }
@@ -30,17 +33,17 @@ html, body { min-height: 100%; }
 body { --bs-body-color: var(--ink); --bs-heading-color: var(--ink); --bs-secondary-color: var(--muted); margin: 0; background: var(--canvas); color: var(--ink); font-family: "DM Sans", sans-serif; font-size: .94rem; overflow-x: clip; }
 .container-fluid { padding: 0; }
 .admin-layout { display: flex; min-height: 100vh; width: 100%; align-items: stretch; }
-.admin-main { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 100vh; margin-left: 276px; }
+.admin-main { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 100vh; margin-left: calc(var(--sidebar-w) + var(--shell-inset) * 2); }
 
 .sidebar {
     position: fixed;
     z-index: 1035;
-    inset: 14px auto 14px 14px;
+    inset: var(--shell-inset) auto var(--shell-inset) var(--shell-inset);
     display: flex;
-    height: calc(100vh - 28px);
-    width: 248px;
-    max-width: 248px;
-    flex: 0 0 248px;
+    height: calc(100vh - var(--shell-inset) * 2);
+    width: var(--sidebar-w);
+    max-width: var(--sidebar-w);
+    flex: 0 0 var(--sidebar-w);
     flex-direction: column;
     overflow: hidden;
     border: 1px solid rgba(43, 67, 80, .1);
@@ -100,19 +103,21 @@ body { --bs-body-color: var(--ink); --bs-heading-color: var(--ink); --bs-seconda
 .header-bar {
     position: sticky;
     z-index: 1020;
-    top: 12px;
+    top: var(--shell-inset);
     display: flex;
     min-height: 64px;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    margin: 12px 20px 0;
+    margin: var(--shell-inset) 20px 0;
     padding: .7rem 1.1rem;
     border: 1px solid rgba(40, 62, 74, .08);
     border-radius: 14px;
     background: rgba(255, 255, 255, .96);
     box-shadow: 0 6px 20px rgba(32, 53, 65, .04);
     backdrop-filter: blur(16px);
+    /* Hidden state must clear the top inset and the drop shadow, not just its own height. */
+    --scroll-header-hide: calc(-100% - var(--shell-inset) - 28px);
 }
 .admin-heading { display: flex; min-width: 0; align-items: center; gap: .6rem; }
 .admin-heading > div:last-child { min-width: 0; }
@@ -185,6 +190,16 @@ body { --bs-body-color: var(--ink); --bs-heading-color: var(--ink); --bs-seconda
 .status-badge--completed, .status-select--completed { border-color: #b3d2ee; background-color: #e6f1fc; color: #164f85; }
 .status-badge--cancelled, .status-select--cancelled { border-color: #f0bcbc; background-color: #fdeaea; color: #8d2020; }
 .form-select.status-select { font-weight: 600; }
+.status-badge--neutral { border-color: #d8e2e7; background-color: #edf2f5; color: #4c6073; }
+
+/* Key/value summary tiles (payment summary, etc.). */
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .75rem; margin-bottom: var(--section-gap); }
+.summary-item { min-width: 0; padding: .95rem 1.1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+.summary-item > span { display: block; margin-bottom: .35rem; color: var(--muted); font-size: .66rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.summary-item > strong { display: block; color: var(--ink); font-family: Manrope, sans-serif; font-size: 1.2rem; font-variant-numeric: tabular-nums; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+.summary-item--accent { border-left: 4px solid var(--teal); }
+.summary-item--warn { border-left: 4px solid #d49b28; }
+.money { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Compact inline edit form used inside table cells: fields grow, buttons keep their size. */
 .cell-form { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin: 0; }
@@ -345,11 +360,12 @@ body.dark-mode .btn-outline-primary { border-color: #527087; color: #e0e8eb; }
 body.dark-mode .status-badge--pending, body.dark-mode .status-select--pending { border-color: rgba(247, 213, 122, .45); background-color: rgba(146, 99, 0, .28); color: #f7d57a; }
 body.dark-mode .status-badge--confirmed, body.dark-mode .status-select--confirmed { border-color: rgba(154, 227, 183, .45); background-color: rgba(24, 96, 64, .34); color: #9ae3b7; }
 body.dark-mode .status-badge--completed, body.dark-mode .status-select--completed { border-color: rgba(154, 208, 255, .45); background-color: rgba(24, 76, 128, .38); color: #9ad0ff; }
+body.dark-mode .status-badge--neutral { border-color: #40545e; background-color: #20323d; color: #c9d6dc; }
+body.dark-mode .summary-item { border-color: var(--line); background: var(--surface); box-shadow: none; }
 body.dark-mode .status-badge--cancelled, body.dark-mode .status-select--cancelled { border-color: rgba(255, 176, 176, .4); background-color: rgba(127, 34, 34, .34); color: #ffb0b0; }
 
 @media (max-width: 1199.98px) {
-    .sidebar { width: 224px; max-width: 224px; }
-    .admin-main { margin-left: 252px; }
+    :root { --sidebar-w: 224px; }
     .header-bar { margin-right: 16px; margin-left: 16px; }
     .admin-page-content { padding-right: 16px; padding-left: 16px; }
 }
@@ -369,7 +385,8 @@ body.dark-mode .status-badge--cancelled, body.dark-mode .status-select--cancelle
     .admin-nav-backdrop { position: fixed; z-index: 1040; inset: 0; display: block; visibility: hidden; width: 100%; height: 100%; border: 0; background: rgba(16, 29, 38, .48); opacity: 0; transition: opacity .2s ease, visibility .2s ease; }
     .mobile-admin-nav-open .admin-nav-backdrop { visibility: visible; opacity: 1; }
     #adminMobileMenu { display: inline-flex; }
-    .header-bar { top: 8px; margin: 8px 12px 0; }
+    :root { --shell-inset: 8px; }
+    .header-bar { margin: var(--shell-inset) 12px 0; }
     .admin-page-content { padding: 20px 12px 32px; }
 }
 @media (max-width: 767.98px) {

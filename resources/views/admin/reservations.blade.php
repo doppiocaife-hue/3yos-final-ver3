@@ -44,8 +44,9 @@
             <label class="form-label">Payment status</label>
             <select name="payment_status" class="form-select">
                 <option value="">All payments</option>
-                <option value="Unpaid" @selected($paymentStatus === 'Unpaid')>Unpaid</option>
+                <option value="Unpaid" @selected($paymentStatus === 'Unpaid')>No Payment</option>
                 <option value="Downpayment" @selected($paymentStatus === 'Downpayment')>Downpayment</option>
+                <option value="Partial Payment" @selected($paymentStatus === 'Partial Payment')>Partial Payment</option>
                 <option value="Fully Paid" @selected($paymentStatus === 'Fully Paid')>Fully Paid</option>
             </select>
         </div>
@@ -189,23 +190,19 @@
                             </form>
                         </td>
                         <td>
-                            <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="cell-form">
-                                @csrf @method('PATCH')
-                                <input type="hidden" name="status" value="{{ $reservation->status }}">
-                                <select name="payment_type" class="form-select form-select-sm cell-full" aria-label="Payment type">
-                                    <option value="Unpaid" @selected($paymentType === 'Unpaid')>Unpaid</option>
-                                    <option value="Downpayment" @selected($paymentType === 'Downpayment')>Downpayment</option>
-                                    <option value="Full Payment" @selected($paymentType === 'Full Payment')>Full Payment</option>
-                                </select>
-                                <label class="cell-label" for="amount-paid-{{ $reservation->id }}">Paid</label>
-                                <input type="number" id="amount-paid-{{ $reservation->id }}" name="amount_paid" min="0" step="1" value="{{ old('amount_paid', (int) ($reservation->amount_paid ?? 0)) }}" class="form-control form-control-sm" placeholder="0">
-                                <button class="btn btn-sm luxury-btn" type="submit">Save</button>
+                            <div class="payment-cell">
+                                <span class="status-badge status-badge--{{ \App\Models\Reservation::paymentStatusBadge($reservation->payment_status) }}">{{ \App\Models\Reservation::paymentStatusLabel($reservation->payment_status) }}</span>
+                                <span class="cell-note">Paid <span class="money">&#8369;{{ number_format((float) ($reservation->amount_paid ?? 0), 2) }}</span></span>
                                 @if($outstandingBalance > 0)
                                     <span class="cell-note payment-warning" role="alert">Unpaid balance: &#8369;{{ number_format($outstandingBalance, 2) }}</span>
                                 @else
                                     <span class="cell-note">Balance: @if($outstandingBalance !== null)&#8369;{{ number_format($outstandingBalance, 2) }}@else Set contract price @endif</span>
                                 @endif
-                            </form>
+                                @if($reservation->payment_due_date)
+                                    <span class="cell-note">Due {{ $reservation->payment_due_date->format('M j, Y') }}</span>
+                                @endif
+                                <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.reservations.payments', $reservation) }}">Manage</a>
+                            </div>
                         </td>
                     </tr>
                 @empty
@@ -308,6 +305,8 @@
     .reservations-table .cell-form > .btn { margin-left: auto; }
     .cell-label { color: var(--muted); font-size: .66rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
     .status-cell { display: flex; flex-direction: column; align-items: stretch; gap: .3rem; }
+    .payment-cell { display: flex; flex-direction: column; align-items: flex-start; gap: .25rem; }
+    .payment-cell .btn { margin-top: .15rem; }
     .status-cell .status-badge { align-self: flex-start; }
     .contract-cell { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: .3rem; }
     .contract-upload-form { display: flex; margin: 0; }
