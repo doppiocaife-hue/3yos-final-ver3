@@ -258,6 +258,53 @@
             <div class="text-center text-muted py-4">No reservations found.</div>
         @endforelse
     </div>
+
+    <div class="reservation-pagination d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2 mt-3">
+        <p class="text-muted small mb-0">Showing {{ $reservations->firstItem() ?? 0 }}–{{ $reservations->lastItem() ?? 0 }} of {{ $reservations->total() }} reservations</p>
+        @php($firstVisiblePage = max(1, $reservations->currentPage() - 2))
+        @php($lastVisiblePage = min($reservations->lastPage(), $reservations->currentPage() + 2))
+        @if($reservations->hasPages())
+            <nav aria-label="Reservation pagination">
+                <ul class="pagination pagination-sm flex-wrap mb-0">
+                    <li class="page-item {{ $reservations->onFirstPage() ? 'disabled' : '' }}">
+                        @if($reservations->onFirstPage())
+                            <span class="page-link" aria-disabled="true">Previous</span>
+                        @else
+                            <a class="page-link" href="{{ $reservations->previousPageUrl() }}">Previous</a>
+                        @endif
+                    </li>
+                    @if($firstVisiblePage > 1)
+                        <li class="page-item"><a class="page-link" href="{{ $reservations->url(1) }}">1</a></li>
+                        @if($firstVisiblePage > 2)
+                            <li class="page-item disabled"><span class="page-link">…</span></li>
+                        @endif
+                    @endif
+                    @for($page = $firstVisiblePage; $page <= $lastVisiblePage; $page++)
+                        <li class="page-item {{ $reservations->currentPage() === $page ? 'active' : '' }}">
+                            @if($reservations->currentPage() === $page)
+                                <span class="page-link" aria-current="page">{{ $page }}</span>
+                            @else
+                                <a class="page-link" href="{{ $reservations->url($page) }}">{{ $page }}</a>
+                            @endif
+                        </li>
+                    @endfor
+                    @if($lastVisiblePage < $reservations->lastPage())
+                        @if($lastVisiblePage < $reservations->lastPage() - 1)
+                            <li class="page-item disabled"><span class="page-link">…</span></li>
+                        @endif
+                        <li class="page-item"><a class="page-link" href="{{ $reservations->url($reservations->lastPage()) }}">{{ $reservations->lastPage() }}</a></li>
+                    @endif
+                    <li class="page-item {{ $reservations->hasMorePages() ? '' : 'disabled' }}">
+                        @if($reservations->hasMorePages())
+                            <a class="page-link" href="{{ $reservations->nextPageUrl() }}">Next</a>
+                        @else
+                            <span class="page-link" aria-disabled="true">Next</span>
+                        @endif
+                    </li>
+                </ul>
+            </nav>
+        @endif
+    </div>
     </div>
 </div>
 

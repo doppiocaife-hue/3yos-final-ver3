@@ -72,7 +72,17 @@ class AdminController extends Controller
         }
 
         $matchingReservationCount = (clone $query)->count();
-        $reservations = $query->get();
+        $perPage = 10;
+        $lastPage = max(1, (int) ceil($matchingReservationCount / $perPage));
+
+        if ($request->integer('page', 1) > $lastPage) {
+            return redirect()->route('admin.reservations', array_merge(
+                $request->query(),
+                ['page' => $lastPage],
+            ));
+        }
+
+        $reservations = $query->paginate($perPage)->withQueryString();
         $packages = Package::orderBy('price')->get(['id', 'name', 'price']);
         $customerCount = Reservation::query()->distinct('email')->count('email');
         $pendingCount = Reservation::query()->where('status', 'pending')->count();
