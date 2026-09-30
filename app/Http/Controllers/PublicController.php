@@ -14,8 +14,12 @@ class PublicController extends Controller
     public function home()
     {
         $galleryImages = GalleryItem::latest()->get();
+        $packages = Package::orderByRaw("CASE name WHEN 'Silver' THEN 1 WHEN 'Gold' THEN 2 WHEN 'Platinum' THEN 3 WHEN 'Diamond' THEN 4 ELSE 5 END")
+            ->orderBy('price')
+            ->limit(4)
+            ->get();
 
-        return view('public.home', compact('galleryImages'));
+        return view('public.home', compact('galleryImages', 'packages'));
     }
 
     public function about()

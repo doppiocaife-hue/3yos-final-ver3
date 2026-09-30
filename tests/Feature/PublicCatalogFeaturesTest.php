@@ -12,6 +12,34 @@ use Tests\TestCase;
 
 class PublicCatalogFeaturesTest extends TestCase
 {
+    public function test_homepage_replaces_unverified_metrics_with_service_and_package_sections(): void
+    {
+        $response = $this->get(route('home'));
+
+        $response->assertOk();
+        $response->assertSeeInOrder([
+            'Beautiful food for life’s important moments.',
+            'Our services',
+            'Why Choose 3YOS',
+            'A smoother event planning process.',
+            'Find a package for your event.',
+            'Let’s make your next event feel beautifully easy.',
+        ]);
+        $response->assertSee('Custom Catering Packages');
+        $response->assertSee('Catering options designed around the needs and style of your event.');
+        $response->assertSee('Flexible Event Options');
+        $response->assertSee('Suitable options for different event types, guest counts, and requirements.');
+        $response->assertSee('Professional Event Support');
+        $response->assertSee('Support throughout the reservation and event planning process.');
+        $response->assertSee('Easy Reservation Process');
+        $response->assertSee('A simple way to explore packages, submit event details, and make a reservation.');
+        $response->assertSee('View all packages');
+
+        foreach (['1500+', '1,500+', 'events hosted', '12 yrs', '12 years', '24/7', 'planning support', '4.9/5'] as $claim) {
+            $response->assertDontSee($claim);
+        }
+    }
+
     public function test_package_image_is_rendered_without_showing_a_per_guest_price(): void
     {
         Storage::fake('public');

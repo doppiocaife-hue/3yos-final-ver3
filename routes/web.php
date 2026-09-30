@@ -64,6 +64,7 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     Route::get('/inquiries', [AdminController::class, 'inquiries'])->name('admin.inquiries');
     Route::get('/inquiries/{inquiry}', [AdminController::class, 'showInquiry'])->name('admin.inquiries.show');
     Route::post('/inquiries/{inquiry}/reply', [AdminController::class, 'replyToInquiry'])->name('admin.inquiries.reply');
+    Route::patch('/inquiries/{inquiry}/priority', [AdminController::class, 'updateInquiryPriority'])->name('admin.inquiries.priority');
     Route::delete('/inquiries/{inquiry}', [AdminController::class, 'destroyInquiry'])->name('admin.inquiries.destroy');
     Route::middleware('ensure.full-admin')->group(function () {
         Route::resource('packages', AdminPackageController::class)

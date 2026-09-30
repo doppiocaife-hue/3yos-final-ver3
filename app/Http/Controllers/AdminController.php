@@ -251,41 +251,57 @@ class AdminController extends Controller
 
     public function inquiries(Request $request)
     {
-        $status = $request->input('status');
-        $needsResponse = $request->boolean('needs_response');
+        $view = $request->input('view', 'all');
+        $priority = $request->input('priority');
         $search = trim((string) $request->input('search', ''));
 
-        $query = Inquiry::query()->latest();
+        $query = Inquiry::query();
 
-        if ($needsResponse) {
-            $query->whereIn('status', ['new', 'in_progress']);
-        } elseif ($status && in_array($status, ['new', 'in_progress', 'responded', 'closed'], true)) {
-            $query->where('status', $status);
+        if (in_array($view, ['new', 'in_progress', 'responded', 'closed'], true)) {
+            $query->where('status', $view);
+        }
+
+        if ($priority && in_array($priority, ['low', 'normal', 'high', 'urgent'], true)) {
+            $query->where('priority', $priority);
         }
 
         if ($search !== '') {
             $pattern = '%'.str($search)->lower().'%';
-            $query->where(function (Builder $matches) use ($pattern): void {
+            $query->where(function (Builder $matches) use ($pattern, $search): void {
                 $matches->whereRaw('LOWER(COALESCE(full_name, \'\')) LIKE ?', [$pattern])
                     ->orWhereRaw('LOWER(COALESCE(email, \'\')) LIKE ?', [$pattern])
                     ->orWhereRaw('LOWER(COALESCE(subject, \'\')) LIKE ?', [$pattern])
-                    ->orWhereRaw('LOWER(COALESCE(category, \'\')) LIKE ?', [$pattern]);
+                    ->orWhereRaw('LOWER(COALESCE(category, \'\')) LIKE ?', [$pattern])
+                    ->orWhereRaw('CAST(id AS CHAR) = ?', [$search]);
             });
         }
 
-        $inquiries = $query->get();
-        $needsResponseCount = Inquiry::whereIn('status', ['new', 'in_progress'])->count();
+        $inquiries = $query->latest()->get();
 
-        return view('admin.inquiries', compact('inquiries', 'status', 'search', 'needsResponse', 'needsResponseCount'));
+        // Always computed fresh from the real data, independent of the filters above — this is
+        // the "what needs my attention right now" view, not something a search/tab should hide.
+        $needsAttention = Inquiry::query()->needsAttention()->byPriorityThenRecency()->get();
+
+        return view('admin.inquiries', compact('inquiries', 'needsAttention', 'view', 'priority', 'search'));
     }
 
     public function showInquiry(Inquiry $inquiry)
     {
-        if ($inquiry->status === 'new') {
-            $inquiry->update(['status' => 'in_progress']);
+        // Viewing marks it read but must never silently change its status — status only moves
+        // when the admin actually does something (attempts or sends a reply), see replyToInquiry().
+        if ($inquiry->viewed_at === null) {
+            $inquiry->update(['viewed_at' => now()]);
         }
 
         return view('admin.inquiry-show', compact('inquiry'));
+    }
+
+    public function updateInquiryPriority(Request $request, Inquiry $inquiry)
+    {
+        $data = $request->validate(['priority' => ['required', 'in:low,normal,high,urgent']]);
+        $inquiry->update($data);
+
+        return back()->with('success', 'Priority set to '.Inquiry::priorityLabel($data['priority']).'.');
     }
 
     public function replyToInquiry(Request $request, Inquiry $inquiry)
@@ -310,8 +326,13 @@ class AdminController extends Controller
         }
 
         if (! $mailSent) {
-            // The reply text is kept so the admin doesn't lose what they typed, but the status stays untouched.
-            $inquiry->update(['admin_reply' => $data['reply']]);
+            // The reply text is kept so the admin doesn't lose what they typed. A genuine attempt to
+            // reply is real engagement, so — unlike just viewing — this is allowed to move New to
+            // In Progress; it never touches an already Responded/Closed inquiry.
+            $inquiry->update([
+                'admin_reply' => $data['reply'],
+                'status' => $inquiry->status === 'new' ? 'in_progress' : $inquiry->status,
+            ]);
 
             if (in_array(config('mail.default'), ['log', 'array'], true) && $mailError === null) {
                 return redirect()->route('admin.inquiries.show', $inquiry)->with(

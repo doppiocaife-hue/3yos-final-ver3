@@ -88,21 +88,20 @@ class InquiryReplyStatusTest extends TestCase
         $this->assertFalse(\Illuminate\Support\Facades\Route::has('admin.inquiries.status'));
     }
 
-    public function test_the_mobile_card_shows_the_status_without_a_dropdown(): void
+    public function test_the_card_shows_the_status_without_a_dropdown(): void
     {
-        $inquiry = $this->inquiry(['status' => 'responded']);
+        $inquiry = $this->inquiry(['status' => 'responded', 'admin_reply' => 'Thanks', 'replied_at' => now()]);
 
         $response = $this->withSession(self::ADMIN)->get(route('admin.inquiries'));
 
         $response->assertOk();
-        $response->assertSee('inquiry-mobile-card', false);
-        $response->assertSee('Status:', false);
-        $response->assertSeeInOrder([$inquiry->full_name, $inquiry->email, $inquiry->subject, 'Responded'], false);
-        // The list page does have a top-level status *filter* dropdown, but no per-row/per-card
-        // status editor — that's the thing this test guards against reintroducing.
+        $response->assertSee('inquiry-card', false);
+        $response->assertSeeInOrder([$inquiry->full_name, $inquiry->subject, 'Responded'], false);
+        // The list page does have a top-level status *filter* (tabs) and a priority *filter*
+        // dropdown, but no per-row/per-card status editor — that's what this test guards against.
         $response->assertDontSee('inquiry-status-select', false);
-        preg_match('/<article class="inquiry-mobile-card">.*?<\/article>/s', $response->getContent(), $matches);
-        $this->assertNotEmpty($matches, 'Expected to find a rendered mobile card.');
+        preg_match('/<article class="inquiry-card[^"]*">.*?<\/article>/s', $response->getContent(), $matches);
+        $this->assertNotEmpty($matches, 'Expected to find a rendered inquiry card.');
         $this->assertStringNotContainsString('<select', $matches[0]);
     }
 

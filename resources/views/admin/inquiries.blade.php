@@ -1,118 +1,125 @@
 @extends('layouts.admin')
 
 @section('content')
-@php
-    $statusBadgeClass = fn ($status) => match ($status) {
-        'new' => 'status-badge--pending',
-        'in_progress' => 'status-badge--completed',
-        'responded' => 'status-badge--confirmed',
-        'closed' => 'status-badge--neutral',
-        default => 'status-badge--neutral',
-    };
-    $statusLabel = fn ($status) => ucwords(str_replace('_', ' ', $status));
-@endphp
 <div class="content-card p-4">
-    <div class="page-header">
-        <div><h1 class="fw-bold mb-1">Inquiries</h1><p class="text-muted mb-0">Track messages from prospective clients.</p></div>
-        @if($needsResponseCount > 0)
-            <a href="{{ route('admin.inquiries', ['needs_response' => 1]) }}" class="badge-soft badge-soft--warn">{{ $needsResponseCount }} need{{ $needsResponseCount === 1 ? 's' : '' }} a response</a>
-        @endif
-    </div>
+    <div class="page-header"><div><h1 class="fw-bold mb-1">Inquiries</h1><p class="text-muted mb-0">Track messages from prospective clients.</p></div></div>
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
+
+    <section class="attention-card card mb-4">
+        <div class="panel-header">
+            <div>
+                <h2 class="h5 fw-bold mb-1">Needs attention</h2>
+                <p class="text-muted small mb-0">
+                    @if($needsAttention->count() > 0)
+                        {{ $needsAttention->count() }} inquir{{ $needsAttention->count() === 1 ? 'y needs' : 'ies need' }} your response
+                    @else
+                        No inquiries currently require a response.
+                    @endif
+                </p>
+            </div>
+        </div>
+        @if($needsAttention->isEmpty())
+            <p class="mb-0 attention-clear">&#10003; You're all caught up.</p>
+        @else
+            <div class="inquiry-card-list">
+                @foreach($needsAttention as $inquiry)
+                    @include('admin.partials.inquiry-card', ['inquiry' => $inquiry])
+                @endforeach
+            </div>
+        @endif
+    </section>
+
+    <hr class="my-4">
+
+    <h2 class="h5 fw-bold mb-3">All inquiries</h2>
 
     <form id="inquiry-filter-form" method="GET" action="{{ route('admin.inquiries') }}" class="filter-bar" data-live-filter data-live-filter-target="#inquiry-results">
         <div class="filter-field filter-field--wide">
             <label class="form-label" for="inquiry-search">Search</label>
-            <input id="inquiry-search" type="search" name="search" class="form-control" value="{{ old('search', $search ?? '') }}" placeholder="Name, email, subject, category">
+            <input id="inquiry-search" type="search" name="search" class="form-control" value="{{ old('search', $search ?? '') }}" placeholder="Name, email, subject, or inquiry ID">
         </div>
         <div class="filter-field">
-            <label class="form-label" for="inquiry-status">Status</label>
-            <select id="inquiry-status" name="status" class="form-select">
-                <option value="">All statuses</option>
-                <option value="new" @selected($status === 'new')>New</option>
-                <option value="in_progress" @selected($status === 'in_progress')>In Progress</option>
-                <option value="responded" @selected($status === 'responded')>Responded</option>
-                <option value="closed" @selected($status === 'closed')>Closed</option>
+            <label class="form-label" for="inquiry-priority">Priority</label>
+            <select id="inquiry-priority" name="priority" class="form-select">
+                <option value="">All priorities</option>
+                <option value="low" @selected($priority === 'low')>Low</option>
+                <option value="normal" @selected($priority === 'normal')>Normal</option>
+                <option value="high" @selected($priority === 'high')>High</option>
+                <option value="urgent" @selected($priority === 'urgent')>Urgent</option>
             </select>
         </div>
-        <div class="filter-field filter-field--checkbox">
-            <label class="form-check">
-                <input type="checkbox" name="needs_response" value="1" class="form-check-input" @checked($needsResponse) onchange="this.form.requestSubmit()">
-                <span class="form-check-label">Needs response only</span>
-            </label>
-        </div>
+        <input type="hidden" name="view" value="{{ $view }}">
         <div class="filter-field">
-            @if($status || $needsResponse || ($search ?? '') !== '')
+            @if($priority || ($search ?? '') !== '' || $view !== 'all')
                 <a href="{{ route('admin.inquiries') }}" class="btn btn-outline-secondary w-100" data-live-filter-clear="#inquiry-filter-form">Clear</a>
             @endif
         </div>
     </form>
 
-    <div id="inquiry-results" aria-live="polite">
-    <div class="table-responsive d-none d-md-block">
-        <table class="table table-hover align-middle mb-0">
-            <thead>
-                <tr>
-                    <th>Client</th>
-                    <th>Inquiry</th>
-                    <th class="d-none d-lg-table-cell">Message</th>
-                    <th>Status</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse($inquiries as $inquiry)
-                    <tr>
-                        <td>
-                            <strong>{{ $inquiry->full_name }}</strong>
-                            <br><small class="text-muted">{{ $inquiry->email }}</small>
-                        </td>
-                        <td>
-                            {{ $inquiry->subject }}
-                            <br><small class="text-muted">{{ $inquiry->category }}</small>
-                        </td>
-                        <td class="d-none d-lg-table-cell text-muted">{{ \Illuminate\Support\Str::limit($inquiry->message, 80) }}</td>
-                        <td><span class="status-badge {{ $statusBadgeClass($inquiry->status) }}">{{ $statusLabel($inquiry->status) }}</span></td>
-                        <td>
-                            <div class="table-actions">
-                                <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.inquiries.show', $inquiry) }}">View</a>
-                            </div>
-                        </td>
-                    </tr>
-                @empty
-                    <tr><td colspan="5" class="text-center py-4 text-muted">No inquiries found.</td></tr>
-                @endforelse
-            </tbody>
-        </table>
+    <div class="inquiry-tabs" role="tablist" aria-label="Filter by status">
+        @foreach(['all' => 'All', 'new' => 'New', 'in_progress' => 'In Progress', 'responded' => 'Responded', 'closed' => 'Closed'] as $value => $label)
+            <a href="{{ route('admin.inquiries', array_filter(['view' => $value, 'priority' => $priority, 'search' => $search])) }}"
+               class="inquiry-tab {{ $view === $value ? 'is-active' : '' }}">{{ $label }}</a>
+        @endforeach
     </div>
 
-    <div class="inquiry-mobile-list d-md-none">
-        @forelse($inquiries as $inquiry)
-            <article class="inquiry-mobile-card">
-                <h5 class="mb-1">{{ $inquiry->full_name }}</h5>
-                <a class="customer-contact" href="mailto:{{ $inquiry->email }}">{{ $inquiry->email }}</a>
-                <p class="mb-2">{{ $inquiry->subject }}</p>
-                <p class="mb-3 inquiry-status-line">Status: <span class="status-badge {{ $statusBadgeClass($inquiry->status) }}">{{ $statusLabel($inquiry->status) }}</span></p>
-                <div class="text-end">
-                    <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.inquiries.show', $inquiry) }}">View</a>
-                </div>
-            </article>
-        @empty
-            <div class="text-center text-muted py-4">No inquiries found.</div>
-        @endforelse
-    </div>
+    <div id="inquiry-results" aria-live="polite">
+        @if($inquiries->isEmpty())
+            <div class="text-center text-muted py-5">
+                @if($view === 'all' && !$priority && ($search ?? '') === '')
+                    <p class="mb-0 fw-bold">No inquiries yet.</p>
+                    <p class="mb-0">New customer inquiries will appear here.</p>
+                @else
+                    <p class="mb-0">No inquiries match these filters.</p>
+                @endif
+            </div>
+        @else
+            <div class="inquiry-card-list">
+                @foreach($inquiries as $inquiry)
+                    @include('admin.partials.inquiry-card', ['inquiry' => $inquiry])
+                @endforeach
+            </div>
+        @endif
     </div>
 </div>
 
 <style>
-    .filter-field--checkbox { display: flex; align-items: center; min-height: var(--control-h); }
-    .filter-field--checkbox .form-check { display: flex; align-items: center; gap: .5rem; margin: 0; cursor: pointer; }
-    .filter-field--checkbox .form-check-label { font-size: .84rem; color: var(--ink); cursor: pointer; }
-    .inquiry-mobile-card { margin-bottom: .75rem; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
-    .inquiry-mobile-card:last-child { margin-bottom: 0; }
-    .inquiry-mobile-card h5 { font-size: 1rem; }
-    .inquiry-mobile-card p { font-size: .85rem; color: var(--ink); }
-    .inquiry-status-line { display: flex; align-items: center; gap: .4rem; font-weight: 700; color: var(--muted); }
-    .inquiry-mobile-card .customer-contact { display: block; margin-bottom: .35rem; color: var(--teal); font-size: .8rem; text-decoration: none; overflow-wrap: anywhere; }
+    .attention-clear { padding: .75rem 0; color: var(--teal-dark); font-weight: 700; }
+    .inquiry-tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 1.1rem; }
+    .inquiry-tab { display: inline-flex; align-items: center; height: 32px; padding: 0 .9rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: .8rem; font-weight: 700; text-decoration: none; }
+    .inquiry-tab:hover { border-color: var(--teal); color: var(--teal-dark); }
+    .inquiry-tab.is-active { border-color: var(--teal-dark); background: var(--teal-dark); color: #fff; }
+
+    .inquiry-card-list { display: grid; gap: .75rem; }
+    .inquiry-card { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.5rem; padding: 1rem 1.15rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+    .inquiry-card--unread { border-color: rgba(212, 155, 40, .4); background: #fffaf0; }
+    body.dark-mode .inquiry-card--unread { background: rgba(146, 99, 0, .12); }
+    .inquiry-card-identity { display: flex; align-items: flex-start; gap: .6rem; flex: 1 1 200px; min-width: 0; }
+    .inquiry-unread-dot { flex: 0 0 auto; width: 9px; height: 9px; margin-top: .4rem; border-radius: 50%; background: #d49b28; }
+    .inquiry-card-identity-text { min-width: 0; }
+    .inquiry-card-name { margin: 0; font-size: .95rem; font-weight: 800; color: var(--ink); text-transform: uppercase; letter-spacing: .02em; }
+    .inquiry-card--unread .inquiry-card-name { font-weight: 900; }
+    .inquiry-card-subject { margin: .15rem 0 0; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+    .inquiry-card-meta { display: flex; flex-wrap: wrap; gap: 1rem 1.75rem; flex: 1 1 260px; }
+    .inquiry-card-meta-item span { display: block; margin-bottom: .2rem; color: var(--muted); font-size: .66rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    .inquiry-card-meta-item strong { font-size: .82rem; font-weight: 600; color: var(--ink); }
+    .inquiry-card-badges { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; flex: 0 0 auto; }
+    .inquiry-card-action { flex: 0 0 auto; margin-left: auto; }
+
+    .priority-badge { display: inline-flex; height: 24px; align-items: center; justify-content: center; padding: 0 .65rem; border: 1px solid transparent; border-radius: 999px; font-size: .68rem; font-weight: 800; white-space: nowrap; }
+    .priority-badge--low { border-color: var(--line); background: transparent; color: var(--muted); }
+    .priority-badge--normal { border-color: #cfd8dc; background: #eef2f4; color: #4c6073; }
+    .priority-badge--high { border-color: #f0c98a; background: #fff1da; color: #8a5a00; }
+    .priority-badge--urgent { border-color: #f0bcbc; background: #fdeaea; color: #8d2020; }
+    body.dark-mode .priority-badge--low { color: var(--muted); }
+    body.dark-mode .priority-badge--normal { border-color: #425761; background: #20323d; color: #c9d6dc; }
+    body.dark-mode .priority-badge--high { border-color: rgba(247, 213, 122, .45); background: rgba(146, 99, 0, .28); color: #f7d57a; }
+    body.dark-mode .priority-badge--urgent { border-color: rgba(255, 176, 176, .4); background: rgba(127, 34, 34, .34); color: #ffb0b0; }
+
+    @media (max-width: 575.98px) {
+        .inquiry-card { flex-direction: column; align-items: stretch; }
+        .inquiry-card-action { margin-left: 0; }
+        .inquiry-card-action .btn { width: 100%; }
+    }
 </style>
 @endsection

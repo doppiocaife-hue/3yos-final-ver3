@@ -48,41 +48,10 @@
     </div>
 </section>
 
-<section class="py-5 py-lg-5 bg-paper">
-    <div class="container">
-        <div class="row g-4 home-metrics">
-            <div class="col-6 col-md-3">
-                <div class="metric-card">
-                    <div class="metric-value">1500+</div>
-                    <div class="metric-label">events hosted</div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="metric-card">
-                    <div class="metric-value">12 yrs</div>
-                    <div class="metric-label">experience</div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="metric-card">
-                    <div class="metric-value">24/7</div>
-                    <div class="metric-label">planning support</div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="metric-card">
-                    <div class="metric-value">4.9/5</div>
-                    <div class="metric-label">client rating</div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
 <section class="py-5 py-lg-5">
     <div class="container">
         <div class="section-heading text-center mb-4">
-            <div class="eyebrow mb-2">Why clients choose us</div>
+            <div class="eyebrow mb-2">Our services</div>
             <h2 class="section-title mb-3">Thoughtful service, beautifully executed.</h2>
         </div>
         <div class="row g-4">
@@ -105,6 +74,63 @@
                     <div class="service-number">03</div>
                     <h3>Corporate events</h3>
                     <p>Professional service for meetings and company milestones.</p>
+                </article>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="py-5 py-lg-5 bg-paper" aria-labelledby="why-choose-title">
+    <div class="container">
+        <div class="section-heading text-center mb-4">
+            <div class="eyebrow mb-2">Why choose us</div>
+            <h2 class="section-title mb-3" id="why-choose-title">Why Choose 3YOS</h2>
+        </div>
+        <div class="row g-4">
+            <div class="col-12 col-md-6 col-xl-3">
+                <article class="service-tile why-card h-100">
+                    <div class="why-card__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" focusable="false">
+                            <path d="M4 7.5h16v12H4zM8 7.5V4h8v3.5M4 12h16M10 12v2h4v-2" />
+                        </svg>
+                    </div>
+                    <h3>Custom Catering Packages</h3>
+                    <p>Catering options designed around the needs and style of your event.</p>
+                </article>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <article class="service-tile why-card h-100">
+                    <div class="why-card__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" focusable="false">
+                            <path d="M12 3v3M5.6 5.6l2.1 2.1M3 12h3M18 12h3M16.3 7.7l2.1-2.1M7 14a5 5 0 1 1 10 0c0 1.5-.7 2.8-1.8 3.7-.7.6-1.2 1.4-1.2 2.3h-4c0-.9-.5-1.7-1.2-2.3A5 5 0 0 1 7 14ZM10 22h4" />
+                        </svg>
+                    </div>
+                    <h3>Flexible Event Options</h3>
+                    <p>Suitable options for different event types, guest counts, and requirements.</p>
+                </article>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <article class="service-tile why-card h-100">
+                    <div class="why-card__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" focusable="false">
+                            <path d="M12 21s-7-4.4-7-10V5l7-2 7 2v6c0 5.6-7 10-7 10Z" />
+                            <path d="m9 11 2 2 4-4" />
+                        </svg>
+                    </div>
+                    <h3>Professional Event Support</h3>
+                    <p>Support throughout the reservation and event planning process.</p>
+                </article>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <article class="service-tile why-card h-100">
+                    <div class="why-card__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" focusable="false">
+                            <path d="M5 4v3M19 4v3M4 8h16v12H4zM8 12h3M8 16h8" />
+                            <path d="m14.5 12 1 1 2-2" />
+                        </svg>
+                    </div>
+                    <h3>Easy Reservation Process</h3>
+                    <p>A simple way to explore packages, submit event details, and make a reservation.</p>
                 </article>
             </div>
         </div>
@@ -153,6 +179,33 @@
     </div>
 </section>
 
+<section class="py-5 py-lg-5" aria-labelledby="home-packages-title">
+    <div class="container">
+        <div class="section-heading text-center mb-4">
+            <div class="eyebrow mb-2">Explore packages</div>
+            <h2 class="section-title mb-3" id="home-packages-title">Find a package for your event.</h2>
+        </div>
+        <div class="row g-4">
+            @forelse($packages as $package)
+                <div class="col-12 col-md-6 col-xl-3">
+                    <article class="home-package-card h-100">
+                        <h3>{{ $package->name }}</h3>
+                        <p>{{ $package->description }}</p>
+                        <a href="{{ route('packages.show', $package->slug) }}" class="btn btn-outline-primary mt-auto">View package details</a>
+                    </article>
+                </div>
+            @empty
+                <div class="col-12">
+                    <p class="text-center text-muted mb-0">Explore the available catering options on our packages page.</p>
+                </div>
+            @endforelse
+        </div>
+        <div class="text-center mt-4">
+            <a href="{{ route('packages') }}" class="btn btn-primary">View all packages</a>
+        </div>
+    </div>
+</section>
+
 <section class="py-5 py-lg-5">
     <div class="container">
         <div class="cta-panel text-center">
@@ -183,14 +236,15 @@
     .hero-art__label{position:absolute;z-index:2;bottom:28px;left:28px;color:#fff;max-width:78%}
     .hero-art__label span{display:block;font-size:.7rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;margin-bottom:.45rem}
     .hero-art__label strong{font-family:'Playfair Display',serif;font-size:1.65rem;line-height:1.1}
-    .home-metrics{margin-top:-1.25rem}
-    .metric-card{background:#f9f1e8;border:1px solid rgba(109,48,36,.08);border-radius:18px;padding:1rem 1rem .9rem;text-align:center;box-shadow:0 10px 28px rgba(32,32,29,.04)}
-    .metric-value{font-weight:800;font-size:clamp(1.5rem,2vw,2.1rem);color:var(--wine);font-family:'Playfair Display',Georgia,serif}
-    .metric-label{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:.25rem}
     .service-tile{padding:2rem;border:1px solid rgba(109,48,36,.08);background:#f9f2ea;border-radius:22px;box-shadow:0 10px 28px rgba(109,48,36,.04)}
     .service-number{font-size:.75rem;font-weight:800;color:var(--terracotta);letter-spacing:.14em;margin-bottom:2rem}
     .service-tile h3{font-size:1.5rem}
     .service-tile p{color:var(--muted);line-height:1.65;margin-bottom:0}
+    .why-card{display:flex;flex-direction:column;gap:.85rem;padding:1.5rem}
+    .why-card h3{font-size:1.25rem;line-height:1.2;margin:0}
+    .why-card p{margin:0}
+    .why-card__icon{display:grid;place-items:center;width:48px;height:48px;flex:0 0 48px;border-radius:14px;background:rgba(109,48,36,.08);color:var(--wine)}
+    .why-card__icon svg{width:25px;height:25px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
     .process-list{display:grid;gap:1rem}
     .process-item{display:flex;gap:1rem;padding:1rem 1.1rem;border:1px solid rgba(109,48,36,.08);border-radius:18px;background:#f8efe6}
     .process-item span{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:50%;background:var(--wine);color:#fff;font-weight:800}
@@ -206,7 +260,10 @@
     .check-list span{display:inline-grid;place-items:center;width:22px;height:22px;margin-right:.75rem;border-radius:50%;background:rgba(109,48,36,.08);color:var(--wine);font-size:.75rem}
     .section-title{font-size:clamp(2.1rem,3.4vw,3rem);line-height:1.08;letter-spacing:-.03em}
     .cta-panel{padding:2.5rem 1.5rem;border:1px solid rgba(109,48,36,.08);background:linear-gradient(140deg,#f9f3ed,#f4e7d8);border-radius:22px}
-    @media(max-width:575px){.hero-art{min-height:280px}.hero-title{font-size:2.5rem}.cta-panel{padding:2rem 1rem}.process-item{padding:.85rem .9rem}.metric-card{padding:.8rem .7rem}}
+    .home-package-card{display:flex;flex-direction:column;gap:.9rem;padding:1.5rem;border:1px solid rgba(109,48,36,.08);background:#f9f2ea;border-radius:22px;box-shadow:0 10px 28px rgba(109,48,36,.04)}
+    .home-package-card h3{font-size:1.5rem;margin:0}
+    .home-package-card p{color:var(--muted);line-height:1.65;margin:0}
+    @media(max-width:575px){.hero-art{min-height:280px}.hero-title{font-size:2.5rem}.cta-panel{padding:2rem 1rem}.process-item{padding:.85rem .9rem}.why-card,.home-package-card{padding:1.35rem}}
 </style>
 
 @if($galleryImages->count() > 1)
@@ -233,4 +290,3 @@
 </script>
 @endif
 @endsection
-
