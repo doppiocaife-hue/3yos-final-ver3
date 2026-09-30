@@ -21,7 +21,8 @@
         .navbar{position:fixed;top:0;left:0;right:0;z-index:1035;width:100%;margin:0;background:rgba(255,253,249,.94)!important;border-bottom:1px solid rgba(32,32,29,.07);backdrop-filter:blur(14px);transition:transform .28s ease, box-shadow .28s ease;transform:translateY(0)}
         .navbar.header-hidden{transform:translateY(-120%)}
         main.page-content{padding-top:calc(var(--public-header-offset) + var(--public-content-gap))}
-        main.page-content > :first-child.container,main.page-content > :first-child.gallery-page,main.page-content > .about-hero > .container:first-child,main.page-content > .status-page > .container:first-child{padding-top:0!important}
+        main.page-content > :first-child.container,main.page-content > .about-hero > .container:first-child,main.page-content > .status-page > .container:first-child{padding-top:0!important}
+        main.page-content > :first-child:is(.about-hero,.gallery-page,.status-page){margin-top:calc(-1 * (var(--public-header-offset) + var(--public-content-gap)));padding-top:calc(var(--public-header-offset) + var(--public-content-gap))!important}
         main.page-content[data-page="home"] > .hero{margin-top:calc(-1 * var(--public-header-offset))}
         .navbar-brand{display:inline-flex;align-items:center;gap:.75rem;color:var(--wine)!important;font-family:'Playfair Display',Georgia,serif;font-size:1.4rem;font-weight:800;letter-spacing:.02em}
         .navbar-brand-text{display:flex;flex-direction:column;line-height:1.05}
@@ -35,17 +36,18 @@
         .btn-outline-primary:hover{background:var(--wine);border-color:var(--wine)}
         .eyebrow{color:var(--terracotta);font-size:.75rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
         .theme-toggle{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:transparent;color:var(--ink);padding:.48rem .7rem;font-size:.78rem;font-weight:700;border-radius:999px;min-width:42px;min-height:42px;line-height:1}
-        .footer{margin-top:3rem;background:#211b18;color:#f6f0e8;padding-top:2rem;padding-bottom:1.25rem}
+        .footer{margin-top:3rem;background:#211b18;color:#f6f0e8;padding-top:1.5rem;padding-bottom:.85rem}
         .footer a{color:#f6f0e8;text-decoration:none}
         .footer a:hover{color:#e7b77a}
-        .footer-title{font-family:'Playfair Display',Georgia,serif;font-size:1.55rem}
+        .footer-title{font-family:'Playfair Display',Georgia,serif;font-size:1.35rem;line-height:1.2}
         .footer-kicker{color:#d9a45f;font-size:.68rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase}
         .footer-heading{color:#fffaf3;font-size:.76rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
-        .footer-links{display:grid;gap:.58rem;font-size:.9rem}
-        .footer-contact{display:flex;align-items:center;gap:.7rem;padding:.78rem 0;border-top:1px solid rgba(255,255,255,.12)}
-        .footer-contact-icon{display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;border:1px solid rgba(231,183,122,.45);border-radius:50%;color:#e7b77a;font-size:.68rem;font-weight:800}
+        .footer-links{display:grid;gap:.35rem;font-size:.88rem}
+        .footer-contact{display:flex;align-items:center;gap:.6rem;padding:.42rem 0;line-height:1.3;border-top:1px solid rgba(255,255,255,.12)}
+        .footer-contact-icon{display:grid;place-items:center;flex:0 0 26px;width:26px;height:26px;border:1px solid rgba(231,183,122,.45);border-radius:50%;color:#e7b77a;font-size:.68rem;font-weight:800}
         .footer-contact small{display:block;color:#c8bdb3;font-size:.7rem;letter-spacing:.04em;text-transform:uppercase}
-        .footer-facebook{display:inline-flex;align-items:center;gap:.6rem;padding:.7rem .9rem;border:1px solid rgba(231,183,122,.6);color:#fff8ef!important;font-size:.82rem;font-weight:700;transition:.2s ease;border-radius:999px}
+        .footer-contact a,.footer-contact div>span{font-size:.88rem}
+        .footer-facebook{display:inline-flex;align-items:center;gap:.5rem;padding:.48rem .85rem;border:1px solid rgba(231,183,122,.6);color:#fff8ef!important;font-size:.82rem;font-weight:700;transition:.2s ease;border-radius:999px}
         .footer-facebook:hover{background:#b66545;border-color:#b66545;color:#fff!important;transform:translateY(-2px)}
         body.dark-mode{--ink:#f5f1e9;--muted:#c9c3b9;--cream:#151515;--paper:#201f1d;--line:#575148;--wine:#e6ad92;--terracotta:#edb18f;--gold:#e7bd72;background:var(--cream);color:var(--ink)}
         body.dark-mode .navbar{background:rgba(27,26,24,.95)!important;border-color:#403c35}
@@ -109,14 +111,14 @@
 
     <footer class="footer">
         <div class="container">
-            <div class="row g-5 pb-5">
-                <div class="col-lg-4">
-                    <div class="footer-kicker mb-2">Catering & party needs</div>
+            <div class="row gx-4 gy-3 pb-3">
+                <div class="col-md-5 col-lg-4">
+                    <div class="footer-kicker mb-1">Catering & party needs</div>
                     <div class="footer-title">3YOS Catering</div>
-                    <p class="text-white-50 mt-3 mb-0">Thoughtful food, graceful styling, and dependable service for celebrations that deserve to feel effortless.</p>
+                    <p class="text-white-50 small mt-2 mb-0">Thoughtful food, graceful styling, and dependable service for celebrations that deserve to feel effortless.</p>
                 </div>
-                <div class="col-6 col-lg-2">
-                    <div class="footer-heading mb-3">Explore</div>
+                <div class="col-6 col-md-3 col-lg-2">
+                    <div class="footer-heading mb-2">Explore</div>
                     <div class="footer-links">
                         <a href="{{ route('home') }}">Home</a>
                         <a href="{{ route('services') }}">Services</a>
@@ -124,8 +126,8 @@
                         <a href="{{ route('reservation') }}">Book now</a>
                     </div>
                 </div>
-                <div class="col-6 col-lg-3">
-                    <div class="footer-heading mb-3">Get in touch</div>
+                <div class="col-6 col-md-4 col-lg-3">
+                    <div class="footer-heading mb-2">Get in touch</div>
                     <div class="footer-contact">
                         <span class="footer-contact-icon">AD</span>
                         <div>
@@ -149,12 +151,12 @@
                     </div>
                 </div>
                 <div class="col-lg-3">
-                    <div class="footer-heading mb-3">Start planning</div>
-                    <p class="text-white-50 small mb-3">Share your date, venue, guest count, and celebration vision. We’ll help you build the right package.</p>
+                    <div class="footer-heading mb-2">Start planning</div>
+                    <p class="text-white-50 small mb-2">Share your date, venue, guest count, and celebration vision. We’ll help you build the right package.</p>
                     <a href="{{ route('reservation') }}" class="footer-facebook">Book an event <span>→</span></a>
                 </div>
             </div>
-            <div class="border-top border-secondary pt-4 d-flex flex-column flex-md-row justify-content-between gap-2 small text-white-50">
+            <div class="border-top border-secondary pt-2 d-flex flex-column flex-md-row justify-content-between gap-2 small text-white-50">
                 <span>&copy; {{ date('Y') }} 3YOS Catering Services & Party Needs. All rights reserved.</span>
             </div>
         </div>

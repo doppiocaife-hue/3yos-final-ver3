@@ -1,9 +1,9 @@
 @extends('layouts.admin')
 
 @section('content')
-<div class="mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3">
-    <div><div class="page-kicker mb-1">Business snapshot</div><h1 class="fw-bold mb-1" style="font-family:Manrope,sans-serif;letter-spacing:-.045em">Good day, admin.</h1><p class="text-muted mb-0">Here is a live overview of your catering operations.</p></div>
-    <a class="btn luxury-btn px-3" href="{{ route('admin.reservations') }}">Review reservations</a>
+<div class="page-header">
+    <div><div class="page-kicker">Business snapshot</div><h1 class="fw-bold">Good day, admin.</h1><p class="text-muted mb-0">Here is a live overview of your catering operations.</p></div>
+    <a class="btn luxury-btn" href="{{ route('admin.reservations') }}">Review reservations</a>
 </div>
 <div class="row g-3 mb-4">
     <div class="col-sm-6 col-xl-3"><a class="stat-card stat-card-link" href="{{ route('admin.reservations') }}"><span class="badge-soft">Bookings</span><h3>{{ $reservationCount }}</h3><p class="mb-0 text-muted">Total reservation requests</p></a></div>
@@ -11,11 +11,11 @@
     <div class="col-sm-6 col-xl-3"><a class="stat-card stat-card-link" href="{{ route('admin.services.index') }}"><span class="badge-soft">Services</span><h3>{{ $serviceCount }}</h3><p class="mb-0 text-muted">Active service offerings</p></a></div>
     <div class="col-sm-6 col-xl-3"><a class="stat-card stat-card-link" href="{{ session('admin_role') === 'full' ? route('admin.packages.index') : route('packages') }}"><span class="badge-soft">Packages</span><h3>{{ $packageCount }}</h3><p class="mb-0 text-muted">Published catering packages</p></a></div>
 </div>
-<div class="row g-4">
-    <div class="col-lg-7"><div class="card p-4 h-100"><div class="d-flex align-items-center justify-content-between mb-4"><div><h5 class="fw-bold mb-1">Priority workspace</h5><p class="text-muted small mb-0">Keep client communication and booking decisions moving.</p></div><span class="badge-soft">Today</span></div><div class="workflow-item"><div class="workflow-icon">01</div><div><strong>Review reservation requests</strong><p class="text-muted mb-0">Confirm availability, update status, and respond to event needs.</p></div><a href="{{ route('admin.reservations') }}">Open</a></div><div class="workflow-item"><div class="workflow-icon">02</div><div><strong>Reply to inquiries</strong><p class="text-muted mb-0">Give prospective clients a timely, helpful response.</p></div><a href="{{ route('admin.inquiries') }}">Open</a></div>@if(session('admin_role') === 'full')<div class="workflow-item"><div class="workflow-icon">03</div><div><strong>Keep packages current</strong><p class="text-muted mb-0">Update inclusions, pricing, and featured offerings.</p></div><a href="{{ route('admin.packages.index') }}">Manage</a></div>@endif</div></div>
-    <div class="col-lg-5"><div class="card p-4 h-100"><h5 class="fw-bold mb-1">Quick actions</h5><p class="text-muted small mb-4">Frequently used management tools.</p><div class="d-grid gap-2"><a class="quick-link" href="{{ route('admin.inquiries') }}"><span>Client inquiries</span><b>→</b></a><a class="quick-link" href="{{ route('admin.reservations') }}"><span>Reservations</span><b>→</b></a>@if(session('admin_role') === 'full')<a class="quick-link" href="{{ route('admin.packages.index') }}"><span>Package editor</span><b>→</b></a><a class="quick-link" href="{{ route('admin.analytics') }}"><span>Business analytics</span><b>→</b></a>@endif</div></div></div>
+<div class="row g-3">
+    <div class="col-lg-7"><div class="card h-100"><div class="panel-header"><div><h5 class="fw-bold mb-1">Priority workspace</h5><p class="text-muted small mb-0">Keep client communication and booking decisions moving.</p></div><span class="badge-soft">Today</span></div><div class="workflow-item"><div class="workflow-icon">01</div><div><strong>Review reservation requests</strong><p class="text-muted mb-0">Confirm availability, update status, and respond to event needs.</p></div><a href="{{ route('admin.reservations') }}">Open</a></div><div class="workflow-item"><div class="workflow-icon">02</div><div><strong>Reply to inquiries</strong><p class="text-muted mb-0">Give prospective clients a timely, helpful response.</p></div><a href="{{ route('admin.inquiries') }}">Open</a></div>@if(session('admin_role') === 'full')<div class="workflow-item"><div class="workflow-icon">03</div><div><strong>Keep packages current</strong><p class="text-muted mb-0">Update inclusions, pricing, and featured offerings.</p></div><a href="{{ route('admin.packages.index') }}">Manage</a></div>@endif</div></div>
+    <div class="col-lg-5"><div class="card h-100"><div class="panel-header"><div><h5 class="fw-bold mb-1">Quick actions</h5><p class="text-muted small mb-0">Frequently used management tools.</p></div></div><div class="d-grid gap-2"><a class="quick-link" href="{{ route('admin.inquiries') }}"><span>Client inquiries</span><b>→</b></a><a class="quick-link" href="{{ route('admin.reservations') }}"><span>Reservations</span><b>→</b></a>@if(session('admin_role') === 'full')<a class="quick-link" href="{{ route('admin.packages.index') }}"><span>Package editor</span><b>→</b></a><a class="quick-link" href="{{ route('admin.analytics') }}"><span>Business analytics</span><b>→</b></a>@endif</div></div></div>
 </div>
-<section class="calendar-card card p-4 mt-4" id="reservation-calendar" aria-labelledby="reservation-calendar-title">
+<section class="calendar-card card mt-4" id="reservation-calendar" aria-labelledby="reservation-calendar-title">
     <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-4">
         <div>
             <h5 class="fw-bold mb-1" id="reservation-calendar-title">Reservation calendar</h5>
@@ -37,16 +37,6 @@
     <div class="calendar-events" id="calendarEvents" aria-live="polite"></div>
 </section>
 <style>
-.workflow-item{display:flex;align-items:center;gap:1rem;padding:1rem 0;border-top:1px solid var(--line)}
-.workflow-item:first-of-type{border-top:0}
-.workflow-icon{width:35px;height:35px;display:grid;place-items:center;border-radius:9px;background:var(--mint);color:var(--teal-dark);font-size:.7rem;font-weight:800}
-.workflow-item strong{font-size:.9rem}
-.workflow-item p{font-size:.8rem;margin-top:.15rem}
-.workflow-item a{margin-left:auto;color:var(--teal-dark);font-weight:800;text-decoration:none;font-size:.8rem}
-.quick-link{display:flex;justify-content:space-between;align-items:center;padding:.9rem 1rem;border:1px solid var(--line);border-radius:9px;color:var(--ink);font-weight:700;text-decoration:none;transition:.18s}
-.quick-link:hover{border-color:#9bd5cf;background:var(--mint);color:var(--teal-dark)}
-.quick-link b{font-size:1.1rem;color:var(--teal)}
-.stat-card-link{display:block;color:inherit;text-decoration:none}.stat-card-link:hover{color:inherit}
 .calendar-card{overflow:visible}
 .calendar-legend{display:flex;align-items:center;flex-wrap:wrap;gap:.9rem;color:var(--muted);font-size:.72rem;font-weight:700}
 .calendar-legend span{display:inline-flex;align-items:center;gap:.35rem}
@@ -57,7 +47,8 @@
 .calendar-event-detail--completed{border-left-color:#4d77b8}.calendar-event-detail--cancelled{border-left-color:#c54545}
 .calendar-event-detail strong{font-size:.78rem}.calendar-event-detail small{color:var(--muted);line-height:1.35}
 .calendar-day:focus-within{outline:2px solid #71c9c0;outline-offset:1px}
-body.dark-mode .calendar-day{background:#12202e}
+.calendar-grid > .calendar-day:nth-child(7n+4) .calendar-hover-card,.calendar-grid > .calendar-day:nth-child(7n+5) .calendar-hover-card,.calendar-grid > .calendar-day:nth-child(7n+6) .calendar-hover-card,.calendar-grid > .calendar-day:nth-child(7n) .calendar-hover-card{right:0;left:auto}
+.calendar-hover-card{max-width:min(240px,calc(100vw - 2rem))}
 body.dark-mode .calendar-event--cancelled{background:#f9e0e1;border-color:#a73838;color:#4d1316;box-shadow:inset 0 0 0 1px rgba(167,56,56,.2)}
 body.dark-mode .calendar-event--cancelled .calendar-event__status{color:#6d1818}
 @media(max-width:992px){.calendar-events{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -66,26 +57,14 @@ body.dark-mode .calendar-event--cancelled .calendar-event__status{color:#6d1818}
 body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{background:var(--surface)}
 
 @media(max-width:992px){
-    .row.g-4 > [class*="col-"]{margin-bottom:1rem}
     .calendar-events{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 @media(max-width:768px){
-    .workflow-item{gap:.75rem;padding:.75rem 0}
-    .workflow-item strong{font-size:.85rem}
-    .workflow-item p{font-size:.75rem}
-    .workflow-item a{margin-left:0;margin-top:.5rem;font-size:.75rem}
-    .quick-link{padding:.75rem;font-size:.9rem}
-    .quick-link b{font-size:1rem}
     .calendar-day{min-height:72px;padding:.35rem}.calendar-event{font-size:.6rem;padding:.2rem}.calendar-events{grid-template-columns:1fr}.calendar-legend{gap:.5rem}
 }
 
 @media(max-width:575px){
-    .workflow-item{align-items:flex-start;flex-direction:column}
-    .workflow-item a{width:100%;text-align:center;padding:.4rem;margin-left:0;margin-top:.5rem}
-    .quick-link{flex-direction:column;align-items:flex-start;padding:.6rem}
-    .quick-link b{align-self:flex-end;margin-top:.4rem;font-size:1rem}
-    .quick-link span{width:100%}
     .calendar-weekdays{font-size:.58rem}.calendar-weekdays,.calendar-grid{gap:3px}.calendar-day{min-height:58px;padding:.25rem}.calendar-day-number{font-size:.68rem}.calendar-event{height:auto;margin-top:.3rem;padding:.24rem .28rem;border-left-width:3px;font-size:.6rem}.calendar-event--cancelled{background:#fff1f1;color:#6b1f1f}.calendar-event--cancelled .calendar-event__status{color:#8d2020}.calendar-event--completed{background:#ecf2ff}.calendar-event--confirmed{background:#e7f7f4}
 }
 </style>

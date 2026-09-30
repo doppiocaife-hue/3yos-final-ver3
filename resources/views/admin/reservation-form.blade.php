@@ -2,11 +2,11 @@
 
 @section('content')
 <div class="content-card p-4">
-    <div class="mb-4">
-        <a class="text-decoration-none small" href="{{ route('admin.reservations') }}">Back to reservations</a>
-        <h1 class="fw-bold mt-2 mb-1">Add reservation</h1>
+    <div class="page-header"><div>
+        <a class="back-link" href="{{ route('admin.reservations') }}">Back to reservations</a>
+        <h1 class="fw-bold mb-1">Add reservation</h1>
         <p class="text-muted mb-0">Create a pending booking. You can accept it from the reservations list.</p>
-    </div>
+    </div></div>
 
     @if($errors->any())
         <div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>

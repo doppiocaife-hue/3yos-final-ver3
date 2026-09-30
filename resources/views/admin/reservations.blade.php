@@ -2,12 +2,12 @@
 
 @section('content')
 <div class="content-card p-4">
-    <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-4 align-items-stretch">
+    <div class="page-header">
         <div>
             <h1 class="fw-bold mb-1">Reservations</h1>
             <p class="text-muted mb-0">Review customer information, then accept, cancel, or update each booking.</p>
         </div>
-        <div class="d-flex flex-wrap gap-2 align-self-md-start">
+        <div class="page-actions">
             <a class="btn luxury-btn" href="{{ route('admin.reservations.create') }}">Add reservation</a>
             <a class="btn btn-outline-secondary" href="{{ route('admin.reservations') }}">Refresh bookings</a>
         </div>
@@ -17,21 +17,21 @@
         <div class="alert alert-success">{{ session('success') }}</div>
     @endif
 
-    <form id="reservation-filter-form" method="GET" action="{{ route('admin.reservations') }}" class="row g-3 align-items-end mb-4 reservation-filter" data-live-filter data-live-filter-target="#reservation-results">
-        <div class="col-md-4 col-xl-3">
-            <label class="form-label fw-semibold mb-1">Customer</label>
+    <form id="reservation-filter-form" method="GET" action="{{ route('admin.reservations') }}" class="filter-bar" data-live-filter data-live-filter-target="#reservation-results">
+        <div class="filter-field filter-field--wide">
+            <label class="form-label">Customer</label>
             <input type="search" name="search" class="form-control" value="{{ old('search', $search ?? '') }}" placeholder="Name, email, phone, package, event, ID">
         </div>
-        <div class="col-md-3 col-xl-2">
-            <label class="form-label fw-semibold mb-1">From date</label>
+        <div class="filter-field">
+            <label class="form-label">From date</label>
             <input type="date" name="date_from" class="form-control" value="{{ old('date_from', $dateFrom ?? '') }}">
         </div>
-        <div class="col-md-3 col-xl-2">
-            <label class="form-label fw-semibold mb-1">To date</label>
+        <div class="filter-field">
+            <label class="form-label">To date</label>
             <input type="date" name="date_to" class="form-control" value="{{ old('date_to', $dateTo ?? '') }}">
         </div>
-        <div class="col-md-4 col-xl-2">
-            <label class="form-label fw-semibold mb-1">Reservation status</label>
+        <div class="filter-field">
+            <label class="form-label">Reservation status</label>
             <select name="status" class="form-select">
                 <option value="">All statuses</option>
                 <option value="pending" @selected($status === 'pending')>Pending</option>
@@ -40,8 +40,8 @@
                 <option value="cancelled" @selected($status === 'cancelled')>Cancelled</option>
             </select>
         </div>
-        <div class="col-md-4 col-xl-2">
-            <label class="form-label fw-semibold mb-1">Payment status</label>
+        <div class="filter-field">
+            <label class="form-label">Payment status</label>
             <select name="payment_status" class="form-select">
                 <option value="">All payments</option>
                 <option value="Unpaid" @selected($paymentStatus === 'Unpaid')>Unpaid</option>
@@ -49,7 +49,7 @@
                 <option value="Fully Paid" @selected($paymentStatus === 'Fully Paid')>Fully Paid</option>
             </select>
         </div>
-        <div class="col-md-4 col-xl-2 d-flex gap-2 reservation-filter-actions">
+        <div class="filter-field">
             @if($status || $paymentStatus || ($search ?? '') !== '' || ($dateFrom ?? '') !== '' || ($dateTo ?? '') !== '')
                 <a href="{{ route('admin.reservations') }}" class="btn btn-outline-secondary w-100" data-live-filter-clear="#reservation-filter-form">Clear</a>
             @endif
@@ -76,8 +76,8 @@
     <div class="reservation-table-container d-none d-md-block">
         <table class="table table-hover align-middle mb-0 reservations-table">
             <colgroup>
-                <col style="width:8%"><col style="width:14%"><col style="width:9%"><col style="width:9%"><col style="width:10%">
-                <col style="width:5%"><col style="width:7%"><col style="width:11%"><col style="width:10%"><col style="width:17%">
+                <col style="width:9%"><col style="width:14%"><col style="width:8.5%"><col style="width:8.5%"><col style="width:11.5%">
+                <col style="width:4.5%"><col style="width:6.5%"><col style="width:15.5%"><col style="width:8%"><col style="width:14%">
             </colgroup>
             <thead>
                 <tr>
@@ -100,19 +100,19 @@
                     @php($outstandingBalance = $reservation->total_cost === null ? null : max(0, (float) $reservation->total_cost - (float) ($reservation->amount_paid ?? 0)))
                     <tr>
                         <td>
-                            <div class="fw-semibold text-break">{{ $reservation->reservation_code ?? '—' }}</div>
+                            <span class="reservation-code">{{ $reservation->reservation_code ?? '—' }}</span>
                         </td>
                         <td>
-                            <strong>{{ $reservation->full_name }}</strong><br>
-                            <a class="customer-contact" href="mailto:{{ $reservation->email }}">{{ $reservation->email }}</a><br>
+                            <strong class="d-block">{{ $reservation->full_name }}</strong>
+                            <a class="customer-contact customer-email" href="mailto:{{ $reservation->email }}" title="{{ $reservation->email }}">{{ $reservation->email }}</a>
                             <a class="customer-contact" href="tel:{{ $reservation->contact_number }}">{{ $reservation->contact_number }}</a>
                         </td>
                         <td>
                             @if($reservation->status === 'confirmed')
-                                <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="schedule-edit-form" data-confirm-message="Update the package for this reservation?">
+                                <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="cell-form" data-confirm-message="Update the package for this reservation?">
                                     @csrf @method('PATCH')
                                     <input type="hidden" name="status" value="confirmed">
-                                    <select name="package_id" class="form-select form-select-sm">
+                                    <select name="package_id" class="form-select form-select-sm cell-full">
                                         @foreach($packages as $package)
                                             <option value="{{ $package->id }}" @selected($reservation->package_id === $package->id)>{{ $package->name }}</option>
                                         @endforeach
@@ -124,20 +124,20 @@
                             @endif
                         </td>
                         <td>
-                            {{ $reservation->event_type }}<br>
+                            <span class="d-block">{{ $reservation->event_type }}</span>
                             <small class="text-muted">{{ $reservation->venue }}</small>
                         </td>
                         <td>
                             @if($reservation->status === 'confirmed')
-                                <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="schedule-edit-form" data-confirm-message="Update the schedule for this reservation?">
+                                <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="cell-form" data-confirm-message="Update the schedule for this reservation?">
                                     @csrf @method('PATCH')
                                     <input type="hidden" name="status" value="confirmed">
-                                    <input type="date" name="event_date" value="{{ $reservation->event_date }}" class="form-control form-control-sm" required>
-                                    <input type="time" name="event_time" value="{{ $reservation->event_time }}" class="form-control form-control-sm" required>
+                                    <input type="date" name="event_date" value="{{ $reservation->event_date }}" class="form-control form-control-sm cell-full" required>
+                                    <input type="time" name="event_time" value="{{ $reservation->event_time }}" class="form-control form-control-sm cell-full" required>
                                     <button class="btn btn-sm luxury-btn" type="submit">Save</button>
                                 </form>
                             @else
-                                {{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}<br>
+                                <span class="d-block">{{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}</span>
                                 <small class="text-muted">{{ $reservation->event_time }}</small>
                             @endif
                         </td>
@@ -168,7 +168,7 @@
                         <td>
                             <div class="status-cell">
                                 <span class="status-badge status-badge--{{ $reservation->status }}">{{ $statusLabel }}</span>
-                                <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-status>
+                                <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="cell-form" data-confirm-status>
                                     @csrf @method('PATCH')
                                     <select name="status" class="form-select form-select-sm status-select status-select--{{ $reservation->status }}">
                                         <option value="pending" @selected($reservation->status === 'pending')>Pending</option>
@@ -181,33 +181,30 @@
                             </div>
                         </td>
                         <td>
-                            <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="payment-form">
+                            <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="cell-form">
                                 @csrf @method('PATCH')
                                 <input type="hidden" name="status" value="{{ $reservation->status }}">
-                                <div class="payment-stack">
-                                    <input type="number" name="total_cost" min="0" step="1" value="{{ old('total_cost', $reservation->total_cost) }}" class="form-control form-control-sm" placeholder="Enter contract price" required>
-                                    <button class="btn btn-sm luxury-btn" type="submit">Save</button>
-                                </div>
+                                <input type="number" name="total_cost" min="0" step="1" value="{{ old('total_cost', $reservation->total_cost) }}" class="form-control form-control-sm cell-full" placeholder="Price" aria-label="Contract price" required>
+                                <button class="btn btn-sm luxury-btn" type="submit">Save</button>
                             </form>
                         </td>
                         <td>
-                            <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="payment-form">
+                            <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="cell-form">
                                 @csrf @method('PATCH')
                                 <input type="hidden" name="status" value="{{ $reservation->status }}">
-                                <div class="payment-stack">
-                                    <select name="payment_type" class="form-select form-select-sm">
-                                        <option value="Unpaid" @selected($paymentType === 'Unpaid')>Unpaid</option>
-                                        <option value="Downpayment" @selected($paymentType === 'Downpayment')>Downpayment</option>
-                                        <option value="Full Payment" @selected($paymentType === 'Full Payment')>Full Payment</option>
-                                    </select>
-                                    <label class="payment-field-label">Paid</label>
-                                    <input type="number" name="amount_paid" min="0" step="1" value="{{ old('amount_paid', (int) ($reservation->amount_paid ?? 0)) }}" class="form-control form-control-sm" placeholder="0">
-                                    <small class="payment-balance">Balance: @if($outstandingBalance !== null)&#8369;{{ number_format($outstandingBalance, 2) }}@else Set contract price @endif</small>
-                                    @if($outstandingBalance > 0)
-                                        <div class="payment-warning" role="alert">Unpaid balance: &#8369;{{ number_format($outstandingBalance, 2) }}</div>
-                                    @endif
-                                    <button class="btn btn-sm luxury-btn" type="submit">Save</button>
-                                </div>
+                                <select name="payment_type" class="form-select form-select-sm cell-full" aria-label="Payment type">
+                                    <option value="Unpaid" @selected($paymentType === 'Unpaid')>Unpaid</option>
+                                    <option value="Downpayment" @selected($paymentType === 'Downpayment')>Downpayment</option>
+                                    <option value="Full Payment" @selected($paymentType === 'Full Payment')>Full Payment</option>
+                                </select>
+                                <label class="cell-label" for="amount-paid-{{ $reservation->id }}">Paid</label>
+                                <input type="number" id="amount-paid-{{ $reservation->id }}" name="amount_paid" min="0" step="1" value="{{ old('amount_paid', (int) ($reservation->amount_paid ?? 0)) }}" class="form-control form-control-sm" placeholder="0">
+                                <button class="btn btn-sm luxury-btn" type="submit">Save</button>
+                                @if($outstandingBalance > 0)
+                                    <span class="cell-note payment-warning" role="alert">Unpaid balance: &#8369;{{ number_format($outstandingBalance, 2) }}</span>
+                                @else
+                                    <span class="cell-note">Balance: @if($outstandingBalance !== null)&#8369;{{ number_format($outstandingBalance, 2) }}@else Set contract price @endif</span>
+                                @endif
                             </form>
                         </td>
                     </tr>
@@ -268,112 +265,69 @@
 </div>
 
 <style>
-    .reservation-stat { height: 100%; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .reservation-stat { height: 100%; padding: 1rem 1.15rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
     .reservation-stat span, .reservation-stat small { display: block; }
     .reservation-stat span, .mobile-event-info span, .mobile-detail-list span { font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-    .reservation-stat strong { display: block; font-size: 1.7rem; line-height: 1.1; margin: .22rem 0; }
+    .reservation-stat strong { display: block; margin: .2rem 0; font-size: 1.7rem; line-height: 1.1; }
     .reservation-stat small, .mobile-event-info span, .mobile-detail-list span { color: var(--muted); }
     .reservation-stat--customers { border-left: 4px solid #5279a8; }
     .reservation-stat--pending { border-left: 4px solid #d49b28; }
     .reservation-stat--accepted { border-left: 4px solid #21895b; }
     .reservation-stat--cancelled { border-left: 4px solid #c74e4e; }
-    .status-badge { display: inline-block; height: max-content; padding: .35rem .65rem; border-radius: 999px; font-size: .75rem; font-weight: 800; }
-    .status-badge--pending { color: #714d00; background: #fff1c9; }
-    .status-badge--confirmed { color: #0a5a35; background: #d9f7e6; }
-    .status-badge--completed { color: #164f85; background: #dceeff; }
-    .status-badge--cancelled { color: #8d2020; background: #ffe0e0; }
-    body.dark-mode .status-badge--pending { color: #f7d57a; background: rgba(146, 99, 0, 0.28); border: 1px solid rgba(247, 213, 122, 0.45); }
-    body.dark-mode .status-badge--confirmed { color: #9ae3b7; background: rgba(24, 96, 64, 0.34); border: 1px solid rgba(154, 227, 183, 0.45); }
-    body.dark-mode .status-badge--completed { color: #9ad0ff; background: rgba(24, 76, 128, 0.38); border: 1px solid rgba(154, 208, 255, 0.45); }
-    body.dark-mode .status-badge--cancelled { color: #ffb0b0; background: rgba(127, 34, 34, 0.34); border: 1px solid rgba(255, 176, 176, 0.4); }
-    .customer-contact { font-size: .82rem; color: var(--teal); text-decoration: none; }
-    .reservation-mobile-card { padding: 1rem; margin-bottom: .75rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .reservation-match-count { margin-bottom: .5rem; }
+    .customer-contact { display: block; color: var(--teal); font-size: .8rem; text-decoration: none; overflow-wrap: anywhere; }
+    .reservation-mobile-card { margin-bottom: .75rem; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
     .reservation-mobile-card h5 { font-size: 1rem; }
     .mobile-event-info { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; padding: .8rem 0; }
-    .mobile-event-info strong { display: block; font-size: .82rem; margin-top: .15rem; }
+    .mobile-event-info strong { display: block; margin-top: .15rem; font-size: .82rem; }
     .mobile-detail-list { padding-top: .75rem; }
     .mobile-detail-list p { margin: 0 0 .65rem; }
     .mobile-detail-list p:last-child { margin: 0; }
-    .reservation-mobile-card summary { cursor: pointer; font-weight: 700; color: var(--teal); }
+    .reservation-mobile-card summary { color: var(--teal); font-weight: 700; cursor: pointer; }
     .reservation-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; padding-top: .75rem; border-top: 1px solid var(--line); }
     .reservation-actions form { display: flex; gap: .5rem; }
-    .reservation-actions .form-select { width: auto; }
-    .reservation-action-group { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
-    .reservation-action-label { font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    .reservation-action-group { display: flex; min-width: 0; flex-direction: column; gap: .3rem; }
+    .reservation-action-label { color: var(--muted); font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
     .reservation-action-group > form { display: flex; gap: .5rem; }
     .reservation-action-group .form-select { width: auto; }
-    .contract-upload-form { display: flex; align-items: center; gap: .4rem; }
-    .contract-file-picker { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 26px; padding: .24rem .45rem; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font-size: .6rem; font-weight: 700; white-space: nowrap; cursor: pointer; }
-    .contract-file-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
-    .contract-item { display: inline-flex; align-items: center; gap: .25rem; }
-    .contract-delete { border: 0; background: transparent; color: #c74e4e; font-size: .95rem; line-height: 1; cursor: pointer; padding: 0 .15rem; }
+    .payment-warning { color: #8a5a00; font-weight: 800; }
+    body.dark-mode .payment-warning { color: #f7d57a; }
+    .reservation-action-group > .payment-warning { padding: .35rem .55rem; border: 1px solid #edc467; border-radius: 7px; background: #fff7df; font-size: .72rem; }
+    body.dark-mode .reservation-action-group > .payment-warning { border-color: rgba(247, 213, 122, .45); background: rgba(146, 99, 0, .28); }
+
+    /* Desktop table: readable type, compact controls, scrolls inside its card only when space runs out. */
+    .reservations-table { min-width: 1100px; table-layout: fixed; }
+    .reservations-table thead th { white-space: normal; }
+    .reservations-table th, .reservations-table td { padding-right: .45rem; padding-left: .45rem; }
+    .reservations-table td { font-size: .78rem; vertical-align: middle; overflow-wrap: break-word; }
+    .reservations-table td:first-child, .reservations-table th:first-child { padding-left: .85rem; }
+    .reservation-code { font-size: .74rem; font-weight: 700; letter-spacing: .01em; white-space: nowrap; }
+    .reservations-table .btn-sm { padding-right: .5rem; padding-left: .5rem; }
+    .reservations-table .customer-contact { font-size: .76rem; }
+    .reservations-table .customer-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reservations-table .cell-form > .btn { margin-left: auto; }
+    .cell-label { color: var(--muted); font-size: .66rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .status-cell { display: flex; flex-direction: column; align-items: stretch; gap: .3rem; }
+    .status-cell .status-badge { align-self: flex-start; }
+    .contract-cell { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: .3rem; }
+    .contract-upload-form { display: flex; margin: 0; }
+    .contract-file-picker { position: relative; display: inline-flex; height: 24px; align-items: center; justify-content: center; padding: 0 .55rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: .68rem; font-weight: 700; white-space: nowrap; cursor: pointer; }
+    .contract-file-picker:hover { border-color: #aebdc4; }
+    .contract-file-picker input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+    .contract-item { display: inline-flex; align-items: center; gap: .2rem; }
+    .contract-item form { margin: 0; }
+    .contract-delete { padding: 0 .15rem; border: 0; background: transparent; color: #c74e4e; font-size: .95rem; line-height: 1; cursor: pointer; }
     .contract-delete:hover { color: #8d2020; }
-    .contract-view-link { font-size: .6rem; color: var(--teal-dark); font-weight: 700; text-decoration: none; }
+    .contract-view-link { color: var(--teal-dark); font-size: .72rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
     .contract-view-link:hover { text-decoration: underline; }
-    .contract-none { display: inline-flex; padding: .18rem .38rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .6rem; font-weight: 700; }
-    .contract-cell { display: flex; align-items: flex-start; flex-direction: column; gap: .18rem; min-width: 0; }
-    .status-cell { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
-    .status-cell form { display: flex; align-items: center; gap: .35rem; min-width: 0; }
-    .status-cell .status-select { width: 116px; min-height: 31px; padding: .3rem 1.7rem .3rem .55rem; border-width: 1px; border-radius: 7px; font-size: .72rem; font-weight: 800; line-height: 1.2; }
-    .status-select--pending { color: #714d00; border-color: #e6bd52; background-color: #fff8e1; }
-    .status-select--confirmed { color: #0a5a35; border-color: #8fd4ab; background-color: #e7f9ed; }
-    .status-select--completed { color: #164f85; border-color: #93c4ed; background-color: #eaf5ff; }
-    .status-select--cancelled { color: #8d2020; border-color: #efa6a6; background-color: #fff0f0; }
-    body.dark-mode .status-select--pending { color: #f7d57a; border-color: rgba(247, 213, 122, .45); background-color: rgba(146, 99, 0, .28); }
-    body.dark-mode .status-select--confirmed { color: #9ae3b7; border-color: rgba(154, 227, 183, .45); background-color: rgba(24, 96, 64, .34); }
-    body.dark-mode .status-select--completed { color: #9ad0ff; border-color: rgba(154, 208, 255, .45); background-color: rgba(24, 76, 128, .38); }
-    body.dark-mode .status-select--cancelled { color: #ffb0b0; border-color: rgba(255, 176, 176, .4); background-color: rgba(127, 34, 34, .34); }
-    .status-cell .btn { height: 31px; padding: .3rem .55rem; font-size: .7rem; }
-    .payment-stack { display: flex; flex-direction: column; gap: .35rem; min-width: 150px; }
-    .payment-field-label { font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-    .payment-balance { font-size: .72rem; color: var(--muted); }
-    .payment-warning { padding: .4rem .55rem; border: 1px solid #edc467; border-radius: 7px; background: #fff7df; color: #704d00; font-size: .72rem; font-weight: 800; line-height: 1.3; }
-    body.dark-mode .payment-warning { border-color: rgba(247, 213, 122, .45); background: rgba(146, 99, 0, .28); color: #f7d57a; }
-    .schedule-edit-form { display: flex; flex-direction: column; gap: .35rem; min-width: 130px; }
-    .payment-form { display: flex; }
-    .reservation-table-container { width: 100%; max-width: 100%; overflow-x: hidden; overflow-x: clip; }
-    .reservations-table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; }
-    .reservations-table th, .reservations-table td { min-width: 0; padding: .42rem .3rem; white-space: normal; overflow-wrap: anywhere; vertical-align: top; font-size: .72rem; }
-    .reservations-table th { font-size: .62rem; line-height: 1.2; }
-    .reservations-table td strong, .reservations-table .customer-contact { overflow-wrap: anywhere; word-break: break-word; }
-    .reservations-table .customer-contact { font-size: .68rem; }
-    .reservations-table .form-control, .reservations-table .form-select { width: 100%; min-width: 0; max-width: 100%; padding: .28rem .3rem; border-radius: 6px; font-size: .68rem; line-height: 1.2; }
-    .reservations-table .schedule-edit-form, .reservations-table .payment-form, .reservations-table .payment-stack { width: 100%; min-width: 0; }
-    .reservations-table .schedule-edit-form, .reservations-table .payment-stack { gap: .22rem; }
-    .reservations-table .btn { width: 100%; min-width: 0; min-height: 25px; padding: .22rem .15rem; font-size: .63rem; line-height: 1.1; white-space: normal; }
-    .reservations-table .status-cell { align-items: stretch; flex-direction: column; gap: .25rem; }
-    .reservations-table .status-badge { padding: .25rem .2rem; font-size: .62rem; line-height: 1.15; text-align: center; white-space: normal; }
-    .reservations-table .status-cell form { display: flex; flex-direction: column; align-items: stretch; gap: .2rem; width: 100%; }
-    .reservations-table .status-cell .status-select { width: 100%; min-height: 26px; padding: .25rem 1.1rem .25rem .3rem; font-size: .64rem; }
-    .reservations-table .status-cell .btn { height: auto; }
-    .reservations-table .contract-cell { width: 100%; }
-    .reservations-table .contract-item { max-width: 100%; flex-wrap: wrap; }
-    .reservations-table .contract-file-picker { width: 100%; max-width: 100%; min-height: 24px; padding: .2rem; white-space: normal; }
-    .reservations-table .contract-view-link { overflow-wrap: anywhere; }
-    .reservations-table .payment-field-label, .reservations-table .payment-balance { overflow-wrap: anywhere; }
-    .reservations-table .payment-warning { padding: .28rem; font-size: .62rem; overflow-wrap: anywhere; }
-    .reservations-table .payment-stack .payment-balance { font-size: .62rem; }
-    .reservation-filter.row { display: grid; grid-template-columns: minmax(190px, 2fr) repeat(4, minmax(135px, 1fr)) minmax(140px, auto); gap: .75rem; margin: 0 0 1.5rem; }
-    .reservation-filter > [class*="col-"] { width: auto; max-width: none; padding: 0; flex: none; }
-    .reservation-filter-actions { min-width: 0; }
-    @media (max-width: 767px) {
-        .reservation-filter.row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .reservation-filter-actions { grid-column: 1 / -1; }
-        .reservation-action-group { width: 100%; }
-        .reservation-action-group > form { width: 100%; }
-        .reservation-action-group .form-select, .contract-upload-form .form-control, .payment-stack .form-select, .payment-stack .form-control { width: 100%; min-width: 0; }
+    .contract-none { display: inline-flex; height: 22px; align-items: center; padding: 0 .5rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .66rem; font-weight: 700; }
+
+    @media (max-width: 767.98px) {
+        .reservation-action-group, .reservation-action-group > form { width: 100%; }
+        .reservation-action-group .form-select, .reservation-action-group .form-control { width: 100%; min-width: 0; }
         .reservation-actions { display: block; }
+        .reservation-actions > * + * { margin-top: .6rem; }
         .reservation-actions form { display: flex; width: 100%; }
-        .reservation-actions .btn { width: auto; }
-        .payment-stack { min-width: 0; }
-    }
-    @media (min-width: 768px) and (max-width: 1199px) {
-        .reservation-filter.row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-        .reservation-filter-actions { grid-column: span 1; }
-    }
-    @media (max-width: 480px) {
-        .reservation-filter.row { grid-template-columns: minmax(0, 1fr); }
-        .reservation-filter-actions { grid-column: auto; }
     }
 </style>
 @endsection

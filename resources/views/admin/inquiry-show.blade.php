@@ -2,10 +2,10 @@
 
 @section('content')
 <div class="content-card p-4">
-    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start gap-3 mb-4">
+    <div class="page-header">
         <div>
-            <a class="text-decoration-none small" href="{{ route('admin.inquiries') }}">← Back to inquiries</a>
-            <h1 class="fw-bold mt-2 mb-1">{{ $inquiry->subject }}</h1>
+            <a class="back-link" href="{{ route('admin.inquiries') }}">← Back to inquiries</a>
+            <h1 class="fw-bold mb-1">{{ $inquiry->subject }}</h1>
             <p class="text-muted mb-0">{{ $inquiry->category }} · received {{ $inquiry->created_at->format('M j, Y g:i A') }}</p>
         </div>
         <form method="POST" action="{{ route('admin.inquiries.destroy', $inquiry) }}" onsubmit="return confirm('Delete this inquiry? This cannot be undone.');">
@@ -56,16 +56,4 @@
     </div>
 </div>
 
-<style>
-@media(max-width:768px){
-    .card{padding:1rem!important}
-}
-
-@media(max-width:576px){
-    .card{padding:.75rem!important}
-    .card h5{font-size:.95rem}
-    textarea{font-size:.9rem;min-height:150px!important}
-    .btn{width:100%}
-}
-</style>
 @endsection

@@ -2,15 +2,19 @@
 
 @section('content')
 <div class="content-card p-4">
-    <h1 class="fw-bold mb-1">Backups</h1>
-    <p class="text-muted mb-4">Create a downloadable snapshot of your catering data.</p>
+    <div class="page-header">
+        <div>
+            <h1 class="fw-bold mb-1">Backups</h1>
+            <p class="text-muted mb-0">Create a downloadable snapshot of your catering data.</p>
+        </div>
+        <div class="page-actions">
+            <form method="POST" action="{{ route('admin.backups.create') }}">@csrf<button class="btn btn-primary" type="submit">Create Backup</button></form>
+            <button class="btn btn-outline-primary" type="button" id="upload-backup-trigger">Upload Backup</button>
+        </div>
+    </div>
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
     @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
-    <div class="d-flex flex-wrap gap-2 mb-3">
-        <form method="POST" action="{{ route('admin.backups.create') }}">@csrf<button class="btn btn-primary" type="submit">Create Backup</button></form>
-        <button class="btn btn-outline-primary" type="button" id="upload-backup-trigger">Upload Backup</button>
-    </div>
-    <div class="card p-4">
+    <div class="card">
         <div class="backup-list">
             @forelse($backups as $backup)
                 <div class="backup-row">

@@ -2,11 +2,11 @@
 
 @section('content')
 <div class="content-card p-4">
-    <div class="mb-4">
+    <div class="page-header"><div>
         <div class="page-kicker mb-1">Operations &amp; insights</div>
         <h1 class="fw-bold mb-1">Reports</h1>
         <p class="text-muted mb-0">Live booking activity and estimated revenue by calendar period.</p>
-    </div>
+    </div></div>
     <p id="report-download-error" class="alert alert-danger py-2" role="alert" hidden>Unable to generate the report. Please try again.</p>
 
     <div class="row g-4 report-grid">

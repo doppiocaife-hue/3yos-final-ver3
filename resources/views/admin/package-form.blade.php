@@ -2,10 +2,10 @@
 
 @section('content')
 <div class="content-card p-4">
-    <div class="mb-4">
-        <a class="text-decoration-none small" href="{{ route('admin.packages.index') }}">Back to packages</a>
-        <h1 class="fw-bold mt-2 mb-1">{{ $package->exists ? 'Edit package' : 'Add package' }}</h1>
-    </div>
+    <div class="page-header"><div>
+        <a class="back-link" href="{{ route('admin.packages.index') }}">Back to packages</a>
+        <h1 class="fw-bold mb-1">{{ $package->exists ? 'Edit package' : 'Add package' }}</h1>
+    </div></div>
     @if($errors->any())
         <div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif

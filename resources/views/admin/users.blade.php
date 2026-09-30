@@ -2,10 +2,10 @@
 
 @section('content')
 <div class="content-card p-4">
-    <div class="mb-4">
+    <div class="page-header"><div>
         <h1 class="fw-bold mb-1">Admin Accounts</h1>
         <p class="text-muted mb-0">Create either a primary admin or a team admin and choose the access level for each account.</p>
-    </div>
+    </div></div>
 
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
     @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
@@ -98,7 +98,7 @@
 
 <style>
     .team-admin-table { table-layout: fixed; min-width: 680px; }
-    .team-admin-table th, .team-admin-table td { padding: .45rem .5rem; vertical-align: top; }
+    .team-admin-table th, .team-admin-table td { vertical-align: middle; }
     .team-admin-table th:nth-child(1), .team-admin-table td:nth-child(1) { width: 16%; }
     .team-admin-table th:nth-child(2), .team-admin-table td:nth-child(2) { width: 24%; }
     .team-admin-table th:nth-child(3), .team-admin-table td:nth-child(3) { width: 17%; }
@@ -106,21 +106,9 @@
     .team-admin-table td:nth-child(2), .team-admin-table td:nth-child(4) { overflow-wrap: anywhere; }
     .team-admin-access { display: grid; gap: .35rem; }
     .team-admin-reset-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: .3rem; align-items: center; }
-    .team-admin-reset-form .form-control { padding: .3rem .4rem; font-size: .72rem; }
-    .team-admin-reset-form .btn { padding: .3rem .5rem; font-size: .72rem; }
     .team-admin-reset-form .form-control { min-width: 0; }
-    .team-admin-reset-form .btn { white-space: nowrap; }
     @media(max-width:768px){
-        .row.g-4{gap:1rem!important}
-        .card{margin-bottom:1rem}
-        .table-responsive{overflow-x:auto}
         .team-admin-table { min-width: 560px; }
-    }
-    @media(max-width:576px){
-        .card{padding:.75rem!important}
-        .card h5{font-size:.95rem}
-        .form-label{font-size:.9rem}
-        .form-control{font-size:.9rem}
     }
 </style>
 @endsection

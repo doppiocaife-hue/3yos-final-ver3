@@ -2,10 +2,10 @@
 
 @section('content')
 <div class="content-card p-4">
-    <div class="mb-4">
+    <div class="page-header"><div>
         <h1 class="fw-bold mb-1">Gallery</h1>
         <p class="text-muted mb-0">Add event photos and update the public gallery.</p>
-    </div>
+    </div></div>
 
     @if(session('success'))
         <div class="alert alert-success">{{ session('success') }}</div>

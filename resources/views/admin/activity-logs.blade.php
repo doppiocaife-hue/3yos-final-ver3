@@ -2,9 +2,9 @@
 
 @section('content')
 <div class="content-card">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mb-4">
+    <div class="page-header">
         <div>
-            <div class="page-kicker mb-1">Security audit</div>
+            <div class="page-kicker">Security audit</div>
             <h1 class="fw-bold mb-1">Activity logs</h1>
             <p class="text-muted mb-0">Track which administrator accessed the panel and the actions they performed.</p>
         </div>
@@ -13,9 +13,9 @@
 
     <div id="activity-log-loading" class="small text-muted mb-2" aria-live="polite" hidden>Loading activity logs...</div>
     
-    <form id="activity-log-filter-form" class="row g-2 p-3 mb-4 audit-filter" method="GET" action="{{ route('admin.activity-logs') }}" data-live-filter data-live-filter-target="#activity-log-results" data-live-filter-count="#activity-log-count">
-        <div class="col-md-3 col-12">
-            <label class="visually-hidden" for="actor">Administrator</label>
+    <form id="activity-log-filter-form" class="filter-bar" method="GET" action="{{ route('admin.activity-logs') }}" data-live-filter data-live-filter-target="#activity-log-results" data-live-filter-count="#activity-log-count">
+        <div class="filter-field filter-field--wide">
+            <label class="form-label" for="actor">Administrator</label>
             <select id="actor" name="actor" class="form-select">
                 <option value="">All administrators</option>
                 @foreach($actors as $actor)
@@ -23,19 +23,19 @@
                 @endforeach
             </select>
         </div>
-        <div class="col-md-3 col-12">
-            <label class="visually-hidden" for="search">Search actions</label>
+        <div class="filter-field filter-field--wide">
+            <label class="form-label" for="search">Search actions</label>
             <input id="search" name="search" class="form-control" value="{{ request('search', request('action')) }}" placeholder="Search actions, e.g. signed in or updated">
         </div>
-        <div class="col-md-2 col-6">
-            <label class="form-label small mb-1" for="date_from">From date</label>
+        <div class="filter-field">
+            <label class="form-label" for="date_from">From date</label>
             <input id="date_from" name="date_from" type="date" class="form-control" value="{{ request('date_from') }}">
         </div>
-        <div class="col-md-2 col-6">
-            <label class="form-label small mb-1" for="date_to">Through date</label>
+        <div class="filter-field">
+            <label class="form-label" for="date_to">Through date</label>
             <input id="date_to" name="date_to" type="date" class="form-control" value="{{ request('date_to') }}">
         </div>
-        <div class="col-md-2 col-6">
+        <div class="filter-field">
             @if(request('actor') || request('action') || request('date_from') || request('date_to'))
                 <a href="{{ route('admin.activity-logs') }}" class="btn btn-outline-secondary w-100" data-live-filter-clear="#activity-log-filter-form">Clear</a>
             @endif
@@ -92,11 +92,6 @@
 </div>
 
 <style>
-@media(max-width:576px){
-    .audit-filter{padding:.75rem!important}
-    .audit-filter .col-12{margin-bottom:.5rem}
-}
-.audit-filter{background:#f7fafb;border:1px solid var(--line);border-radius:11px}
 .actor-avatar{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--mint);color:var(--teal-dark);font-size:.78rem;font-weight:800}
 .method-label{display:inline-block;padding:.2rem .42rem;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:.63rem;font-weight:800;letter-spacing:.06em}
 .activity-pagination{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.7rem;width:100%}
@@ -106,6 +101,5 @@
 .activity-pagination .page-item.active .page-link{border-color:var(--teal);background:var(--teal);color:#fff}
 body.dark-mode .activity-pagination .page-link{border-color:var(--line);background:var(--surface);color:#75d8cf}
 body.dark-mode .activity-pagination .page-item.active .page-link{border-color:var(--teal);background:var(--teal);color:#fff}
-body.dark-mode .audit-filter{background:#1d3343}
 </style>
 @endsection

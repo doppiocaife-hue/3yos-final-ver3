@@ -2,10 +2,10 @@
 
 @section('content')
 <div class="content-card p-4">
-    <div class="mb-4">
+    <div class="page-header"><div>
         <h1 class="fw-bold mb-1">Analytics</h1>
         <p class="text-muted mb-0">A live view of bookings, confirmed revenue, and client activity.</p>
-    </div>
+    </div></div>
     
     <div class="row g-4 mb-4">
         <div class="col-md-4 col-sm-6">
@@ -83,19 +83,6 @@
     </div>
 </div>
 
-<style>
-@media(max-width:768px){
-    .card canvas{max-height:250px!important}
-}
-
-@media(max-width:576px){
-    .stat-card{padding:1rem!important}
-    .stat-card h3{font-size:1.5rem}
-    .card{padding:1rem!important}
-    .card h4{font-size:.95rem}
-    .table td{padding:.5rem}
-}
-</style>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
