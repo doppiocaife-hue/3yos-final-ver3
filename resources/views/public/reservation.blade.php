@@ -160,38 +160,36 @@
                             <div class="row g-3">
                                 @php($preselectedPackageId = old('package_id', request()->query('package')))
                                 @php($selectedPackage = $packages->firstWhere('id', $preselectedPackageId))
-                                <div class="col-12 package-picker-field">
-                                    <label class="form-label" for="package-picker-toggle">Catering package</label>
-                                    <select name="package_id" id="package_id" class="form-select" required>
+                                <div class="col-12">
+                                    <div class="form-label" id="package-field-label">Catering package</div>
+                                    <select name="package_id" id="package_id" class="form-select" aria-labelledby="package-field-label" required @if($selectedPackage) hidden @endif>
                                         <option value="">Select a package</option>
                                         @foreach($packages as $package)
-                                            <option value="{{ $package->id }}" data-price="{{ $package->price }}" @selected($preselectedPackageId == $package->id)>{{ $package->name }}</option>
+                                            <option value="{{ $package->id }}" data-price="{{ $package->price }}" data-name="{{ $package->name }}" data-description="{{ $package->description }}" data-details-url="{{ route('packages.show', $package->slug) }}" @selected((string) $preselectedPackageId === (string) $package->id)>{{ $package->name }} — &#8369;{{ number_format($package->price, 2) }} / person</option>
                                         @endforeach
                                     </select>
-                                    <div class="package-picker" id="package-picker" hidden>
-                                        <button type="button" id="package-picker-toggle" class="form-select package-picker-toggle" aria-haspopup="listbox" aria-expanded="false" aria-required="true" aria-controls="package-picker-panel">
-                                            <span id="package-picker-value">{{ $selectedPackage?->name ?? 'Select a package' }}</span>
-                                        </button>
-                                        <div class="package-picker-panel" id="package-picker-panel" hidden>
-                                            <div class="package-picker-options" role="listbox" aria-label="Catering packages">
-                                                @foreach($packages as $package)
-                                                    <button type="button" class="package-picker-option" role="option" id="package-option-{{ $package->id }}" data-package-option data-value="{{ $package->id }}" data-name="{{ $package->name }}" data-description="{{ $package->description }}" data-menu="{{ $package->menu }}" data-freebies="{{ $package->freebies }}" data-addons="{{ $package->addons }}" aria-selected="{{ (string) $preselectedPackageId === (string) $package->id ? 'true' : 'false' }}" tabindex="-1">
-                                                        <span>{{ $package->name }}</span>
-                                                        <small>Preview package</small>
-                                                    </button>
-                                                @endforeach
-                                            </div>
-                                            <section class="package-picker-preview" aria-live="polite">
-                                                <h3 id="package-preview-name">{{ $selectedPackage?->name ?? 'Package preview' }}</h3>
-                                                <p id="package-preview-description">{{ $selectedPackage?->description ?? 'Hover over or focus a package to preview its details.' }}</p>
-                                                <div class="package-preview-detail" id="package-preview-menu-wrap" @if(! $selectedPackage?->menu) hidden @endif><strong>Menu</strong><span id="package-preview-menu">{{ $selectedPackage?->menu }}</span></div>
-                                                <div class="package-preview-detail" id="package-preview-freebies-wrap" @if(! $selectedPackage?->freebies) hidden @endif><strong>Included</strong><span id="package-preview-freebies">{{ $selectedPackage?->freebies }}</span></div>
-                                                <div class="package-preview-detail" id="package-preview-addons-wrap" @if(! $selectedPackage?->addons) hidden @endif><strong>Optional add-ons</strong><span id="package-preview-addons">{{ $selectedPackage?->addons }}</span></div>
-                                            </section>
+                                    @if($preselectedPackageId && ! $selectedPackage)
+                                        <small class="form-text text-danger" role="alert">The selected package is no longer available. Please choose another package.</small>
+                                    @endif
+                                    <small id="package-selection-error" class="form-text text-danger" hidden>Please select a catering package.</small>
+                                    <div class="selected-package-card" id="selected-package-card" role="group" aria-labelledby="package-field-label selected-package-name" @if(! $selectedPackage) hidden @endif>
+                                        <div>
+                                            <strong id="selected-package-name">{{ $selectedPackage?->name }}</strong>
+                                            <span id="selected-package-price">
+                                                @if($selectedPackage)
+                                                    &#8369;{{ number_format($selectedPackage->price, 2) }} / person
+                                                @endif
+                                            </span>
+                                            <p id="selected-package-description" @if(! $selectedPackage?->description) hidden @endif>{{ $selectedPackage?->description }}</p>
+                                        </div>
+                                        <div class="selected-package-actions">
+                                            <a id="view-package-details" class="package-selection-link" href="{{ $selectedPackage ? route('packages.show', $selectedPackage->slug) : '#' }}" @if(! $selectedPackage) hidden @endif>View package details</a>
+                                            <a id="change-package" class="btn btn-outline-primary package-selection-link" href="{{ route('packages') }}">Change package</a>
                                         </div>
                                     </div>
-                                    <small id="package-picker-error" class="form-text text-danger" hidden>Select a catering package to continue.</small>
-                                    <small class="form-text">Choose the package that best fits your event.</small>
+                                    @if(! $preselectedPackageId || $selectedPackage)
+                                        <small class="form-text" id="package-selection-help" @if($selectedPackage) hidden @endif>Choose a package or <a class="package-selection-link" href="{{ route('packages') }}">review package details</a>.</small>
+                                    @endif
                                 </div>
                                 <div class="col-md-6"><label class="form-label" for="estimated-budget-display">Estimated package total</label><output id="estimated-budget-display" class="form-control" aria-live="polite">Choose a package and guest count to see an estimate.</output><small class="form-text">Calculated automatically from the package rate and guest count; the final contract price is confirmed by our team.</small></div>
                                 <div class="col-12"><label class="form-label">Additional services</label><textarea name="additional_services" class="form-control" rows="2">{{ old('additional_services') }}</textarea></div>
@@ -347,33 +345,18 @@
     body.dark-mode .clock-time-face{background:#29231f}
     body.dark-mode .clock-time-number{color:#f5f1e9}
     body.dark-mode .clock-time-number:hover,body.dark-mode .clock-time-number:focus-visible,body.dark-mode .clock-time-number[aria-pressed="true"]{background:#b66545;color:#fff}
-    .package-picker-field{position:relative;z-index:2}
-    body.package-picker-open .package-picker-field{z-index:1081}
-    body.package-picker-open .clock-time-field{visibility:hidden}
-    .package-picker{position:relative}
-    .package-picker-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left}
-    .package-picker-toggle:after{content:'';width:.55rem;height:.55rem;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);margin:-.25rem .2rem 0 .75rem;flex:0 0 auto}
-    .package-picker-toggle[aria-expanded="true"]:after{transform:rotate(225deg);margin-top:.3rem}
-    .package-picker-panel{position:fixed;top:0;left:0;z-index:1080;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);grid-template-rows:minmax(0,1fr);width:min(560px,calc(100vw - 2rem));max-width:calc(100vw - 2rem);max-height:min(390px,65vh);min-width:0;overflow:hidden;border:1px solid #e7ddd0;border-radius:14px;background:#fff;box-shadow:0 18px 42px rgba(32,32,29,.18)}
-    .package-picker-options{min-width:0;min-height:0;overflow-y:auto;padding:.4rem}
-    .package-picker-option{display:flex;flex-direction:column;align-items:flex-start;gap:.18rem;width:100%;padding:.65rem .75rem;border:0;border-radius:8px;background:transparent;color:var(--ink);text-align:left}
-    .package-picker-option:hover,.package-picker-option:focus-visible,.package-picker-option[aria-selected="true"]{outline:0;background:#f6eee5;color:var(--wine)}
-    .package-picker-option span{font-weight:700}
-    .package-picker-option small{color:var(--muted);font-size:.72rem}
-    .package-picker-preview{min-width:0;min-height:0;overflow-y:auto;padding:1rem 1.1rem;background:#f8f3ec;border-left:1px solid #e7ddd0}
-    .package-picker-preview h3{margin:0 0 .45rem;color:var(--wine);font-family:'Playfair Display',Georgia,serif;font-size:1.25rem}
-    .package-picker-preview p{margin:0 0 .8rem;color:var(--muted);font-size:.83rem;line-height:1.5}
-    .package-preview-detail{display:grid;gap:.15rem;padding:.55rem 0;border-top:1px solid rgba(109,48,36,.12);font-size:.78rem;line-height:1.45}
-    .package-preview-detail strong{color:var(--ink);font-size:.67rem;text-transform:uppercase}
-    .package-preview-detail span{min-width:0;color:var(--muted);overflow-wrap:anywhere}
-    body.dark-mode .package-picker-toggle{background:#201f1d;color:#f5f1e9;border-color:#555047}
-    body.dark-mode .package-picker-panel{border-color:#4f4942;background:#201f1d}
-    body.dark-mode .package-picker-option{color:#f5f1e9}
-    body.dark-mode .package-picker-option:hover,body.dark-mode .package-picker-option:focus-visible,body.dark-mode .package-picker-option[aria-selected="true"]{background:#332820;color:#f1c29b}
-    body.dark-mode .package-picker-option small,body.dark-mode .package-picker-preview p,body.dark-mode .package-preview-detail span{color:#c9c3b9}
-    body.dark-mode .package-picker-preview{background:#29231f;border-color:#4f4942}
-    body.dark-mode .package-picker-preview h3,body.dark-mode .package-preview-detail strong{color:#f1c29b}
-    @media(max-width:575px){.package-picker-panel{grid-template-columns:1fr;max-height:min(390px,65vh)}.package-picker-options{max-height:175px}.package-picker-preview{border-top:1px solid #e7ddd0;border-left:0}}
+    .selected-package-card{display:flex;align-items:center;justify-content:space-between;gap:1.25rem;margin-top:1rem;padding:1.1rem 1.2rem;border:1px solid rgba(109,48,36,.12);border-radius:16px;background:#f8efe6}
+    .selected-package-card[hidden]{display:none}
+    .selected-package-card strong,.selected-package-card span{display:block}
+    .selected-package-card strong{font-family:'Playfair Display',Georgia,serif;font-size:1.25rem;color:var(--wine)}
+    .selected-package-card span{margin-top:.2rem;font-weight:700}
+    .selected-package-card p{margin:.45rem 0 0;color:var(--muted);line-height:1.5}
+    .selected-package-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:.8rem}
+    .selected-package-actions>a:first-child{font-size:.84rem;font-weight:700;text-decoration:underline}
+    .selected-package-actions .btn{white-space:nowrap}
+    body.dark-mode .selected-package-card{background:#29231f;border-color:#4f4942}
+    body.dark-mode .selected-package-card strong{color:#f1c29b}
+    @media(max-width:575px){.selected-package-card{align-items:stretch;flex-direction:column;gap:1rem;padding:1rem}.selected-package-actions{align-items:stretch;flex-direction:column;gap:.75rem}.selected-package-actions .btn{text-align:center}}
     .floating-toast{position:fixed;right:1.25rem;bottom:1.25rem;display:flex;align-items:center;gap:.9rem;width:min(360px,calc(100vw - 2rem));background:#1f1c1a;color:#fff;padding:1rem 1rem;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,.18);opacity:0;transform:translateY(20px);transition:.28s ease;z-index:2000}
     .floating-toast.show{opacity:1;transform:translateY(0)}
     .floating-toast__icon{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.12);font-weight:800;color:#d8f7d0}
@@ -397,6 +380,18 @@
 
 <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 <script>
+const reservationDraftKey = '3yos-reservation-draft';
+const reservationDraftForm = document.getElementById('reservation-form');
+const reservationDraft = sessionStorage.getItem(reservationDraftKey);
+if (reservationDraftForm && reservationDraft) {
+    const draftValues = JSON.parse(reservationDraft);
+    for (const [name, value] of Object.entries(draftValues)) {
+        const field = reservationDraftForm.elements.namedItem(name);
+        if (field && 'value' in field) field.value = value;
+    }
+    sessionStorage.removeItem(reservationDraftKey);
+}
+
 const reservationToast = document.getElementById('reservation-toast');
 if (reservationToast) {
     const closeButton = reservationToast.querySelector('.floating-toast__close');
@@ -435,124 +430,68 @@ const packageInput = document.getElementById('package_id');
 const guestCountInput = document.getElementById('guest_count');
 const budgetOutput = document.getElementById('estimated-budget-display');
 const pesoFormatter = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 });
-const packagePicker = document.getElementById('package-picker');
-const packagePickerToggle = document.getElementById('package-picker-toggle');
-const packagePickerPanel = document.getElementById('package-picker-panel');
-const packagePickerValue = document.getElementById('package-picker-value');
-const packageOptions = [...document.querySelectorAll('[data-package-option]')];
+const selectedPackageCard = document.getElementById('selected-package-card');
+const selectedPackageName = document.getElementById('selected-package-name');
+const selectedPackagePrice = document.getElementById('selected-package-price');
+const selectedPackageDescription = document.getElementById('selected-package-description');
+const packageDetailsLink = document.getElementById('view-package-details');
+const packageSelectionError = document.getElementById('package-selection-error');
+const packageSelectionHelp = document.getElementById('package-selection-help');
+const packagePriceFormatter = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const changePackageLink = document.getElementById('change-package');
 
-if (packageInput && packagePicker && packagePickerToggle && packagePickerPanel) {
-    packageInput.hidden = true;
-    packageInput.required = false;
-    packageInput.setAttribute('aria-hidden', 'true');
-    packageInput.tabIndex = -1;
-    packagePicker.hidden = false;
+const updateSelectedPackage = () => {
+    const option = packageInput?.selectedOptions[0];
+    const selected = Boolean(option?.value);
 
-    const setPreview = (option) => {
-        document.getElementById('package-preview-name').textContent = option?.dataset.name || 'Package preview';
-        document.getElementById('package-preview-description').textContent = option?.dataset.description || 'Hover over or focus a package to preview its details.';
+    if (packageInput) packageInput.hidden = selected;
+    if (selectedPackageCard) selectedPackageCard.hidden = !selected;
+    if (packageSelectionHelp) packageSelectionHelp.hidden = selected;
+    if (packageSelectionError) packageSelectionError.hidden = selected;
+    if (!selected) return;
 
-        for (const [key, id] of [['menu', 'menu'], ['freebies', 'freebies'], ['addons', 'addons']]) {
-            const detail = document.getElementById(`package-preview-${id}`);
-            const wrapper = document.getElementById(`package-preview-${id}-wrap`);
-            detail.textContent = option?.dataset[key] || '';
-            wrapper.hidden = !option?.dataset[key];
-        }
-    };
-    const closePackagePicker = (returnFocus = false) => {
-        packagePickerPanel.hidden = true;
-        packagePickerToggle.setAttribute('aria-expanded', 'false');
-        document.body.classList.remove('package-picker-open');
-        if (returnFocus) packagePickerToggle.focus();
-    };
-    const alignPackagePickerPanel = () => {
-        const fieldBounds = packagePicker.getBoundingClientRect();
-        const panelWidth = Math.min(560, window.innerWidth - 32);
-        const panelHeight = packagePickerPanel.getBoundingClientRect().height;
-        const left = Math.max(16, Math.min(fieldBounds.left, window.innerWidth - panelWidth - 16));
-        const spaceBelow = window.innerHeight - fieldBounds.bottom - 16;
-        const maxTop = Math.max(16, window.innerHeight - panelHeight - 16);
-        const preferredTop = spaceBelow >= panelHeight + 6
-            ? fieldBounds.bottom + 6
-            : fieldBounds.top - panelHeight - 6;
-        const top = Math.max(16, Math.min(preferredTop, maxTop));
+    selectedPackageName.textContent = option.dataset.name;
+    selectedPackagePrice.textContent = `${packagePriceFormatter.format(Number(option.dataset.price))} / person`;
+    selectedPackageDescription.textContent = option.dataset.description;
+    selectedPackageDescription.hidden = !option.dataset.description;
+    packageDetailsLink.href = option.dataset.detailsUrl;
+    packageDetailsLink.hidden = false;
+};
 
-        packagePickerPanel.style.left = `${left}px`;
-        packagePickerPanel.style.top = `${top}px`;
-    };
-    const openPackagePicker = (focusOption = false) => {
-        const otherPanel = document.getElementById('clock-time-panel');
-        const otherToggle = document.getElementById('clock-time-toggle');
-        if (otherPanel) otherPanel.hidden = true;
-        otherToggle?.setAttribute('aria-expanded', 'false');
-        document.body.classList.add('package-picker-open');
-        packagePickerPanel.hidden = false;
-        packagePickerToggle.setAttribute('aria-expanded', 'true');
-        alignPackagePickerPanel();
-        if (focusOption) {
-            (packageOptions.find((option) => option.dataset.value === packageInput.value) || packageOptions[0])?.focus();
-        }
-    };
+packageInput?.addEventListener('change', () => {
+    updateSelectedPackage();
+    changePackageLink?.focus();
+});
+updateSelectedPackage();
 
-    setPreview(packageOptions.find((option) => option.dataset.value === packageInput.value) || null);
-    packagePickerToggle.addEventListener('click', () => {
-        if (packagePickerPanel.hidden) openPackagePicker(true);
-        else closePackagePicker();
-    });
-    packagePickerToggle.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            openPackagePicker(true);
-        }
-    });
+const saveReservationDraft = (event) => {
+    const link = event.currentTarget;
+    if (link.id === 'view-package-details' && guestCountInput?.value) {
+        const detailsUrl = new URL(link.href);
+        detailsUrl.searchParams.set('guests', guestCountInput.value);
+        link.href = detailsUrl.toString();
+    }
 
-    packageOptions.forEach((option, index) => {
-        option.addEventListener('pointerenter', () => setPreview(option));
-        option.addEventListener('focus', () => setPreview(option));
-        option.addEventListener('click', () => {
-            packageInput.value = option.dataset.value;
-            packagePickerValue.textContent = option.dataset.name;
-            packagePickerToggle.removeAttribute('aria-invalid');
-            document.getElementById('package-picker-error').hidden = true;
-            packageOptions.forEach((item) => item.setAttribute('aria-selected', String(item === option)));
-            setPreview(option);
-            packageInput.dispatchEvent(new Event('change', { bubbles: true }));
-            closePackagePicker(true);
-        });
-        option.addEventListener('keydown', (event) => {
-            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                event.preventDefault();
-                const offset = event.key === 'ArrowDown' ? 1 : -1;
-                packageOptions[(index + offset + packageOptions.length) % packageOptions.length]?.focus();
-            } else if (event.key === 'Escape') {
-                event.preventDefault();
-                closePackagePicker(true);
-            }
-        });
-    });
+    const excludedFields = new Set(['package_id', 'website', 'form_started', 'g-recaptcha-response']);
+    const draftValues = {};
 
-    document.addEventListener('pointerdown', (event) => {
-        if (!packagePicker.contains(event.target)) closePackagePicker();
-    });
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && !packagePickerPanel.hidden) closePackagePicker(true);
-    });
-    window.addEventListener('resize', () => {
-        if (!packagePickerPanel.hidden) alignPackagePickerPanel();
-    });
-    window.addEventListener('scroll', () => {
-        if (!packagePickerPanel.hidden) alignPackagePickerPanel();
-    }, true);
+    for (const field of reservationDraftForm.elements) {
+        if (!field.name || excludedFields.has(field.name) || field.type === 'hidden' || field.type === 'submit' || field.type === 'button' || field.type === 'file') continue;
+        draftValues[field.name] = field.value;
+    }
 
-    document.getElementById('reservation-form').addEventListener('submit', (event) => {
-        if (packageInput.value) return;
+    sessionStorage.setItem(reservationDraftKey, JSON.stringify(draftValues));
+};
+document.querySelectorAll('.package-selection-link').forEach((link) => link.addEventListener('click', saveReservationDraft));
 
-        event.preventDefault();
-        packagePickerToggle.setAttribute('aria-invalid', 'true');
-        document.getElementById('package-picker-error').hidden = false;
-        packagePickerToggle.focus();
-    });
-}
+reservationDraftForm?.addEventListener('submit', (event) => {
+    if (packageInput?.value) return;
+
+    event.preventDefault();
+    packageSelectionError.hidden = false;
+    packageInput.focus();
+    packageInput.reportValidity();
+});
 
 const timeInput = document.getElementById('event_time');
 const clockTimePicker = document.getElementById('clock-time-picker');
@@ -631,11 +570,6 @@ if (timeInput && clockTimePicker && clockTimeToggle && clockTimePanel) {
         if (returnFocus) clockTimeToggle.focus();
     };
     const openClockPanel = () => {
-        const otherPanel = document.getElementById('package-picker-panel');
-        const otherToggle = document.getElementById('package-picker-toggle');
-        if (otherPanel) otherPanel.hidden = true;
-        otherToggle?.setAttribute('aria-expanded', 'false');
-        document.body.classList.remove('package-picker-open');
         clockTimePanel.hidden = false;
         clockTimeToggle.setAttribute('aria-expanded', 'true');
         alignClockPanel();
@@ -712,6 +646,12 @@ if (reservationForm) {
     const stepperItems = [...document.querySelectorAll('.wizard-stepper-item')];
 
     const stepIsValid = (stepEl) => {
+        if (stepEl.dataset.step === '2' && packageInput && !packageInput.value) {
+            packageSelectionError.hidden = false;
+            packageInput.focus();
+            return false;
+        }
+
         const requiredFields = [...stepEl.querySelectorAll('input[required], select[required], textarea[required]')];
         for (const field of requiredFields) {
             if (!field.reportValidity()) { field.focus(); return false; }
@@ -723,13 +663,6 @@ if (reservationForm) {
             clockTimeToggle?.focus();
             return false;
         }
-        if (stepEl.dataset.step === '2' && packageInput && !packageInput.value) {
-            packagePickerToggle?.setAttribute('aria-invalid', 'true');
-            const errorEl = document.getElementById('package-picker-error');
-            if (errorEl) errorEl.hidden = false;
-            packagePickerToggle?.focus();
-            return false;
-        }
         return true;
     };
 
@@ -739,7 +672,7 @@ if (reservationForm) {
         event_time: () => clockTimeValue?.textContent && clockTimeValue.textContent !== 'Select a time' ? clockTimeValue.textContent : '—',
         venue: () => document.querySelector('[name="venue"]')?.value || '—',
         guest_count: () => guestCountInput?.value || '—',
-        package: () => packagePickerValue?.textContent && packagePickerValue.textContent !== 'Select a package' ? packagePickerValue.textContent : '—',
+        package: () => packageInput?.selectedOptions[0]?.dataset.name || '—',
         estimate: () => budgetOutput?.textContent || '—',
         additional_services: () => document.querySelector('[name="additional_services"]')?.value || 'None',
         special_requests: () => document.querySelector('[name="special_requests"]')?.value || 'None',

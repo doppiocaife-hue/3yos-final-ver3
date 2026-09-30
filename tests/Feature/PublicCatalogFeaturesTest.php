@@ -60,10 +60,13 @@ class PublicCatalogFeaturesTest extends TestCase
         $catalog->assertSee('package-images/packages/garden.jpg');
         $catalog->assertDontSee('/ guest');
         $catalog->assertSee('Marikina City, Metro Manila');
+        $catalog->assertSee('Choose Garden Package');
+        $catalog->assertSee(route('reservation', ['package' => $package->id]), false);
 
         $detail = $this->get(route('packages.show', $package->slug));
         $detail->assertOk();
         $detail->assertSee('package-images/packages/garden.jpg');
+        $detail->assertSee('Choose this package');
     }
 
     public function test_gallery_shows_all_images_without_a_filter_or_metadata_panel(): void
@@ -219,9 +222,9 @@ class PublicCatalogFeaturesTest extends TestCase
         $adminForm->assertDontSee('Maximum guests');
     }
 
-    public function test_reservation_package_picker_contains_a_preview_for_each_package(): void
+    public function test_reservation_shows_only_a_simple_selected_package_summary(): void
     {
-        Package::create([
+        $package = Package::create([
             'name' => 'Preview package',
             'slug' => 'preview-package',
             'price' => 700,
@@ -231,13 +234,53 @@ class PublicCatalogFeaturesTest extends TestCase
             'addons' => 'Optional dessert station.',
         ]);
 
-        $response = $this->get(route('reservation'));
+        $response = $this->get(route('reservation', ['package' => $package->id]));
 
         $response->assertOk();
-        $response->assertSee('id="package-picker"', false);
-        $response->assertSee('data-package-option', false);
-        $response->assertSee('Three mains, pasta, dessert, and refreshments.');
-        $response->assertSee('Buffet styling and service crew.');
-        $response->assertSee('Optional dessert station.');
+        $response->assertSee('id="selected-package-card"', false);
+        $response->assertSee('Preview package');
+        $response->assertSee('&#8369;700.00 / person', false);
+        $response->assertSee('Change package');
+        $response->assertSee('View package details');
+        $response->assertDontSee('data-package-option', false);
+        $response->assertDontSee('Three mains, pasta, dessert, and refreshments.');
+        $response->assertDontSee('Buffet styling and service crew.');
+        $response->assertDontSee('Optional dessert station.');
+    }
+
+    public function test_reservation_reports_a_preselected_package_that_is_no_longer_available(): void
+    {
+        $package = Package::create([
+            'name' => 'Unavailable package',
+            'slug' => 'unavailable-package',
+            'price' => 700,
+        ]);
+        $packageId = $package->id;
+        $package->delete();
+
+        $response = $this->get(route('reservation', ['package' => $packageId]));
+
+        $response->assertOk();
+        $response->assertSee('The selected package is no longer available. Please choose another package.');
+    }
+
+    public function test_reservation_requires_a_catering_package(): void
+    {
+        $response = $this->post(route('reservation.store'), []);
+
+        $response->assertSessionHasErrors([
+            'package_id' => 'Please select a catering package.',
+        ]);
+    }
+
+    public function test_reservation_reports_a_package_that_is_no_longer_available(): void
+    {
+        $response = $this->post(route('reservation.store'), [
+            'package_id' => PHP_INT_MAX,
+        ]);
+
+        $response->assertSessionHasErrors([
+            'package_id' => 'The selected package is no longer available. Please choose another package.',
+        ]);
     }
 }

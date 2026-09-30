@@ -71,6 +71,8 @@ class StoreReservationRequest extends FormRequest
             'venue.regex' => 'Please provide a valid venue name.',
             'event_date.after_or_equal' => 'Event date must be today or later.',
             'guest_count.max' => 'Guest count cannot exceed 1000.',
+            'package_id.required' => 'Please select a catering package.',
+            'package_id.exists' => 'The selected package is no longer available. Please choose another package.',
             'g-recaptcha-response.required' => 'Please verify that you are not a robot.',
         ];
     }

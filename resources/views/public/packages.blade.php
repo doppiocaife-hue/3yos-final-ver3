@@ -38,10 +38,13 @@
                     </div>
                     <div class="package-tier package-tier--{{ $tier }}">{{ $package->name }}</div>
                     <p class="package-description">{{ $package->description }}</p>
-                    <div class="package-price package-price--estimate">Estimate calculated from your package and guest count</div>
+                    <div class="package-price">&#8369;{{ number_format($package->price, 2) }} <small>/ person</small></div>
                     <div class="package-rule"></div>
                     <p class="package-inclusion"><strong>Includes</strong>{{ $package->menu }}</p>
-                    <a href="{{ route('packages.show', $package->slug) }}" class="btn btn-outline-primary w-100 mt-auto">View package details</a>
+                    <div class="package-actions mt-auto">
+                        <a href="{{ route('reservation', ['package' => $package->id]) }}" class="btn btn-primary w-100">Choose {{ $package->name }}</a>
+                        <a href="{{ route('packages.show', $package->slug) }}" class="btn btn-outline-primary w-100">View package details</a>
+                    </div>
                 </article>
             </div>
         @empty
@@ -84,7 +87,7 @@
 <style>
     .package-image-wrap{display:grid;place-items:center;aspect-ratio:16/9;margin:-2rem -1.5rem 1.2rem;overflow:hidden;background:#e8dfd0;color:#5d5146;font-size:.82rem;font-weight:700}
     .package-image-wrap img{width:100%;height:100%;object-fit:cover}
-    .package-price--estimate{font-family:'DM Sans',sans-serif;font-size:.83rem;font-weight:700;line-height:1.45;color:var(--muted)}
+    .package-actions{display:grid;gap:.65rem}
 </style>
 <script>
     document.getElementById('recommend-button').addEventListener('click', function () {

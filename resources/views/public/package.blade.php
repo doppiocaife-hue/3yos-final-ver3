@@ -44,7 +44,7 @@
                     <input type="hidden" name="package" value="{{ $package->id }}">
                     <label for="package-guests" class="form-label mb-1">Number of guests</label>
                     <input type="number" id="package-guests" name="guests" min="1" max="1000" value="{{ $guests }}" class="form-control" placeholder="e.g. 50" inputmode="numeric">
-                    <button type="submit" class="btn btn-primary package-cta">Book this package</button>
+                    <button type="submit" class="btn btn-primary package-cta">Choose this package</button>
                 </form>
             </section>
 
