@@ -246,6 +246,9 @@
                 <h2 class="h6 fw-bold mb-3">Activity</h2>
                 @forelse($activity as $entry)
                     <div class="activity-entry">
+                        @if(in_array($entry->action, ['Reservation schedule changed', 'Reservation details updated'], true))
+                            <div class="activity-entry-title">{{ $entry->action }}</div>
+                        @endif
                         <div class="activity-entry-meta"><strong>{{ $entry->actor_name ?? 'Unknown administrator' }}</strong> &middot; {{ \Carbon\Carbon::parse($entry->activity_date.' '.$entry->activity_time)->format('M j, Y g:i A') }}</div>
                         <p class="mb-0 activity-entry-description">{{ $entry->description }}</p>
                     </div>
@@ -329,6 +332,7 @@
 
     .activity-entry { padding: .65rem 0; border-top: 1px solid var(--line); font-size: .82rem; }
     .activity-entry:first-child { border-top: 0; padding-top: 0; }
+    .activity-entry-title { margin-bottom: .15rem; font-weight: 700; }
     .activity-entry-meta { margin-bottom: .2rem; color: var(--muted); font-size: .7rem; }
     .activity-entry-description { white-space: pre-line; overflow-wrap: anywhere; }
 </style>

@@ -570,7 +570,7 @@ class AdminController extends Controller
                     'event_date' => 'Date',
                     'event_time' => 'Time',
                     'venue' => 'Venue',
-                    'guest_count' => 'Guest count',
+                    'guest_count' => 'Guests',
                     'package_id' => 'Package',
                     'additional_services' => 'Additional services',
                     'special_requests' => 'Special requests',
@@ -592,7 +592,10 @@ class AdminController extends Controller
                     $reservationChanges,
                 );
                 $reservationLabel = $reservation->reservation_code ?: '#'.$reservation->id;
-                $description = 'Updated reservation #'.$reservation->id.' ('.$reservationLabel."):\n".implode("\n", $descriptionLines);
+                $scheduleFields = ['event_date', 'event_time'];
+                $isScheduleOnlyChange = array_diff(array_keys($normalizedChanges), $scheduleFields) === [];
+                $activityTitle = $isScheduleOnlyChange ? 'Reservation schedule changed' : 'Reservation details updated';
+                $description = 'Reservation #'.$reservation->id.' ('.$reservationLabel.")\n".implode("\n", $descriptionLines);
                 if ($reason !== '') {
                     $description .= "\nReason: ".$reason;
                 }
@@ -602,7 +605,7 @@ class AdminController extends Controller
                     'actor_name' => $request->hasSession() ? $request->session()->get('admin_name', 'Unknown administrator') : 'Unknown administrator',
                     'actor_email' => $request->hasSession() ? $request->session()->get('admin_email') : null,
                     'actor_role' => $request->hasSession() ? $request->session()->get('admin_role', 'limited') : 'limited',
-                    'action' => 'Updated reservation details',
+                    'action' => $activityTitle,
                     'method' => $request->method(),
                     'ip_address' => $request->ip(),
                     'activity_date' => now()->toDateString(),

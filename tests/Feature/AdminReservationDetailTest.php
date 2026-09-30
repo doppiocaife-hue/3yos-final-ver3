@@ -278,18 +278,19 @@ class AdminReservationDetailTest extends TestCase
         $this->assertSame(1, ReservationPayment::whereKey($payment->id)->count());
         $this->assertSame('payment-receipts/existing-receipt.png', $payment->fresh()->receipt_image_path);
 
-        $activity = ActivityLog::where('action', 'Updated reservation details')->latest('id')->firstOrFail();
+        $activity = ActivityLog::where('action', 'Reservation details updated')->latest('id')->firstOrFail();
         $this->assertSame('Detail Tester', $activity->actor_name);
+        $this->assertStringStartsWith("Reservation #{$originalId} ({$updated->reservation_code})", $activity->description);
         $this->assertStringContainsString('Date: '.now()->addMonth()->format('F j, Y').' → '.\Carbon\Carbon::parse($newDate)->format('F j, Y'), $activity->description);
         $this->assertStringContainsString('Time: 6:00 PM → 7:30 PM', $activity->description);
         $this->assertStringContainsString('Venue: Detail Hall → Updated Garden Hall', $activity->description);
-        $this->assertStringContainsString('Guest count: 60 → 70', $activity->description);
+        $this->assertStringContainsString('Guests: 60 → 70', $activity->description);
         $this->assertStringContainsString('Package: Detail Package → Platinum', $activity->description);
         $this->assertStringContainsString('Additional services: Buffet setup → Buffet and styling', $activity->description);
         $this->assertStringContainsString('Reason: Client meeting - final event details', $activity->description);
         $this->assertStringNotContainsString('Special requests:', $activity->description);
         $this->assertStringNotContainsString('Additional notes:', $activity->description);
-        $this->assertSame(1, ActivityLog::where('action', 'Updated reservation details')->count());
+        $this->assertSame(1, ActivityLog::where('action', 'Reservation details updated')->count());
 
         Mail::assertSent(ReservationUpdatedMail::class, fn (ReservationUpdatedMail $mail) => $mail->hasTo($updated->email)
             && str_contains($mail->render(), 'Your reservation has been updated.')
@@ -322,7 +323,7 @@ class AdminReservationDetailTest extends TestCase
             ->patch(route('admin.reservations.status', $reservation), $fields)
             ->assertSessionHas('success', 'Reservation saved successfully.');
 
-        $this->assertSame(0, ActivityLog::where('action', 'Updated reservation details')->count());
+        $this->assertSame(0, ActivityLog::whereIn('action', ['Reservation schedule changed', 'Reservation details updated'])->count());
         Mail::assertNothingSent();
         $this->assertSame('confirmed', $reservation->fresh()->status);
     }
@@ -348,7 +349,7 @@ class AdminReservationDetailTest extends TestCase
 
         $this->assertSame('confirmed', $reservation->fresh()->status);
         $this->assertNotSame($targetDate, $reservation->fresh()->event_date);
-        $this->assertSame(0, ActivityLog::where('action', 'Updated reservation details')->count());
+        $this->assertSame(0, ActivityLog::whereIn('action', ['Reservation schedule changed', 'Reservation details updated'])->count());
         Mail::assertNothingSent();
     }
 
@@ -386,13 +387,41 @@ class AdminReservationDetailTest extends TestCase
             'error_message' => 'SMTP connection refused',
         ]);
         $this->assertDatabaseHas('activity_logs', [
-            'action' => 'Updated reservation details',
+            'action' => 'Reservation schedule changed',
             'actor_name' => 'Detail Tester',
         ]);
-        $activity = ActivityLog::where('action', 'Updated reservation details')->firstOrFail();
+        $activity = ActivityLog::where('action', 'Reservation schedule changed')->firstOrFail();
         $this->assertStringContainsString('Time: 6:00 PM → 7:30 PM', $activity->description);
         $this->assertStringNotContainsString('Date:', $activity->description);
         $this->assertStringNotContainsString('Venue:', $activity->description);
+    }
+
+    public function test_date_only_change_has_a_compact_activity_and_omits_an_empty_reason(): void
+    {
+        Mail::fake();
+        $reservation = $this->reservation(['status' => 'confirmed']);
+        $newDate = now()->addMonths(2)->toDateString();
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), [
+                'status' => 'confirmed',
+                'event_date' => $newDate,
+                'reason' => '   ',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $activity = ActivityLog::where('action', 'Reservation schedule changed')->firstOrFail();
+        $this->assertSame('Detail Tester', $activity->actor_name);
+        $this->assertStringContainsString('Date: '.now()->addMonth()->format('F j, Y').' → '.\Carbon\Carbon::parse($newDate)->format('F j, Y'), $activity->description);
+        $this->assertStringNotContainsString('Time:', $activity->description);
+        $this->assertStringNotContainsString('Reason:', $activity->description);
+        $this->assertStringNotContainsString('Venue:', $activity->description);
+
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.reservations.show', $reservation))
+            ->assertOk()
+            ->assertSee('Reservation schedule changed')
+            ->assertSee('Detail Tester');
     }
 
     public function test_confirmed_schedule_edit_requires_a_valid_24_hour_time_value(): void
