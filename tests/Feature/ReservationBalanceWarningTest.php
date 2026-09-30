@@ -18,7 +18,7 @@ class ReservationBalanceWarningTest extends TestCase
             'max_guests' => 200,
         ]);
 
-        Reservation::create([
+        $reservation = Reservation::create([
             'package_id' => $package->id,
             'full_name' => 'Balance Client',
             'contact_number' => '09171234567',
@@ -37,12 +37,19 @@ class ReservationBalanceWarningTest extends TestCase
             'status' => 'completed',
         ]);
 
-        $response = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])
+        // The reservation list shows the status and payment-status badges only; the balance
+        // breakdown lives on the dedicated reservation detail page.
+        $listResponse = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])
             ->get(route('admin.reservations'));
 
-        $response->assertOk();
-        $response->assertSee('status-select--completed', false);
-        $response->assertSee('Unpaid balance:');
-        $response->assertSee('&#8369;22,000.00', false);
+        $listResponse->assertOk();
+        $listResponse->assertSee('status-badge--completed', false);
+
+        $detailResponse = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])
+            ->get(route('admin.reservations.show', $reservation));
+
+        $detailResponse->assertOk();
+        $detailResponse->assertSee('summary-item--warn', false);
+        $detailResponse->assertSee('&#8369;22,000.00', false);
     }
 }

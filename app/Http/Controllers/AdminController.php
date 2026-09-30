@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mail\InquiryReplyMail;
 use App\Mail\ReservationAcceptedMail;
 use App\Mail\ReservationCancelledMail;
+use App\Models\ActivityLog;
 use App\Models\Inquiry;
 use App\Models\Package;
 use App\Models\Reservation;
@@ -30,7 +31,7 @@ class AdminController extends Controller
         $serviceCount = Service::count();
         $packageCount = Package::count();
         $calendarEvents = Reservation::query()
-            ->whereIn('status', ['confirmed', 'completed', 'cancelled'])
+            ->whereIn('status', ['pending', 'confirmed', 'completed', 'cancelled'])
             ->orderBy('event_date')
             ->get(['reservation_code', 'full_name', 'event_type', 'event_date', 'event_time', 'venue', 'status'])
             ->map(fn (Reservation $reservation) => [
@@ -44,7 +45,51 @@ class AdminController extends Controller
             ])
             ->values();
 
-        return view('admin.dashboard', compact('reservationCount', 'inquiryCount', 'serviceCount', 'packageCount', 'calendarEvents'));
+        [$needsAttention, $todaySection, $businessOverview] = $this->buildDashboardInsights();
+
+        return view('admin.dashboard', compact(
+            'reservationCount', 'inquiryCount', 'serviceCount', 'packageCount', 'calendarEvents',
+            'needsAttention', 'todaySection', 'businessOverview',
+        ));
+    }
+
+    /**
+     * Split dashboard figures into three non-overlapping groups: cross-cutting action items
+     * ("needs attention"), this week's schedule ("today"), and lifetime aggregate KPIs
+     * ("business overview") — so aggregate totals are never mislabeled as today's activity.
+     */
+    private function buildDashboardInsights(): array
+    {
+        $reservations = Reservation::with('payments', 'refunds')->get();
+        $confirmed = $reservations->where('status', 'confirmed');
+        $inquiriesNeedingResponse = Inquiry::whereIn('status', ['new', 'in_progress'])->count();
+
+        $needsAttention = [
+            'pending_reservations' => $reservations->where('status', 'pending')->count(),
+            'inquiries_needing_response' => $inquiriesNeedingResponse,
+            'unpaid_accepted' => $confirmed->filter(fn (Reservation $r) => in_array($r->payment_status, [null, 'Unpaid'], true))->count(),
+            'missing_contracts' => $confirmed->filter(fn (Reservation $r) => empty($r->contractFiles()))->count(),
+            'outstanding_balances' => $confirmed->filter(fn (Reservation $r) => ($r->financials()['remaining_balance_cents'] ?? 0) > 0)->count(),
+        ];
+
+        $weekAhead = now()->addDays(7)->endOfDay();
+        $scheduled = $reservations->whereIn('status', ['pending', 'confirmed']);
+        $todaySection = [
+            'events_today' => $scheduled->filter(fn (Reservation $r) => Carbon::parse($r->event_date)->isToday())->count(),
+            'upcoming_events' => $scheduled->filter(fn (Reservation $r) => Carbon::parse($r->event_date)->isFuture() && ! Carbon::parse($r->event_date)->isToday() && Carbon::parse($r->event_date)->lte($weekAhead))->count(),
+            'payments_due' => $confirmed->filter(fn (Reservation $r) => $r->payment_due_date && $r->payment_due_date->lte($weekAhead) && ($r->financials()['remaining_balance_cents'] ?? 0) > 0)->count(),
+            'inquiries_needing_response' => $inquiriesNeedingResponse,
+        ];
+
+        $businessOverview = [
+            'total_reservations' => $reservations->count(),
+            'total_inquiries' => Inquiry::count(),
+            'revenue' => $reservations->sum(fn (Reservation $r) => $r->financials()['net_paid_cents']) / 100,
+            'outstanding_balance' => $reservations->sum(fn (Reservation $r) => $r->financials()['remaining_balance_cents'] ?? 0) / 100,
+            'completed_events' => $reservations->where('status', 'completed')->count(),
+        ];
+
+        return [$needsAttention, $todaySection, $businessOverview];
     }
 
     public function reservations(Request $request)
@@ -117,6 +162,25 @@ class AdminController extends Controller
         ]);
     }
 
+    public function showReservation(Reservation $reservation)
+    {
+        $reservation->load('client', 'package', 'payments', 'refunds');
+        $packages = Package::orderBy('price')->get(['id', 'name', 'price']);
+
+        $activity = ActivityLog::query()
+            ->where(function (Builder $match) use ($reservation): void {
+                $match->where('description', 'like', '%#'.$reservation->id.'%')
+                    ->orWhere('description', 'like', '%/'.$reservation->id.'/%')
+                    ->orWhere('description', 'like', '%/'.$reservation->id)
+                    ->when($reservation->reservation_code, fn (Builder $q) => $q->orWhere('description', 'like', '%'.$reservation->reservation_code.'%'));
+            })
+            ->latest('id')
+            ->limit(20)
+            ->get();
+
+        return view('admin.reservation-show', compact('reservation', 'packages', 'activity'));
+    }
+
     public function exportReservationsCsv(Request $request, ?ReservationFinancialService $financialService = null)
     {
         $financialService ??= app(ReservationFinancialService::class);
@@ -185,11 +249,34 @@ class AdminController extends Controller
         ]);
     }
 
-    public function inquiries()
+    public function inquiries(Request $request)
     {
-        $inquiries = Inquiry::latest()->get();
+        $status = $request->input('status');
+        $needsResponse = $request->boolean('needs_response');
+        $search = trim((string) $request->input('search', ''));
 
-        return view('admin.inquiries', compact('inquiries'));
+        $query = Inquiry::query()->latest();
+
+        if ($needsResponse) {
+            $query->whereIn('status', ['new', 'in_progress']);
+        } elseif ($status && in_array($status, ['new', 'in_progress', 'responded', 'closed'], true)) {
+            $query->where('status', $status);
+        }
+
+        if ($search !== '') {
+            $pattern = '%'.str($search)->lower().'%';
+            $query->where(function (Builder $matches) use ($pattern): void {
+                $matches->whereRaw('LOWER(COALESCE(full_name, \'\')) LIKE ?', [$pattern])
+                    ->orWhereRaw('LOWER(COALESCE(email, \'\')) LIKE ?', [$pattern])
+                    ->orWhereRaw('LOWER(COALESCE(subject, \'\')) LIKE ?', [$pattern])
+                    ->orWhereRaw('LOWER(COALESCE(category, \'\')) LIKE ?', [$pattern]);
+            });
+        }
+
+        $inquiries = $query->get();
+        $needsResponseCount = Inquiry::whereIn('status', ['new', 'in_progress'])->count();
+
+        return view('admin.inquiries', compact('inquiries', 'status', 'search', 'needsResponse', 'needsResponseCount'));
     }
 
     public function showInquiry(Inquiry $inquiry)
@@ -329,6 +416,7 @@ class AdminController extends Controller
             'event_date' => ['sometimes', 'required', 'date'],
             'event_time' => ['sometimes', 'required', 'string', 'max:20'],
             'package_id' => ['sometimes', 'required', 'exists:packages,id'],
+            'admin_notes' => ['sometimes', 'nullable', 'string', 'max:5000'],
         ]);
 
         $hasScheduleUpdate = $request->has('event_date') || $request->has('event_time') || $request->has('package_id');

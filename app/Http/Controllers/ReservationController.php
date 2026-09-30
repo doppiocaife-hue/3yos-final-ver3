@@ -118,7 +118,9 @@ class ReservationController extends Controller
             $message .= ' We could not send the confirmation email; please keep this ID and contact us if needed.';
         }
 
-        return redirect()->back()->with('success', $message);
+        // Redirecting through the existing ?code= lookup (used by PublicController::reservation)
+        // loads the full reservation record so the confirmation screen can show real details.
+        return redirect()->route('reservation', ['code' => $reservation->reservation_code])->with('success', $message);
     }
 
     private function generateReservationCode(): string

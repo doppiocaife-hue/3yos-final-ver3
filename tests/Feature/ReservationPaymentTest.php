@@ -190,7 +190,10 @@ class ReservationPaymentTest extends TestCase
         $this->withSession(self::ADMIN)->get(route('admin.reservations.payments.print', $reservation))
             ->assertOk()->assertSee('Payment record')->assertSee('₱900.00');
 
+        // The reservation list links to the detail page; the detail page links onward to payment history.
         $this->withSession(self::ADMIN)->get(route('admin.reservations'))
+            ->assertOk()->assertSee(route('admin.reservations.show', $reservation), false);
+        $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation))
             ->assertOk()->assertSee(route('admin.reservations.payments', $reservation), false);
 
         $this->assertTrue(ActivityLog::where('action', 'Recorded payment')->where('description', 'like', '%₱100.00 Cash payment%')->exists());
@@ -227,7 +230,8 @@ class ReservationPaymentTest extends TestCase
             ->assertSee('Refund')
             ->assertSee('−₱200.00')
             ->assertSee('Remaining balance');
-        $this->withSession(self::ADMIN)->get(route('admin.reservations'))
+        // The refund breakdown lives on the reservation detail page, not the summary list.
+        $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation))
             ->assertOk()
             ->assertSee('Refunded')
             ->assertSee('&#8369;200.00', false);

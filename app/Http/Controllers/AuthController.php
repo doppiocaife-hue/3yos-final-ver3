@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\RateLimiter;
 use App\Models\ActivityLog;
 use Illuminate\Support\Str;
 
@@ -22,15 +23,29 @@ class AuthController extends Controller
         $request->validate(['email' => ['required', 'email'], 'password' => ['required', 'string']]);
         $email = $request->input('email');
         $password = $request->input('password');
-        $expectedEmail = env('ADMIN_EMAIL', 'admin@3yos.com');
-        $expectedPassword = env('ADMIN_PASSWORD', 'admin123');
+
+        // Rate-limit by email+IP so a stolen/guessed credential still can't be brute-forced from
+        // a single source, while a normal admin mistyping their password a few times is unaffected.
+        $throttleKey = Str::lower($email).'|'.$request->ip();
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+
+            return back()->withInput($request->only('email'))->with(
+                'error',
+                'Too many login attempts. Please try again in '.ceil($seconds / 60).' minute(s).'
+            );
+        }
+
+        $expectedEmail = (string) env('ADMIN_EMAIL', 'admin@3yos.com');
+        $expectedPassword = (string) env('ADMIN_PASSWORD', 'admin123');
 
         $user = User::where('email', $email)->first();
-        $isPrimaryAdmin = $email === $expectedEmail && $password === $expectedPassword;
+        $isPrimaryAdmin = hash_equals($expectedEmail, $email) && hash_equals($expectedPassword, $password);
         $isFullAdminUser = $user && $user->role === 'full' && Hash::check($password, $user->password);
         $isTeamAdmin = $user && $user->role === 'limited' && Hash::check($password, $user->password);
 
         if ($isPrimaryAdmin || $isFullAdminUser || $isTeamAdmin) {
+            RateLimiter::clear($throttleKey);
             $request->session()->regenerate();
             $request->session()->put('is_admin', true);
             $request->session()->put('admin_role', $isPrimaryAdmin || $isFullAdminUser ? 'full' : 'limited');
@@ -41,6 +56,8 @@ class AuthController extends Controller
 
             return redirect()->route('admin.dashboard');
         }
+
+        RateLimiter::hit($throttleKey, 300);
 
         return back()->with('error', 'Invalid admin credentials.');
     }

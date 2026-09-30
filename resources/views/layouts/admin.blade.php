@@ -38,9 +38,9 @@
         <a class="nav-link {{ request()->routeIs('admin.reports*') ? 'active' : '' }}" href="{{ route('admin.reports') }}" @if(request()->routeIs('admin.reports*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 20V3.5Z"/><path d="M14 3.5v5h5M9 13h6M9 16.5h6"/></svg></span><span>Reports</span></a>
         <a class="nav-link {{ request()->routeIs('admin.users') ? 'active' : '' }}" href="{{ route('admin.users') }}" @if(request()->routeIs('admin.users')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0M16 5a3.4 3.4 0 0 1 0 6.7M17.3 14.2a5.8 5.8 0 0 1 4 5.3"/></svg></span><span>Team admins</span></a>
         <a class="nav-link {{ request()->routeIs('admin.activity-logs') ? 'active' : '' }}" href="{{ route('admin.activity-logs') }}" @if(request()->routeIs('admin.activity-logs')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg></span><span>Activity logs</span></a>
-        @endif
         <div class="nav-caption mt-3">System</div>
         <a class="nav-link {{ request()->routeIs('admin.backups') ? 'active' : '' }}" href="{{ route('admin.backups') }}" @if(request()->routeIs('admin.backups')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6M4 11.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/><path d="M4 17.5c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span><span>Backups</span></a>
+        @endif
         </nav>
     </aside>
     <div class="admin-main">

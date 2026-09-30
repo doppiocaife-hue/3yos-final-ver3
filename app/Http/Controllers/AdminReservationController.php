@@ -7,8 +7,10 @@ use App\Mail\ReservationConfirmationMail;
 use App\Models\Client;
 use App\Models\Package;
 use App\Models\Reservation;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class AdminReservationController extends Controller
 {
@@ -33,25 +35,41 @@ class AdminReservationController extends Controller
         $package = Package::findOrFail($data['package_id']);
         $reservationCode = $this->generateReservationCode();
 
-        $reservation = Reservation::create([
-            'client_id' => $client->id,
-            'package_id' => $package->id,
-            'full_name' => $data['full_name'],
-            'contact_number' => $data['contact_number'],
-            'email' => $data['email'],
-            'address' => $data['address'],
-            'event_type' => $data['event_type'],
-            'event_date' => $data['event_date'],
-            'event_time' => $data['event_time'],
-            'venue' => $data['venue'],
-            'guest_count' => $data['guest_count'],
-            'estimated_budget' => $package->estimatedTotalFor((int) $data['guest_count']),
-            'additional_services' => $data['additional_services'] ?? null,
-            'special_requests' => $data['special_requests'] ?? null,
-            'additional_notes' => $data['additional_notes'] ?? null,
-            'status' => 'pending',
-            'reservation_code' => $reservationCode,
-        ]);
+        // An admin-created booking still starts as "pending" below, so it never itself consumes an
+        // accepted slot — but if the date is already at the cap, saving it here would just be a dead
+        // end, so the same guard used for the public form and the accept action applies here too.
+        $reservation = DB::transaction(function () use ($data, $client, $package, $reservationCode) {
+            $acceptedCount = Reservation::whereDate('event_date', $data['event_date'])
+                ->where('status', 'confirmed')
+                ->lockForUpdate()
+                ->count();
+
+            if ($acceptedCount >= Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) {
+                throw ValidationException::withMessages([
+                    'event_date' => 'This date already has the maximum of '.Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE.' accepted bookings. Choose another date or accept this booking on a date with room.',
+                ]);
+            }
+
+            return Reservation::create([
+                'client_id' => $client->id,
+                'package_id' => $package->id,
+                'full_name' => $data['full_name'],
+                'contact_number' => $data['contact_number'],
+                'email' => $data['email'],
+                'address' => $data['address'],
+                'event_type' => $data['event_type'],
+                'event_date' => $data['event_date'],
+                'event_time' => $data['event_time'],
+                'venue' => $data['venue'],
+                'guest_count' => $data['guest_count'],
+                'estimated_budget' => $package->estimatedTotalFor((int) $data['guest_count']),
+                'additional_services' => $data['additional_services'] ?? null,
+                'special_requests' => $data['special_requests'] ?? null,
+                'additional_notes' => $data['additional_notes'] ?? null,
+                'status' => 'pending',
+                'reservation_code' => $reservationCode,
+            ]);
+        });
 
         try {
             Mail::to($reservation->email, $reservation->full_name)->send(new ReservationConfirmationMail($reservation));

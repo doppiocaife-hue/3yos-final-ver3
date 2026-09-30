@@ -34,7 +34,7 @@
 
                     <dl class="report-metrics">
                         <div class="report-metric"><dt>Reservations</dt><dd>{{ number_format($summary['reservation_count']) }}</dd></div>
-                        <div class="report-metric"><dt>Confirmed</dt><dd>{{ number_format($summary['confirmed_reservations']) }}</dd></div>
+                        <div class="report-metric"><dt>Accepted</dt><dd>{{ number_format($summary['confirmed_reservations']) }}</dd></div>
                         <div class="report-metric"><dt>Completed</dt><dd>{{ number_format($summary['completed_events']) }}</dd></div>
                         <div class="report-metric"><dt>Cancelled</dt><dd>{{ number_format($summary['cancelled_reservations']) }}</dd></div>
                         <div class="report-metric"><dt>Inquiries</dt><dd>{{ number_format($summary['inquiry_count']) }}</dd></div>

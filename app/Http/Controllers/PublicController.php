@@ -74,7 +74,7 @@ class PublicController extends Controller
         $lookupCode = trim((string) $request->query('code', ''));
 
         if ($lookupCode !== '') {
-            $reservation = Reservation::where('reservation_code', strtoupper($lookupCode))->first();
+            $reservation = Reservation::with('package')->where('reservation_code', strtoupper($lookupCode))->first();
         }
 
         return view('public.reservation', compact('packages', 'reservation', 'lookupCode'));

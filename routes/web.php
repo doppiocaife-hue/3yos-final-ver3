@@ -46,6 +46,7 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     Route::get('/reservations/create', [AdminReservationController::class, 'create'])->name('admin.reservations.create');
     Route::post('/reservations', [AdminReservationController::class, 'store'])->name('admin.reservations.store');
     Route::get('/reservations/export', [AdminController::class, 'exportReservationsCsv'])->name('admin.reservations.export');
+    Route::get('/reservations/{reservation}', [AdminController::class, 'showReservation'])->name('admin.reservations.show');
     Route::patch('/reservations/{reservation}/status', [AdminController::class, 'updateReservationStatus'])->name('admin.reservations.status');
     Route::post('/reservations/{reservation}/service-contract', [AdminController::class, 'uploadReservationContract'])->name('admin.reservations.contract');
     Route::delete('/reservations/{reservation}/service-contract/{contract}', [AdminController::class, 'deleteReservationContract'])->name('admin.reservations.contract.delete');
@@ -88,11 +89,13 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
         Route::get('/reports/export/{period}/excel', [ReportController::class, 'exportExcel'])->whereIn('period', ['daily', 'weekly', 'monthly', 'yearly'])->name('admin.reports.export.excel');
         Route::get('/analytics', [AdminController::class, 'analytics'])->name('admin.analytics');
         Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('admin.activity-logs');
+        // Backups contain the full database (including every admin's password hash), so they get
+        // the same full-admin-only scope as every other sensitive management feature.
+        Route::get('/backups', [BackupController::class, 'index'])->name('admin.backups');
+        Route::post('/backups/create', [BackupController::class, 'createBackup'])->name('admin.backups.create');
+        Route::post('/backups/upload', [BackupController::class, 'uploadBackup'])->name('admin.backups.upload');
+        Route::post('/backups/restore', [BackupController::class, 'restoreBackup'])->name('admin.backups.restore');
+        Route::post('/backups/download', [BackupController::class, 'downloadBackup'])->name('admin.backups.download');
+        Route::delete('/backups', [BackupController::class, 'deleteBackup'])->name('admin.backups.delete');
     });
-    Route::get('/backups', [BackupController::class, 'index'])->name('admin.backups');
-    Route::post('/backups/create', [BackupController::class, 'createBackup'])->name('admin.backups.create');
-    Route::post('/backups/upload', [BackupController::class, 'uploadBackup'])->name('admin.backups.upload');
-    Route::post('/backups/restore', [BackupController::class, 'restoreBackup'])->name('admin.backups.restore');
-    Route::post('/backups/download', [BackupController::class, 'downloadBackup'])->name('admin.backups.download');
-    Route::delete('/backups', [BackupController::class, 'deleteBackup'])->name('admin.backups.delete');
 });

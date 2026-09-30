@@ -195,6 +195,10 @@ body.dark-mode .admin-pagination .page-item.disabled .page-link { color: var(--m
 .stat-card h3 { margin: .6rem 0 .15rem; color: var(--navy); font-family: Manrope, sans-serif; font-size: 2rem; font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
 .stat-card p { margin: 0; color: var(--muted); font-size: .82rem; }
 .badge-soft { display: inline-flex; height: 24px; align-items: center; justify-content: center; padding: 0 .6rem; border: 1px solid rgba(13, 139, 131, .12); border-radius: 6px; background: var(--mint); color: var(--teal-dark); font-size: .65rem; font-weight: 800; letter-spacing: .055em; text-transform: uppercase; white-space: nowrap; }
+a.badge-soft { text-decoration: none; }
+a.badge-soft:hover { filter: brightness(0.96); }
+.badge-soft--warn { border-color: rgba(212, 155, 40, .3); background: #fff5d8; color: #714d00; }
+body.dark-mode .badge-soft--warn { border-color: rgba(247, 213, 122, .3); background: rgba(146, 99, 0, .28); color: #f7d57a; }
 
 /* Reservation status: badge and select share one palette so they read as one component. */
 .status-badge { display: inline-flex; height: 24px; align-items: center; justify-content: center; padding: 0 .7rem; border: 1px solid transparent; border-radius: 999px; font-size: .7rem; font-weight: 800; line-height: 1; white-space: nowrap; }

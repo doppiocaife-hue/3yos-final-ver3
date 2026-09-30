@@ -98,7 +98,12 @@ class InquiryReplyStatusTest extends TestCase
         $response->assertSee('inquiry-mobile-card', false);
         $response->assertSee('Status:', false);
         $response->assertSeeInOrder([$inquiry->full_name, $inquiry->email, $inquiry->subject, 'Responded'], false);
-        $response->assertDontSee('<select', false);
+        // The list page does have a top-level status *filter* dropdown, but no per-row/per-card
+        // status editor — that's the thing this test guards against reintroducing.
+        $response->assertDontSee('inquiry-status-select', false);
+        preg_match('/<article class="inquiry-mobile-card">.*?<\/article>/s', $response->getContent(), $matches);
+        $this->assertNotEmpty($matches, 'Expected to find a rendered mobile card.');
+        $this->assertStringNotContainsString('<select', $matches[0]);
     }
 
     public function test_the_inquiry_detail_page_shows_the_current_status(): void

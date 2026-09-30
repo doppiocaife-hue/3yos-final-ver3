@@ -26,6 +26,7 @@ class Reservation extends Model
         'additional_services',
         'special_requests',
         'additional_notes',
+        'admin_notes',
         'service_contract',
         'service_contracts',
         'status',
