@@ -131,4 +131,43 @@ class Reservation extends Model
     {
         return (int) round(((float) $amount) * 100);
     }
+
+    /**
+     * Customer-facing progress steps derived from the stored status (no separate status system).
+     * Each step: key, label, description, and state (complete|current|upcoming|cancelled).
+     */
+    public function timelineSteps(): array
+    {
+        if ($this->status === 'cancelled') {
+            return [
+                ['key' => 'submitted', 'label' => 'Submitted', 'description' => 'Your reservation request has been received.', 'state' => 'complete'],
+                ['key' => 'under_review', 'label' => 'Under Review', 'description' => 'Our team is reviewing your reservation details.', 'state' => 'complete'],
+                ['key' => 'cancelled', 'label' => 'Cancelled', 'description' => 'Your reservation has been cancelled.', 'state' => 'cancelled'],
+            ];
+        }
+
+        // "Under Review" is the customer-facing label for the stored "pending" status.
+        $order = ['pending', 'confirmed', 'completed'];
+        $foundIndex = array_search($this->status, $order, true);
+        $currentIndex = $foundIndex === false ? 0 : $foundIndex;
+
+        $steps = [
+            ['key' => 'submitted', 'label' => 'Submitted', 'description' => 'Your reservation request has been received.'],
+            ['key' => 'under_review', 'label' => 'Under Review', 'description' => 'Our team is reviewing your reservation details.'],
+            ['key' => 'accepted', 'label' => 'Accepted', 'description' => 'Your reservation has been accepted.'],
+            ['key' => 'completed', 'label' => 'Completed', 'description' => 'Your event has been completed. Thank you for choosing 3YOS Catering.'],
+        ];
+
+        foreach ($steps as $i => &$step) {
+            if ($i === 0) {
+                $step['state'] = 'complete';
+                continue;
+            }
+
+            $stepOrderIndex = $i - 1;
+            $step['state'] = $stepOrderIndex < $currentIndex ? 'complete' : ($stepOrderIndex === $currentIndex ? 'current' : 'upcoming');
+        }
+
+        return $steps;
+    }
 }
