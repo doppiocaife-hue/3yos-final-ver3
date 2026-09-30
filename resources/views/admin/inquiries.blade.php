@@ -32,16 +32,6 @@
                         <td>
                             <div class="table-actions">
                                 <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.inquiries.show', $inquiry) }}">View</a>
-                                <form method="POST" action="{{ route('admin.inquiries.status', $inquiry) }}" class="cell-form flex-nowrap">
-                                    @csrf @method('PATCH')
-                                    <select name="status" class="form-select form-select-sm inquiry-status-select" aria-label="Inquiry status">
-                                        <option value="new" @selected($inquiry->status === 'new')>New</option>
-                                        <option value="in_progress" @selected($inquiry->status === 'in_progress')>In progress</option>
-                                        <option value="responded" @selected($inquiry->status === 'responded')>Responded</option>
-                                        <option value="closed" @selected($inquiry->status === 'closed')>Closed</option>
-                                    </select>
-                                    <button class="btn btn-sm luxury-btn">Save</button>
-                                </form>
                             </div>
                         </td>
                     </tr>

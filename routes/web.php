@@ -64,7 +64,6 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     Route::get('/inquiries/{inquiry}', [AdminController::class, 'showInquiry'])->name('admin.inquiries.show');
     Route::post('/inquiries/{inquiry}/reply', [AdminController::class, 'replyToInquiry'])->name('admin.inquiries.reply');
     Route::delete('/inquiries/{inquiry}', [AdminController::class, 'destroyInquiry'])->name('admin.inquiries.destroy');
-    Route::patch('/inquiries/{inquiry}/status', [AdminController::class, 'updateInquiryStatus'])->name('admin.inquiries.status');
     Route::middleware('ensure.full-admin')->group(function () {
         Route::resource('packages', AdminPackageController::class)
             ->except('show')

@@ -203,11 +203,13 @@ class AdminController extends Controller
 
     public function replyToInquiry(Request $request, Inquiry $inquiry)
     {
+        // Step 1: validate the reply is not empty.
         $data = $request->validate(['reply' => ['required', 'string', 'max:5000']]);
 
         $mailSent = false;
         $mailError = null;
 
+        // Step 2: send the email first. The status only changes if this succeeds.
         try {
             Mail::to($inquiry->email, $inquiry->full_name)->send(new InquiryReplyMail(
                 $inquiry->full_name,
@@ -220,23 +222,37 @@ class AdminController extends Controller
             report($exception);
         }
 
-        $inquiry->update(['admin_reply' => $data['reply'], 'replied_at' => now(), 'status' => 'responded']);
+        if (! $mailSent) {
+            // The reply text is kept so the admin doesn't lose what they typed, but the status stays untouched.
+            $inquiry->update(['admin_reply' => $data['reply']]);
 
-        if ($mailSent) {
-            return redirect()->route('admin.inquiries.show', $inquiry)->with('success', 'Reply sent to '.$inquiry->email.'.');
-        }
+            if (in_array(config('mail.default'), ['log', 'array'], true) && $mailError === null) {
+                return redirect()->route('admin.inquiries.show', $inquiry)->with(
+                    'error',
+                    'Failed to send reply. The inquiry status was not changed. Email delivery is disabled because MAIL_MAILER is set to '.config('mail.default').'.'
+                );
+            }
 
-        if (in_array(config('mail.default'), ['log', 'array'], true) && $mailError === null) {
-            return redirect()->route('admin.inquiries.show', $inquiry)->with(
+            return back()->with(
                 'error',
-                'Reply saved, but email delivery is disabled because MAIL_MAILER is set to '.config('mail.default').'. Configure SMTP mail settings to send it to '.$inquiry->email.'.'
+                'Failed to send reply. The inquiry status was not changed. Details: '.($mailError?->getMessage() ?? 'Unknown mail error.')
             );
         }
 
-        return back()->with(
-            'error',
-            'Reply was saved locally, but email delivery failed. Check MAIL_* settings in .env. Details: '.($mailError?->getMessage() ?? 'Unknown mail error.')
-        );
+        // Step 3: the email was sent successfully — now mark the inquiry as responded.
+        try {
+            $inquiry->update(['admin_reply' => $data['reply'], 'replied_at' => now(), 'status' => 'responded']);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return redirect()->route('admin.inquiries.show', $inquiry)->with(
+                'error',
+                'Reply was sent to '.$inquiry->email.', but the inquiry status could not be updated. Please refresh and update it manually.'
+            );
+        }
+
+        // Step 4: confirm both the email and the status change.
+        return redirect()->route('admin.inquiries.show', $inquiry)->with('success', 'Reply sent successfully. Inquiry marked as Responded.');
     }
 
     public function destroyInquiry(Inquiry $inquiry)
@@ -468,13 +484,6 @@ class AdminController extends Controller
         ]);
 
         return back()->with('success', 'Contract image deleted.');
-    }
-
-    public function updateInquiryStatus(Request $request, Inquiry $inquiry)
-    {
-        $inquiry->update($request->validate(['status' => ['required', 'in:new,in_progress,responded,closed']]));
-
-        return back()->with('success', 'Inquiry status updated.');
     }
 
     private function applyReservationSearch(Builder $query, string $search): void

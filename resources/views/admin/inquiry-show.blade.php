@@ -37,12 +37,31 @@
             <div class="card p-3">
                 <h5 class="fw-bold mb-2">Reply by email</h5>
                 <p class="text-muted small mb-3">Sending records the reply and changes this inquiry to Responded.</p>
-                <form method="POST" action="{{ route('admin.inquiries.reply', $inquiry) }}">
+                <form method="POST" action="{{ route('admin.inquiries.reply', $inquiry) }}" id="inquiry-reply-form">
                     @csrf
                     <textarea class="form-control @error('reply') is-invalid @enderror" name="reply" rows="8" required style="resize:vertical;min-height:200px">{{ old('reply', $inquiry->admin_reply) }}</textarea>
                     @error('reply')<div class="invalid-feedback">{{ $message }}</div>@enderror
-                    <button class="btn luxury-btn mt-3 w-100 w-sm-auto" type="submit">Send reply</button>
+                    <button class="btn luxury-btn mt-3 w-100 w-sm-auto" type="submit" id="inquiry-reply-submit">Send reply</button>
                 </form>
+                <script>
+                    (function () {
+                        var form = document.getElementById('inquiry-reply-form');
+                        var button = document.getElementById('inquiry-reply-submit');
+                        if (!form || !button) return;
+                        var defaultLabel = button.textContent;
+                        form.addEventListener('submit', function (event) {
+                            if (!form.checkValidity() || button.disabled) return;
+                            button.disabled = true;
+                            button.textContent = 'Sending...';
+                        });
+                        // If the browser restores this page from cache (e.g. the back button) after a failed
+                        // submission, re-enable the button instead of leaving it stuck on "Sending...".
+                        window.addEventListener('pageshow', function () {
+                            button.disabled = false;
+                            button.textContent = defaultLabel;
+                        });
+                    })();
+                </script>
             </div>
             
             @if($inquiry->admin_reply)
