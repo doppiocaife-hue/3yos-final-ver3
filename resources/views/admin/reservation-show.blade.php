@@ -108,7 +108,6 @@
                 <div class="reservation-schedule-group">
                     <h3 class="reservation-subheading">Edit confirmed reservation</h3>
                     @if($reservation->status === 'confirmed')
-                        <p class="text-muted small">Update this existing reservation after the client meeting. Its status, payment history, receipts, and contract files are preserved. Package or guest count changes refresh the estimate; update the contract price separately if agreed.</p>
                         <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Save changes to this confirmed reservation?">
                             @csrf @method('PATCH')
                             <input type="hidden" name="status" value="confirmed">
