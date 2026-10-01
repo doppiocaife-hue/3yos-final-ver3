@@ -9,6 +9,7 @@ use App\Services\BackupService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Database\QueryException;
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -151,6 +152,109 @@ class BackupSafetyTest extends TestCase
             $this->assertSame('Keep this description', $package->fresh()->description);
         } finally {
             $backupService->delete($backupName);
+        }
+    }
+
+    public function test_wrong_encryption_key_fails_safely_before_any_restore_changes(): void
+    {
+        $package = Package::create([
+            'name' => 'Wrong key package',
+            'slug' => 'wrong-key-package',
+            'price' => 500,
+            'min_guests' => 10,
+            'max_guests' => 50,
+            'description' => 'Current data must remain intact',
+        ]);
+        $admin = User::factory()->create([
+            'role' => 'full',
+            'password' => 'CurrentAdmin#2026',
+            'is_active' => true,
+        ]);
+        $backupService = app(BackupService::class);
+        $existingBackups = $backupService->listBackups();
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+        $package->update(['description' => 'Changed after backup']);
+        $originalEncrypter = Crypt::getFacadeRoot();
+        $backupsBeforeRestore = $backupService->listBackups();
+
+        try {
+            Crypt::swap(new Encrypter(random_bytes(32), 'AES-256-CBC'));
+
+            $response = $this->from('/admin/backups')->withSession([
+                'is_admin' => true,
+                'admin_role' => 'full',
+                'admin_user_id' => $admin->id,
+                'admin_email' => $admin->email,
+                'admin_session_version' => $admin->session_version,
+            ])->post(route('admin.backups.restore'), [
+                'backup' => $backupName,
+                'current_admin_password' => 'CurrentAdmin#2026',
+            ]);
+
+            $response->assertRedirect('/admin/backups')
+                ->assertSessionHasErrors([
+                    'backup' => 'This backup could not be verified as compatible. It may be corrupted or modified. No data was restored.',
+                ])
+                ->assertDontSee('CurrentAdmin#2026')
+                ->assertDontSee('AES-256-CBC');
+            $this->assertSame('Changed after backup', $package->fresh()->description);
+            $this->assertSame($backupsBeforeRestore, $backupService->listBackups());
+            $this->assertTrue(Hash::check('CurrentAdmin#2026', $admin->fresh()->password));
+        } finally {
+            Crypt::swap($originalEncrypter);
+            foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
+                $backupService->delete($backup);
+            }
+        }
+    }
+
+    public function test_tampered_backup_restore_returns_generic_error_without_creating_safety_backup(): void
+    {
+        $package = Package::create([
+            'name' => 'Tampered route package',
+            'slug' => 'tampered-route-package',
+            'price' => 500,
+            'min_guests' => 10,
+            'max_guests' => 50,
+            'description' => 'Current data must remain intact',
+        ]);
+        $admin = User::factory()->create([
+            'role' => 'full',
+            'password' => 'CurrentAdmin#2026',
+            'is_active' => true,
+        ]);
+        $backupService = app(BackupService::class);
+        $existingBackups = $backupService->listBackups();
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+        file_put_contents($backupPath, file_get_contents($backupPath).'tampered', LOCK_EX);
+        $backupsBeforeRestore = $backupService->listBackups();
+        $package->update(['description' => 'Changed after backup']);
+
+        try {
+            $response = $this->from('/admin/backups')->withSession([
+                'is_admin' => true,
+                'admin_role' => 'full',
+                'admin_user_id' => $admin->id,
+                'admin_email' => $admin->email,
+                'admin_session_version' => $admin->session_version,
+            ])->post(route('admin.backups.restore'), [
+                'backup' => $backupName,
+                'current_admin_password' => 'CurrentAdmin#2026',
+            ]);
+
+            $response->assertRedirect('/admin/backups')
+                ->assertSessionHasErrors([
+                    'backup' => 'This backup could not be verified as compatible. It may be corrupted or modified. No data was restored.',
+                ])
+                ->assertDontSee('CurrentAdmin#2026');
+            $this->assertSame('Changed after backup', $package->fresh()->description);
+            $this->assertSame($backupsBeforeRestore, $backupService->listBackups());
+        } finally {
+            foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
+                $backupService->delete($backup);
+            }
         }
     }
 
