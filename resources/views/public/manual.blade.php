@@ -1,13 +1,13 @@
 @extends('layouts.app')
 
-@section('title', '3YOS User Manual | 3YOS Catering')
+@section('title', 'Support User Manual | 3YOS Catering')
 
 @section('content')
 <div class="container manual-page">
     <div class="manual-hero">
-        <p class="eyebrow mb-2">3YOS User Manual</p>
+        <p class="eyebrow mb-2">3YOS Support</p>
         <h1 class="display-font mb-2">Complete guest reference</h1>
-        <p class="text-muted mb-0">Need a quick answer instead? Try the <a href="{{ route('help') }}">Help Center</a>.</p>
+        <p class="text-muted mb-0">Quick answers and the user manual are together on the <a href="{{ route('support') }}">Support page</a>.</p>
     </div>
 
     <div class="manual-mobile-toc d-lg-none">
@@ -52,7 +52,7 @@
                     @endforeach
 
                     @if(!empty($chapter['related']))
-                        <p class="manual-related"><a href="{{ route('help') }}#category-{{ $chapter['related']['category'] }}">Related Help &rarr;</a></p>
+                        <p class="manual-related"><a href="{{ route('support') }}#category-{{ $chapter['related']['category'] }}">Related Quick Help &rarr;</a></p>
                     @endif
 
                     <nav class="manual-prev-next" aria-label="Chapter navigation">

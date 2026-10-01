@@ -4,8 +4,8 @@
 <div class="content-card p-4 manual-page">
     <div class="page-header">
         <div>
-            <h1 class="fw-bold mb-1">Admin User Manual</h1>
-            <p class="text-muted mb-0">The complete administrator reference. Need a quick answer instead? See the <a href="{{ route('admin.help') }}">Help Center</a>.</p>
+            <h1 class="fw-bold mb-1">Support User Manual</h1>
+            <p class="text-muted mb-0">Browse the complete administrator reference in <a href="{{ route('admin.support') }}">Support</a>.</p>
         </div>
     </div>
 
@@ -51,7 +51,7 @@
                     @endforeach
 
                     @if(!empty($chapter['related']))
-                        <p class="manual-related"><a href="{{ route('admin.help') }}#category-{{ $chapter['related']['category'] }}">Related Help &rarr;</a></p>
+                        <p class="manual-related"><a href="{{ route('admin.support') }}#category-{{ $chapter['related']['category'] }}">Related Quick Help &rarr;</a></p>
                     @endif
 
                     <nav class="manual-prev-next" aria-label="Chapter navigation">

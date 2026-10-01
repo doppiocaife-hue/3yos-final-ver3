@@ -109,7 +109,7 @@ class HelpCenterAccessTest extends TestCase
         $response->assertSee('>Support</span>', false);
         $response->assertDontSee('>Help Center</span>', false);
         $response->assertDontSee('>User Manual</span>', false);
-        $response->assertSee('href="'.route('admin.support').'" class="nav-link active"', false);
+        $response->assertSee('class="nav-link active" href="'.route('admin.support').'"', false);
         $this->assertGreaterThan(
             strpos($response->getContent(), '>Backups</span>'),
             strpos($response->getContent(), '>Support</span>'),

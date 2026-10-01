@@ -30,6 +30,8 @@
                 @foreach($category['articles'] as $article)
                     @php
                         $searchText = strtolower(implode(' ', array_filter([
+                            $category['title'],
+                            $category['description'],
                             $article['question'],
                             implode(' ', $article['summary'] ?? []),
                             implode(' ', $article['steps'] ?? []),

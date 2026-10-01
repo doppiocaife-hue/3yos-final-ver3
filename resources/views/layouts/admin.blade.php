@@ -11,6 +11,26 @@
     <link rel="stylesheet" href="{{ asset('css/scroll-header.css') }}?v={{ filemtime(public_path('css/scroll-header.css')) }}">
 </head>
 <body>
+@php
+    $adminHeaderContext = match (request()->route()?->getName()) {
+        'admin.dashboard' => "Today's operations and business overview",
+        'admin.reservations', 'admin.reservations.export' => 'Manage and review catering reservations',
+        'admin.reservations.create', 'admin.reservations.store' => 'Create a reservation for a client',
+        'admin.reservations.show' => 'Review event details, contracts, payments, and activity',
+        'admin.reservations.payments', 'admin.reservations.payments.print' => 'Review payment records, receipts, and balances',
+        'admin.inquiries', 'admin.inquiries.show' => 'Manage customer inquiries and replies',
+        'admin.packages.index', 'admin.packages.create', 'admin.packages.edit' => 'Manage catering packages',
+        'admin.services.index', 'admin.services.create', 'admin.services.edit' => 'Manage catering services',
+        'admin.gallery.index', 'admin.gallery.create', 'admin.gallery.edit' => 'Manage event gallery items',
+        'admin.reports', 'admin.reports.export', 'admin.reports.export.excel' => 'Review and export business reports',
+        'admin.analytics' => 'Explore catering business performance',
+        'admin.users' => 'Manage administrator accounts',
+        'admin.activity-logs' => 'Review administrator activity',
+        'admin.backups' => 'Manage secure system backups',
+        'admin.support' => 'Help and system documentation',
+        default => 'Catering operations',
+    };
+@endphp
 <button class="admin-nav-backdrop" id="adminNavBackdrop" type="button" aria-label="Close navigation"></button>
 <div class="container-fluid"><div class="admin-layout">
     <aside class="sidebar text-white p-0" id="adminSidebar" aria-label="Primary navigation">
@@ -51,7 +71,7 @@
         <header class="header-bar" data-scroll-header>
             <div class="admin-heading">
                 <button class="header-btn" type="button" id="adminMobileMenu" aria-label="Open navigation" aria-controls="adminSidebar" aria-expanded="false" title="Open navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-                <div><div class="page-kicker">Catering management</div><h4 class="mb-0">Operations workspace</h4></div>
+                <div class="admin-heading-context"><h4 class="mb-0">Operations workspace</h4><p class="mb-0">{{ $adminHeaderContext }}</p></div>
             </div>
             <div class="admin-header-actions">
                 <button class="header-btn theme-toggle" id="themeToggle" type="button" aria-label="Enable dark mode" title="Enable dark mode"><span aria-hidden="true">&#9790;</span></button>
