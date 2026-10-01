@@ -252,7 +252,17 @@
                 <h2 class="h6 fw-bold mb-3">Activity</h2>
                 @forelse($activity as $entry)
                     <div class="activity-entry">
-                        @if(in_array($entry->action, ['Reservation schedule changed', 'Reservation details updated'], true))
+                        @if(in_array($entry->action, [
+                            'Reservation schedule changed',
+                            'Reservation details updated',
+                            'Payment recorded',
+                            'Payment updated',
+                            'Payment deleted',
+                            'Refund recorded',
+                            'Official Receipt uploaded',
+                            'Official Receipt replaced',
+                            'Official Receipt removed',
+                        ], true))
                             <div class="activity-entry-title">{{ $entry->action }}</div>
                         @endif
                         <div class="activity-entry-meta"><strong>{{ $entry->actor_name ?? 'Unknown administrator' }}</strong> &middot; {{ \Carbon\Carbon::parse($entry->activity_date.' '.$entry->activity_time)->format('M j, Y g:i A') }}</div>

@@ -44,9 +44,6 @@ class CaptureActivity
     {
         return match ($request->route()?->getName()) {
             'admin.reservations.status' => 'Updated reservation status',
-            'admin.reservations.payments.store' => 'Recorded payment',
-            'admin.reservations.payments.update' => 'Updated payment',
-            'admin.reservations.payments.destroy' => 'Deleted payment',
             'admin.reservations.payments.details' => 'Updated contract and due date',
             'admin.inquiries.reply' => 'Replied to inquiry',
             'admin.inquiries.destroy' => 'Deleted inquiry',
@@ -69,9 +66,6 @@ class CaptureActivity
 
         return match ($routeName) {
             'admin.reservations.status' => 'Changed reservation #' . $request->route('reservation')?->id . ' status to ' . str($request->input('status'))->replace('_', ' ')->title() . '.',
-            'admin.reservations.payments.store' => 'Recorded a ₱' . number_format((float) $request->input('amount'), 2) . ' ' . $request->input('payment_method') . ' payment for reservation ' . $this->reservationLabel($request) . '.',
-            'admin.reservations.payments.update' => 'Updated payment #' . $request->route('payment')?->id . ' for reservation ' . $this->reservationLabel($request) . ' to ₱' . number_format((float) $request->input('amount'), 2) . '.',
-            'admin.reservations.payments.destroy' => 'Deleted payment #' . $request->route('payment')?->id . ' (₱' . number_format((float) $request->route('payment')?->amount, 2) . ') from reservation ' . $this->reservationLabel($request) . '.',
             'admin.reservations.payments.details' => 'Set the contract price and payment due date for reservation ' . $this->reservationLabel($request) . '.',
             'admin.inquiries.reply' => 'Sent an email reply for inquiry #' . $request->route('inquiry')?->id . ' and marked it Responded.',
             'admin.inquiries.destroy' => 'Deleted inquiry #' . $request->route('inquiry')?->id . '.',

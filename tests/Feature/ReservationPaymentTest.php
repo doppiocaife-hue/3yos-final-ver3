@@ -132,6 +132,10 @@ class ReservationPaymentTest extends TestCase
         $payment = $reservation->payments()->firstOrFail();
         $oldPath = $payment->receipt_image_path;
         $this->assertNotNull($oldPath);
+        $uploadActivity = ActivityLog::where('action', 'Official Receipt uploaded')->firstOrFail();
+        $this->assertSame('Payment Tester', $uploadActivity->actor_name);
+        $this->assertStringContainsString('Official Receipt uploaded for ₱100.00 payment', $uploadActivity->description);
+        $this->assertStringNotContainsString($oldPath, $uploadActivity->description);
         Storage::disk('local')->assertExists($oldPath);
         Storage::disk('public')->assertMissing($oldPath);
         $this->assertTotals($reservation, 100.0, 900.0, 'Downpayment');
@@ -152,6 +156,7 @@ class ReservationPaymentTest extends TestCase
 
         $this->withSession(self::ADMIN)->post(route('admin.reservations.payments.update', [$reservation, $payment]), [
             '_method' => 'PUT',
+            'current_admin_password' => 'password',
             'payment_date' => now()->toDateString(),
             'payment_type' => 'Downpayment',
             'amount' => 100,
@@ -162,6 +167,7 @@ class ReservationPaymentTest extends TestCase
 
         $this->withSession(self::ADMIN)->post(route('admin.reservations.payments.update', [$reservation, $payment]), [
             '_method' => 'PUT',
+            'current_admin_password' => 'password',
             'payment_date' => now()->toDateString(),
             'payment_type' => 'Downpayment',
             'amount' => 100,
@@ -171,6 +177,9 @@ class ReservationPaymentTest extends TestCase
 
         $newPath = $payment->fresh()->receipt_image_path;
         $this->assertNotSame($oldPath, $newPath);
+        $replacementActivity = ActivityLog::where('action', 'Official Receipt replaced')->firstOrFail();
+        $this->assertSame('Payment Tester', $replacementActivity->actor_name);
+        $this->assertStringNotContainsString($newPath, $replacementActivity->description);
         Storage::disk('local')->assertMissing($oldPath);
         Storage::disk('local')->assertExists($newPath);
         $this->assertTotals($reservation, 100.0, 900.0, 'Downpayment');
@@ -179,10 +188,17 @@ class ReservationPaymentTest extends TestCase
         $this->withSession(self::ADMIN)->get($receiptUrl)->assertNotFound();
 
         $this->withSession(self::ADMIN)
-            ->delete(route('admin.reservations.payments.destroy', [$reservation, $payment]))
+            ->delete(route('admin.reservations.payments.destroy', [$reservation, $payment]), [
+                'current_admin_password' => 'password',
+                'reason' => 'Duplicate test payment',
+            ])
             ->assertRedirect();
         Storage::disk('local')->assertMissing($newPath);
         $this->assertTotals($reservation, 0.0, 1000.0, 'Unpaid');
+        $this->assertDatabaseHas('activity_logs', [
+            'action' => 'Official Receipt removed',
+            'actor_name' => 'Payment Tester',
+        ]);
     }
 
     public function test_payment_receipt_upload_validates_images_and_receipt_preview_requires_admin(): void
@@ -246,13 +262,35 @@ class ReservationPaymentTest extends TestCase
         $this->pay($reservation, 400, ['payment_type' => 'Partial Payment']);
         $fourHundred = $reservation->payments()->where('amount', 400)->firstOrFail();
 
+        $this->withSession(self::ADMIN)
+            ->delete(route('admin.reservations.payments.destroy', [$reservation, $fourHundred]), [
+                'current_admin_password' => 'password',
+            ])
+            ->assertSessionHasErrors('reason');
+        $this->assertModelExists($fourHundred);
+        $this->assertSame(0, ActivityLog::where('action', 'Payment deleted')->count());
+
         // TEST 5
         $this->withSession(self::ADMIN)
-            ->delete(route('admin.reservations.payments.destroy', [$reservation, $fourHundred]))
+            ->delete(route('admin.reservations.payments.destroy', [$reservation, $fourHundred]), [
+                'current_admin_password' => 'password',
+                'reason' => 'Duplicate entry',
+            ])
             ->assertSessionHas('success');
 
         $this->assertModelMissing($fourHundred);
         $this->assertTotals($reservation, 100.0, 900.0, 'Downpayment');
+        $activity = ActivityLog::where('action', 'Payment deleted')->firstOrFail();
+        $this->assertSame('Payment Tester', $activity->actor_name);
+        $this->assertSame('tester@3yos.com', $activity->actor_email);
+        $this->assertStringContainsString('Amount: ₱400.00', $activity->description);
+        $this->assertStringContainsString('Payment method: Cash', $activity->description);
+        $this->assertStringContainsString('Payment type: Partial Payment', $activity->description);
+        $this->assertStringContainsString('Reason: Duplicate entry', $activity->description);
+        $this->assertStringContainsString($reservation->reservation_code, $activity->description);
+        $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation))
+            ->assertSee('Payment deleted')
+            ->assertSee('Reason: Duplicate entry');
     }
 
     public function test_editing_a_payment_recalculates_and_cannot_exceed_the_contract(): void
@@ -260,15 +298,97 @@ class ReservationPaymentTest extends TestCase
         $reservation = $this->reservation();
         $this->pay($reservation, 100);
         $payment = $reservation->payments()->firstOrFail();
+
+        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.update', [$reservation, $payment]), [
+            'current_admin_password' => 'password',
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'payment_method' => 'Cash',
+            'amount' => 200,
+        ]);
+        $amountOnlyActivity = ActivityLog::where('action', 'Payment updated')->firstOrFail();
+        $this->assertStringContainsString('Amount: ₱100.00 → ₱200.00', $amountOnlyActivity->description);
+        $this->assertStringNotContainsString('Payment method:', $amountOnlyActivity->description);
+        $this->assertStringNotContainsString('Payment date:', $amountOnlyActivity->description);
+        $this->assertStringNotContainsString('Payment type:', $amountOnlyActivity->description);
+        $this->assertTotals($reservation, 200.0, 800.0, 'Downpayment');
+
         $fields = ['payment_date' => now()->toDateString(), 'payment_type' => 'Downpayment', 'payment_method' => 'GCash'];
 
-        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.update', [$reservation, $payment]), $fields + ['amount' => 1000]);
+        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.update', [$reservation, $payment]), $fields + [
+            'current_admin_password' => 'password',
+            'amount' => 1000,
+        ]);
         $this->assertTotals($reservation, 1000.0, 0.0, 'Fully Paid');
+        $activity = ActivityLog::where('action', 'Payment updated')->latest('id')->firstOrFail();
+        $this->assertStringContainsString('Amount: ₱200.00 → ₱1,000.00', $activity->description);
+        $this->assertStringContainsString('Payment method: Cash → GCash', $activity->description);
+        $this->assertStringNotContainsString('Payment date:', $activity->description);
+        $this->assertStringNotContainsString('Payment type:', $activity->description);
+        $this->assertSame('Payment Tester', $activity->actor_name);
 
-        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.update', [$reservation, $payment]), $fields + ['amount' => 1000.01])
+        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.update', [$reservation, $payment]), $fields + [
+            'current_admin_password' => 'password',
+            'amount' => 1000.01,
+        ])
             ->assertSessionHasErrorsIn('editPayment', 'amount')
             ->assertSessionHas('editing_payment', $payment->id);
         $this->assertSame(1000.0, (float) $payment->fresh()->amount);
+    }
+
+    public function test_payment_edit_and_deletion_require_the_current_admin_password(): void
+    {
+        $reservation = $this->reservation();
+        $this->pay($reservation, 100);
+        $payment = $reservation->payments()->firstOrFail();
+        $updateRoute = route('admin.reservations.payments.update', [$reservation, $payment]);
+        $deleteRoute = route('admin.reservations.payments.destroy', [$reservation, $payment]);
+
+        $this->withSession(self::ADMIN)
+            ->from(route('admin.reservations.payments', $reservation))
+            ->put($updateRoute, [
+                'payment_date' => now()->toDateString(),
+                'payment_type' => 'Downpayment',
+                'amount' => 250,
+                'payment_method' => 'GCash',
+            ])
+            ->assertRedirect(route('admin.reservations.payments', $reservation))
+            ->assertSessionHasErrors('current_admin_password');
+        $this->assertSame(100.0, (float) $payment->fresh()->amount);
+
+        $this->withSession(self::ADMIN)
+            ->from(route('admin.reservations.payments', $reservation))
+            ->put($updateRoute, [
+                'current_admin_password' => 'incorrect-password',
+                'payment_date' => now()->toDateString(),
+                'payment_type' => 'Downpayment',
+                'amount' => 250,
+                'payment_method' => 'GCash',
+            ])
+            ->assertSessionHasErrors('current_admin_password');
+        $this->assertSame(100.0, (float) $payment->fresh()->amount);
+
+        $this->withSession(self::ADMIN)
+            ->from(route('admin.reservations.payments', $reservation))
+            ->delete($deleteRoute, ['reason' => 'Duplicate payment'])
+            ->assertSessionHasErrors('current_admin_password');
+        $this->assertModelExists($payment);
+
+        $this->withSession(self::ADMIN)
+            ->from(route('admin.reservations.payments', $reservation))
+            ->delete($deleteRoute, [
+                'current_admin_password' => 'incorrect-password',
+                'reason' => 'Duplicate payment',
+            ])
+            ->assertSessionHasErrors('current_admin_password');
+        $this->assertModelExists($payment);
+
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.reservations.payments', $reservation))
+            ->assertOk()
+            ->assertSee('data-password-confirm', false)
+            ->assertSee('Confirm your administrator password to edit this payment.')
+            ->assertSee('Confirm your administrator password to delete this payment.');
     }
 
     public function test_payment_validation_messages(): void
@@ -338,7 +458,20 @@ class ReservationPaymentTest extends TestCase
         $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation))
             ->assertOk()->assertSee(route('admin.reservations.payments', $reservation), false);
 
-        $this->assertTrue(ActivityLog::where('action', 'Recorded payment')->where('description', 'like', '%₱100.00 Cash payment%')->exists());
+        $activity = ActivityLog::where('action', 'Payment recorded')->firstOrFail();
+        $this->assertStringContainsString('Amount: ₱100.00', $activity->description);
+        $this->assertStringContainsString('Payment method: Cash', $activity->description);
+        $this->assertStringContainsString('Payment type: Downpayment', $activity->description);
+        $this->assertSame('Payment Tester', $activity->actor_name);
+        $this->assertSame('tester@3yos.com', $activity->actor_email);
+        $this->assertSame($payment->recorded_by_user_id, $activity->user_id);
+        $this->assertStringContainsString($reservation->reservation_code, $activity->description);
+        $this->assertSame(1, ActivityLog::where('action', 'Payment recorded')->count());
+        $this->assertSame(0, ActivityLog::where('action', 'Recorded payment')->count());
+
+        $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation))
+            ->assertSee('Payment recorded')
+            ->assertSee('Amount: ₱100.00');
     }
 
     public function test_partial_refunds_preserve_the_payment_ledger_and_are_idempotent(): void
@@ -358,7 +491,14 @@ class ReservationPaymentTest extends TestCase
         $this->assertSame(1, $reservation->payments()->count());
         $this->assertSame('confirmed', $reservation->fresh()->status);
         $this->assertTotals($reservation, 600.0, 400.0, 'Partial Payment');
-        $this->assertSame(1, ActivityLog::where('action', 'Processed refund')->count());
+        $refundActivity = ActivityLog::where('action', 'Refund recorded')->firstOrFail();
+        $this->assertStringContainsString('Amount: ₱200.00', $refundActivity->description);
+        $this->assertStringContainsString('Refund method: Cash', $refundActivity->description);
+        $this->assertStringContainsString('Refund date: '.now()->format('F j, Y'), $refundActivity->description);
+        $this->assertStringContainsString('Reason: Event change', $refundActivity->description);
+        $this->assertSame('Payment Tester', $refundActivity->actor_name);
+        $this->assertSame($refund->recorded_by_user_id, $refundActivity->user_id);
+        $this->assertSame(1, ActivityLog::where('action', 'Refund recorded')->count());
 
         $this->withSession(self::ADMIN)->get(route('admin.reservations.payments', $reservation))
             ->assertOk()
@@ -376,7 +516,9 @@ class ReservationPaymentTest extends TestCase
         $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation))
             ->assertOk()
             ->assertSee('Refunded')
-            ->assertSee('&#8369;200.00', false);
+            ->assertSee('&#8369;200.00', false)
+            ->assertSee('Refund recorded')
+            ->assertSee('Refund method: Cash');
         $this->withSession(self::ADMIN)->get(route('admin.reservations.export'))
             ->assertOk()
             ->assertSee('"Gross Paid",Refunded,"Net Paid",Balance', false)
@@ -385,7 +527,7 @@ class ReservationPaymentTest extends TestCase
         $this->refund($reservation, 200, ['request_key' => $requestKey])
             ->assertSessionHas('success', 'That refund submission was already processed.');
         $this->assertSame(1, $reservation->refunds()->count());
-        $this->assertSame(1, ActivityLog::where('action', 'Processed refund')->count());
+        $this->assertSame(1, ActivityLog::where('action', 'Refund recorded')->count());
         $this->assertTotals($reservation, 600.0, 400.0, 'Partial Payment');
     }
 
@@ -431,7 +573,7 @@ class ReservationPaymentTest extends TestCase
         $this->refund($reservation, 100, ['refund_date' => now()->addDay()->toDateString()])->assertSessionHasErrors('refund_date');
 
         $this->assertSame(0, $reservation->refunds()->count());
-        $this->assertSame(0, ActivityLog::where('action', 'Processed refund')->count());
+        $this->assertSame(0, ActivityLog::where('action', 'Refund recorded')->count());
         $this->assertTotals($reservation, 500.0, 500.0, 'Downpayment');
     }
 
@@ -448,10 +590,16 @@ class ReservationPaymentTest extends TestCase
         ];
 
         $this->withSession(self::ADMIN)
-            ->put(route('admin.reservations.payments.update', [$reservation, $payment]), $paymentFields + ['amount' => 200])
+            ->put(route('admin.reservations.payments.update', [$reservation, $payment]), $paymentFields + [
+                'current_admin_password' => 'password',
+                'amount' => 200,
+            ])
             ->assertSessionHasErrorsIn('editPayment', 'amount');
         $this->withSession(self::ADMIN)
-            ->delete(route('admin.reservations.payments.destroy', [$reservation, $payment]))
+            ->delete(route('admin.reservations.payments.destroy', [$reservation, $payment]), [
+                'current_admin_password' => 'password',
+                'reason' => 'Cannot remove refunded payment',
+            ])
             ->assertSessionHasErrors('payment');
 
         $this->assertModelExists($payment);
@@ -499,7 +647,7 @@ class ReservationPaymentTest extends TestCase
             $this->get(route('admin.reservations.payments.print', $reservation)),
             $this->post(route('admin.reservations.payments.store', $reservation), $fields),
             $this->put(route('admin.reservations.payments.update', [$reservation, $payment]), $fields),
-            $this->delete(route('admin.reservations.payments.destroy', [$reservation, $payment])),
+            $this->delete(route('admin.reservations.payments.destroy', [$reservation, $payment]), ['reason' => 'Unauthorized deletion test']),
             $this->patch(route('admin.reservations.payments.details', $reservation), ['total_cost' => 1]),
             $this->patch(route('admin.reservations.status', $reservation), ['amount_paid' => 1000]),
             $this->post(route('admin.reservations.refunds.store', $reservation), [
@@ -529,7 +677,10 @@ class ReservationPaymentTest extends TestCase
         $this->pay($first, 100);
         $payment = $first->payments()->firstOrFail();
 
-        $this->withSession(self::ADMIN)->delete(route('admin.reservations.payments.destroy', [$second, $payment]))->assertNotFound();
+        $this->withSession(self::ADMIN)->delete(route('admin.reservations.payments.destroy', [$second, $payment]), [
+            'current_admin_password' => 'password',
+            'reason' => 'Wrong reservation test',
+        ])->assertNotFound();
         $this->assertModelExists($payment);
     }
 

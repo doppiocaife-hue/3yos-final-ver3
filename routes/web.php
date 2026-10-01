@@ -61,14 +61,22 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     Route::scopeBindings()->group(function () {
         Route::get('/reservations/{reservation}/payments', [ReservationPaymentController::class, 'index'])->name('admin.reservations.payments');
         Route::get('/reservations/{reservation}/payments/print', [ReservationPaymentController::class, 'print'])->name('admin.reservations.payments.print');
-        Route::post('/reservations/{reservation}/payments', [ReservationPaymentController::class, 'store'])->name('admin.reservations.payments.store');
+        Route::post('/reservations/{reservation}/payments', [ReservationPaymentController::class, 'store'])
+            ->withoutMiddleware('capture.activity')
+            ->name('admin.reservations.payments.store');
         Route::get('/reservations/{reservation}/payments/{payment}/receipt', [ReservationPaymentController::class, 'receipt'])->name('admin.reservations.payments.receipt');
         Route::post('/reservations/{reservation}/refunds', [ReservationPaymentController::class, 'storeRefund'])
             ->withoutMiddleware('capture.activity')
             ->name('admin.reservations.refunds.store');
         Route::patch('/reservations/{reservation}/payment-details', [ReservationPaymentController::class, 'updateDetails'])->name('admin.reservations.payments.details');
-        Route::put('/reservations/{reservation}/payments/{payment}', [ReservationPaymentController::class, 'update'])->name('admin.reservations.payments.update');
-        Route::delete('/reservations/{reservation}/payments/{payment}', [ReservationPaymentController::class, 'destroy'])->name('admin.reservations.payments.destroy');
+        Route::put('/reservations/{reservation}/payments/{payment}', [ReservationPaymentController::class, 'update'])
+            ->withoutMiddleware('capture.activity')
+            ->middleware('confirm.admin-password')
+            ->name('admin.reservations.payments.update');
+        Route::delete('/reservations/{reservation}/payments/{payment}', [ReservationPaymentController::class, 'destroy'])
+            ->withoutMiddleware('capture.activity')
+            ->middleware('confirm.admin-password')
+            ->name('admin.reservations.payments.destroy');
     });
     Route::get('/inquiries', [AdminController::class, 'inquiries'])->name('admin.inquiries');
     Route::get('/inquiries/{inquiry}', [AdminController::class, 'showInquiry'])->name('admin.inquiries.show');

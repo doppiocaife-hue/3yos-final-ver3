@@ -91,12 +91,28 @@ class ReservationPaymentController extends Controller
                     $newReceiptPath = $this->storeReceiptImage($receiptImage);
                 }
 
-                $reservation->payments()->create($data + [
+                $payment = $reservation->payments()->create($data + [
                     'receipt_image_path' => $newReceiptPath,
                     'recorded_by_user_id' => $request->session()->get('admin_user_id'),
                     'recorded_by_name' => $request->session()->get('admin_name', 'Administrator'),
                 ]);
                 $reservation->recalculatePaymentTotals();
+
+                $this->recordFinancialActivity(
+                    $request,
+                    'Payment recorded',
+                    $this->paymentSummary($payment).' Recorded by '.$payment->recorded_by_name.'.',
+                    $reservation,
+                );
+
+                if ($newReceiptPath !== null) {
+                    $this->recordFinancialActivity(
+                        $request,
+                        'Official Receipt uploaded',
+                        'Official Receipt uploaded for '.$this->peso($payment->amount).' payment. Recorded by '.$payment->recorded_by_name.'.',
+                        $reservation,
+                    );
+                }
 
                 return true;
             });
@@ -121,11 +137,13 @@ class ReservationPaymentController extends Controller
             $receiptImage = $data['receipt_image'] ?? null;
             unset($data['receipt_image']);
 
-            DB::transaction(function () use ($reservation, $payment, $data, $receiptImage, &$newReceiptPath, &$oldReceiptPath) {
+            DB::transaction(function () use ($request, $reservation, $payment, $data, $receiptImage, &$newReceiptPath, &$oldReceiptPath) {
                 $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
                 $payment = $reservation->payments()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
                 $reservation->ensurePaymentLedger();
                 $reservation->recalculatePaymentTotals();
+                $previous = $payment->getOriginal();
+                $oldReceiptPath = $payment->receipt_image_path;
 
                 // This payment's current amount is freed up before checking the new one.
                 $financials = $reservation->financials();
@@ -139,13 +157,33 @@ class ReservationPaymentController extends Controller
                 }
 
                 if ($receiptImage) {
-                    $oldReceiptPath = $payment->receipt_image_path;
                     $newReceiptPath = $this->storeReceiptImage($receiptImage);
                     $data['receipt_image_path'] = $newReceiptPath;
                 }
 
                 $payment->update($data);
                 $reservation->recalculatePaymentTotals();
+
+                $changes = $this->paymentChanges($previous, $data);
+                if ($changes !== []) {
+                    $this->recordFinancialActivity(
+                        $request,
+                        'Payment updated',
+                        implode("\n", $changes),
+                        $reservation,
+                    );
+                }
+
+                if ($newReceiptPath !== null) {
+                    $this->recordFinancialActivity(
+                        $request,
+                        $oldReceiptPath === null ? 'Official Receipt uploaded' : 'Official Receipt replaced',
+                        $oldReceiptPath === null
+                            ? 'Official Receipt uploaded for '.$this->peso($payment->amount).' payment.'
+                            : 'Previous receipt: '.basename($oldReceiptPath)."\nNew receipt: ".basename($newReceiptPath).'.',
+                        $reservation,
+                    );
+                }
             });
         } catch (ValidationException $exception) {
             $this->deleteReceiptImage($newReceiptPath);
@@ -167,11 +205,17 @@ class ReservationPaymentController extends Controller
         return redirect()->route('admin.reservations.payments', $reservation)->with('success', 'Payment updated and balance recalculated.');
     }
 
-    public function destroy(Reservation $reservation, ReservationPayment $payment): RedirectResponse
+    public function destroy(Request $request, Reservation $reservation, ReservationPayment $payment): RedirectResponse
     {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'reason.required' => 'Enter a reason for deleting this payment.',
+            'reason.min' => 'The deletion reason must be at least 3 characters.',
+        ]);
         $receiptPath = null;
 
-        DB::transaction(function () use ($reservation, $payment, &$receiptPath) {
+        DB::transaction(function () use ($request, $reservation, $payment, $data, &$receiptPath) {
             $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
             $payment = $reservation->payments()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
             $reservation->ensurePaymentLedger();
@@ -184,6 +228,24 @@ class ReservationPaymentController extends Controller
             }
 
             $receiptPath = $payment->receipt_image_path;
+            $this->recordFinancialActivity(
+                $request,
+                'Payment deleted',
+                $this->paymentSummary($payment)
+                    .' Reason: '.$data['reason']
+                    .'. Deleted by '.$request->session()->get('admin_name', 'Unknown administrator').'.',
+                $reservation,
+            );
+
+            if ($receiptPath !== null) {
+                $this->recordFinancialActivity(
+                    $request,
+                    'Official Receipt removed',
+                    'Official Receipt removed with the deleted '.$this->peso($payment->amount).' payment.',
+                    $reservation,
+                );
+            }
+
             $payment->delete();
             $reservation->recalculatePaymentTotals();
         });
@@ -308,18 +370,16 @@ class ReservationPaymentController extends Controller
 
             $reservation->recalculatePaymentTotals();
 
-            ActivityLog::create([
-                'user_id' => $request->session()->get('admin_user_id'),
-                'actor_name' => $request->session()->get('admin_name', 'Unknown administrator'),
-                'actor_email' => $request->session()->get('admin_email'),
-                'actor_role' => $request->session()->get('admin_role', 'limited'),
-                'action' => 'Processed refund',
-                'method' => $request->method(),
-                'ip_address' => $request->ip(),
-                'activity_date' => now()->toDateString(),
-                'activity_time' => now()->toTimeString(),
-                'description' => 'Processed a ₱'.number_format($data['refund_amount'], 2).' '.$data['refund_method'].' refund dated '.$refund->refund_date->format('Y-m-d').' for reservation '.($reservation->reservation_code ?: '#'.$reservation->id).'.',
-            ]);
+            $this->recordFinancialActivity(
+                $request,
+                'Refund recorded',
+                'Amount: '.$this->peso($refund->amount)
+                    ."\nRefund method: ".$refund->refund_method
+                    ."\nRefund date: ".$refund->refund_date->format('F j, Y')
+                    .($refund->reason ? "\nReason: ".$refund->reason : '')
+                    ."\nRecorded by ".$refund->recorded_by_name.'.',
+                $reservation,
+            );
 
             return true;
         });
@@ -398,6 +458,59 @@ class ReservationPaymentController extends Controller
     private function peso(float|int|null $amount): string
     {
         return '₱'.number_format((float) $amount, 2);
+    }
+
+    private function paymentSummary(ReservationPayment $payment): string
+    {
+        return 'Amount: '.$this->peso($payment->amount)
+            ."\nPayment method: ".$payment->payment_method
+            ."\nPayment date: ".$payment->payment_date->format('F j, Y')
+            ."\nPayment type: ".$payment->payment_type;
+    }
+
+    private function paymentChanges(array $previous, array $data): array
+    {
+        $changes = [];
+
+        if (isset($data['amount']) && Reservation::toCents((float) $previous['amount']) !== Reservation::toCents((float) $data['amount'])) {
+            $changes[] = 'Amount: '.$this->peso($previous['amount']).' → '.$this->peso($data['amount']);
+        }
+        if (isset($data['payment_method']) && $previous['payment_method'] !== $data['payment_method']) {
+            $changes[] = 'Payment method: '.$previous['payment_method'].' → '.$data['payment_method'];
+        }
+        if (isset($data['payment_date'])
+            && \Carbon\Carbon::parse($previous['payment_date'])->toDateString() !== \Carbon\Carbon::parse($data['payment_date'])->toDateString()) {
+            $changes[] = 'Payment date: '.\Carbon\Carbon::parse($previous['payment_date'])->format('F j, Y')
+                .' → '.\Carbon\Carbon::parse($data['payment_date'])->format('F j, Y');
+        }
+        if (isset($data['payment_type']) && $previous['payment_type'] !== $data['payment_type']) {
+            $changes[] = 'Payment type: '.$previous['payment_type'].' → '.$data['payment_type'];
+        }
+        if (array_key_exists('notes', $data) && (string) ($previous['notes'] ?? '') !== (string) ($data['notes'] ?? '')) {
+            $changes[] = 'Payment notes were changed.';
+        }
+
+        return $changes;
+    }
+
+    private function recordFinancialActivity(
+        Request $request,
+        string $action,
+        string $description,
+        Reservation $reservation,
+    ): void {
+        ActivityLog::create([
+            'user_id' => $request->session()->get('admin_user_id'),
+            'actor_name' => $request->session()->get('admin_name', 'Unknown administrator'),
+            'actor_email' => $request->session()->get('admin_email'),
+            'actor_role' => $request->session()->get('admin_role', 'limited'),
+            'action' => $action,
+            'method' => $request->method(),
+            'ip_address' => $request->ip(),
+            'activity_date' => now()->toDateString(),
+            'activity_time' => now()->toTimeString(),
+            'description' => $description."\nReservation: ".($reservation->reservation_code ?: '#'.$reservation->id).'.',
+        ]);
     }
 
     private function transactions(Reservation $reservation)

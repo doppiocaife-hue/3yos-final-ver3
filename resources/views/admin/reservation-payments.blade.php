@@ -199,8 +199,10 @@
                                             data-method="{{ $transaction->payment->payment_method }}"
                                             data-notes="{{ $transaction->payment->notes }}"
                                             data-receipt-url="{{ $transaction->payment->receipt_image_path ? route('admin.reservations.payments.receipt', [$reservation, $transaction->payment]) : '' }}">Edit</button>
-                                        <form method="POST" action="{{ route('admin.reservations.payments.destroy', [$reservation, $transaction->payment]) }}" data-submit-once data-confirm-message="Delete this {{ $peso($transaction->payment->amount) }} payment? The total paid and balance will be recalculated.">
+                                        <form class="payment-delete-form" method="POST" action="{{ route('admin.reservations.payments.destroy', [$reservation, $transaction->payment]) }}" data-password-confirm data-password-message="Confirm your administrator password to delete this payment." data-submit-once data-confirm-message="Delete this {{ $peso($transaction->payment->amount) }} payment? The total paid and balance will be recalculated.">
                                             @csrf @method('DELETE')
+                                            <label class="visually-hidden" for="delete-payment-reason-{{ $transaction->payment->id }}">Reason for deleting payment {{ $peso($transaction->payment->amount) }}</label>
+                                            <input class="form-control form-control-sm" id="delete-payment-reason-{{ $transaction->payment->id }}" name="reason" type="text" minlength="3" maxlength="500" placeholder="Deletion reason (required)" required>
                                             <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                                         </form>
                                     </div>
@@ -240,7 +242,7 @@
     @if($errors->editPayment->any())
         <div class="alert alert-danger" role="alert"><ul class="mb-0 ps-3">@foreach($errors->editPayment->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
-    <form method="POST" enctype="multipart/form-data" id="edit-payment-form" action="" data-submit-once data-confirm-message="Save changes to this payment? The balance will be recalculated.">
+    <form method="POST" enctype="multipart/form-data" id="edit-payment-form" action="" data-password-confirm data-password-message="Confirm your administrator password to edit this payment." data-submit-once data-confirm-message="Save changes to this payment? The balance will be recalculated.">
         @csrf @method('PUT')
         <div class="row g-3">
             <div class="col-sm-6"><label class="form-label" for="edit_payment_date">Payment date</label><input class="form-control" type="date" id="edit_payment_date" name="payment_date" max="{{ now()->toDateString() }}" required></div>
@@ -266,6 +268,8 @@
     .payment-history { min-width: 900px; }
     .payment-history tfoot th { border-top: 1px solid var(--line); background: #f7f9fa; font-size: .8rem; }
     body.dark-mode .payment-history tfoot th { background: #223641; }
+    .payment-delete-form { display: grid; justify-items: end; gap: .25rem; }
+    .payment-delete-form input { width: 11rem; max-width: 100%; }
     .payment-notes { max-width: 260px; overflow-wrap: anywhere; }
     .summary-item .status-badge { font-family: "DM Sans", sans-serif; }
     .refund-panel { border-color: rgba(185, 71, 71, .28); }
