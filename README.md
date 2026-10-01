@@ -87,7 +87,7 @@ Database (SQLite / MySQL)
 
 ## Production security setup
 
-- Keep application secrets in the ignored `.env` file; never commit it. Use a production `APP_ENV`, set `APP_DEBUG=false`, and serve the application over HTTPS with `SESSION_SECURE_COOKIE=true`.
+- Create `.env` separately from the tracked `.env.example` template (copy `.env.example` to `.env`, then fill in deployment-specific values). The `.env` file is local/deployment configuration and must never be included in source control or release packages. Keep application secrets there; use a production `APP_ENV`, set `APP_DEBUG=false`, and serve the application over HTTPS with `SESSION_SECURE_COOKIE=true`.
 - Before first deployment, provision a unique `PRIMARY_ADMIN_SETUP_KEY` with at least 32 characters in the production environment (for example, generate 32 random bytes and encode them as hexadecimal). This key is required to create the first Primary Administrator at `/admin/setup`; keep it private. After setup, remove it from the environment and rebuild Laravel's configuration cache so the cached configuration no longer contains it.
 - Run database migrations during deployment. The migrations add per-account session versions and move any existing contract uploads out of the publicly served storage directory while preserving their stored paths.
 - Keep database files, local/private uploads, backups, and application logs outside the public web root. Restrict production access to the filesystem and database to the application account and authorized operators.
