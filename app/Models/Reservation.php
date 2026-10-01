@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class Reservation extends Model
 {
+    public const STATUS_CONFIRMED = 'confirmed';
+
     /** The single source of truth for how many reservations may hold status = confirmed (Accepted) on the same event date. */
     public const MAX_ACCEPTED_BOOKINGS_PER_DATE = 4;
 
@@ -53,6 +56,16 @@ class Reservation extends Model
             $this->service_contract ? [$this->service_contract] : [],
             $this->service_contracts ?? [],
         )));
+    }
+
+    public function hasCurrentContract(): bool
+    {
+        return $this->contractFiles() !== [];
+    }
+
+    public function scopeOpenAccepted(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_CONFIRMED);
     }
 
     public function client()
@@ -132,12 +145,12 @@ class Reservation extends Model
      * The single definition of "payment due soon" — shared by the admin dashboard's count
      * and the reservation list filter it links to, so the two can never disagree.
      */
-    public function isPaymentDueSoon(\Carbon\Carbon $byDate): bool
+    public function isPaymentDueSoon(\Carbon\Carbon $byDate, ?array $financials = null): bool
     {
         return $this->status === 'confirmed'
             && $this->payment_due_date !== null
             && $this->payment_due_date->lte($byDate)
-            && ($this->remainingBalanceCents() ?? 0) > 0;
+            && (($financials ?? $this->financials())['remaining_balance_cents'] ?? 0) > 0;
     }
 
     public static function toCents(float|int|string|null $amount): int

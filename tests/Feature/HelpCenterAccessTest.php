@@ -67,7 +67,7 @@ class HelpCenterAccessTest extends TestCase
         $response->assertDontSee('Activity/Audit Log');
         $response->assertDontSee('Needs Attention', false);
         $response->assertDontSee('Backups');
-        $response->assertDontSee('Team admins');
+        $response->assertDontSee('Team Admins');
     }
 
     // Authenticated admin: one Support page includes both audiences' help and the admin manual.

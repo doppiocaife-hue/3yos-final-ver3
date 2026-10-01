@@ -14,14 +14,36 @@ class BackupController extends Controller
         $backups = array_map(function (string $name) use ($backupService): array {
             $path = $backupService->pathFor($name);
 
-            return [
+            return array_merge([
                 'name' => $name,
                 'encrypted' => $backupService->isEncrypted($name),
                 'size' => filesize($path) ?: 0,
-            ];
+            ], $backupService->inspect($name));
         }, $backupService->listBackups());
+        usort($backups, static function (array $left, array $right): int {
+            if ($left['sort_timestamp'] === null || $right['sort_timestamp'] === null) {
+                return match (true) {
+                    $left['sort_timestamp'] === null && $right['sort_timestamp'] !== null => 1,
+                    $left['sort_timestamp'] !== null && $right['sort_timestamp'] === null => -1,
+                    default => 0,
+                };
+            }
 
-        return view('admin.backups', compact('backups'));
+            return $right['sort_timestamp'] <=> $left['sort_timestamp'];
+        });
+        $timestampedBackups = array_values(array_filter(
+            $backups,
+            static fn (array $backup): bool => $backup['sort_timestamp'] !== null,
+        ));
+        $latestTimestamp = $timestampedBackups[0]['sort_timestamp'] ?? null;
+        foreach (array_keys($backups) as $index) {
+            $timestamp = $backups[$index]['sort_timestamp'];
+            $backups[$index]['latest'] = $index === 0 && $timestamp !== null;
+            $backups[$index]['older'] = $latestTimestamp !== null && $timestamp !== null && $timestamp < $latestTimestamp;
+        }
+        $currentBackupFormat = $backupService->currentFormat();
+
+        return view('admin.backups', compact('backups', 'currentBackupFormat'));
     }
 
     public function createBackup(Request $request, BackupService $backupService)
@@ -35,7 +57,7 @@ class BackupController extends Controller
             return back()->with('error', 'The database backup could not be created. Check storage permissions and the application log.');
         }
 
-        $this->recordBackupActivity($request, 'Backup created', 'Created encrypted backup '.basename($path).'.');
+        $this->recordBackupActivity($request, 'Backup created', 'Created encrypted '.$backupService->currentFormat()['name'].' backup '.basename($path).'.');
 
         return back()->with('success', 'Database backup created successfully.');
     }
@@ -57,7 +79,11 @@ class BackupController extends Controller
         } catch (\InvalidArgumentException $exception) {
             $this->recordBackupActivity($request, 'Backup upload failed', 'A submitted backup was rejected during verification.');
 
-            return back()->withErrors(['backup_file' => $exception->getMessage()])->withInput();
+            $message = str_contains($exception->getMessage(), 'not compatible')
+                ? 'Backup format is not compatible with the current system.'
+                : $exception->getMessage();
+
+            return back()->withErrors(['backup_file' => $message])->withInput();
         } catch (\Throwable $exception) {
             report($exception);
             $this->recordBackupActivity($request, 'Backup upload failed', 'A submitted backup could not be stored.');
@@ -94,8 +120,11 @@ class BackupController extends Controller
             $restoredRows = $backupService->restore($data['backup']);
         } catch (\InvalidArgumentException $exception) {
             $this->recordBackupActivity($request, 'Backup restore failed', 'Restore verification failed for '.$data['backup'].'.');
+            $message = str_contains($exception->getMessage(), 'not compatible')
+                ? 'Backup format is not compatible with the current system.'
+                : 'This backup could not be verified as compatible. It may be corrupted or modified. No data was restored.';
 
-            return back()->withErrors(['backup' => 'Backup verification failed. The backup may be corrupted or modified, or use an unsupported backup version.'])->withInput(['backup' => $data['backup']]);
+            return back()->withErrors(['backup' => $message])->withInput(['backup' => $data['backup']]);
         } catch (\Throwable $exception) {
             report($exception);
             $this->recordBackupActivity($request, 'Backup restore failed', 'Restore failed for '.$data['backup'].'.');

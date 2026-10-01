@@ -132,6 +132,85 @@ class AdminDashboardCardLinksTest extends TestCase
         $list->assertDontSee('Settled Guest');
     }
 
+    public function test_needs_attention_reservation_links_match_the_exact_live_financial_and_contract_filters(): void
+    {
+        $unpaid = $this->reservation([
+            'status' => 'confirmed',
+            'total_cost' => 5000,
+            'payment_status' => 'Fully Paid',
+            'full_name' => 'Unpaid Attention Guest',
+        ]);
+        $unpaid->update(['service_contract' => 'service-contracts/current-contract.png']);
+
+        $paid = $this->reservation([
+            'status' => 'confirmed',
+            'total_cost' => 5000,
+            'payment_status' => 'Unpaid',
+            'full_name' => 'Paid Guest',
+        ]);
+        $paid->update(['service_contracts' => ['service-contracts/current-contract.png']]);
+        $paid->payments()->create([
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Full Payment',
+            'amount' => 5000,
+            'payment_method' => 'Cash',
+        ]);
+
+        $missingContract = $this->reservation([
+            'status' => 'confirmed',
+            'total_cost' => null,
+            'payment_status' => 'Downpayment',
+            'full_name' => 'Missing Contract Guest',
+        ]);
+
+        $outstanding = $this->reservation([
+            'status' => 'confirmed',
+            'total_cost' => 5000,
+            'service_contracts' => ['service-contracts/current-contract.png'],
+            'full_name' => 'Outstanding Guest',
+        ]);
+        $outstanding->payments()->create([
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'amount' => 1000,
+            'payment_method' => 'Cash',
+        ]);
+
+        $this->reservation([
+            'status' => 'cancelled',
+            'total_cost' => 5000,
+            'full_name' => 'Closed Unpaid Guest',
+        ]);
+
+        $noPaymentList = $this->withSession(self::ADMIN)->get(route('admin.reservations', [
+            'status' => 'confirmed',
+            'attention' => 'no_payment',
+        ]));
+        $noPaymentList->assertOk();
+        $noPaymentList->assertSee('Unpaid Attention Guest');
+        $noPaymentList->assertSee('Missing Contract Guest');
+        $noPaymentList->assertDontSee('Paid Guest');
+        $noPaymentList->assertDontSee('Closed Unpaid Guest');
+
+        $missingContractList = $this->withSession(self::ADMIN)->get(route('admin.reservations', [
+            'status' => 'confirmed',
+            'attention' => 'missing_contract',
+        ]));
+        $missingContractList->assertOk();
+        $missingContractList->assertSee('Missing Contract Guest');
+        $missingContractList->assertDontSee('Paid Guest');
+        $missingContractList->assertDontSee('Outstanding Guest');
+
+        $outstandingList = $this->withSession(self::ADMIN)->get(route('admin.reservations', [
+            'status' => 'confirmed',
+            'attention' => 'outstanding_balance',
+        ]));
+        $outstandingList->assertOk();
+        $outstandingList->assertSee('Outstanding Guest');
+        $outstandingList->assertDontSee('Paid Guest');
+        $outstandingList->assertDontSee('Missing Contract Guest');
+    }
+
     public function test_inquiries_needing_response_card_links_to_needs_attention_view(): void
     {
         Inquiry::create([

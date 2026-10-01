@@ -22,8 +22,8 @@
     <div class="row justify-content-center">
         <div class="col-lg-5 col-md-7">
             <div class="admin-card p-4 p-lg-5">
-                <h1 class="fw-bold mb-2">Reset Team Admin password</h1>
-                <p class="text-muted">Enter your Team Admin email and we will send a password reset link.</p>
+                <h1 class="fw-bold mb-2">Reset Admin Password</h1>
+                <p class="text-muted">Enter your Admin email and we will send a password reset link.</p>
 
                 @if(session('status'))
                     <div class="alert alert-success">{{ session('status') }}</div>
@@ -44,7 +44,7 @@
                 </form>
 
                 <div class="text-center mt-3"><a href="{{ route('admin.login') }}">Back to login</a></div>
-                <p class="small text-muted mt-4 mb-0">Primary admin passwords are managed in the .env file.</p>
+                <p class="small text-muted mt-4 mb-0">Password reset links are available for active Primary Admin and Team Admin accounts.</p>
             </div>
         </div>
     </div>

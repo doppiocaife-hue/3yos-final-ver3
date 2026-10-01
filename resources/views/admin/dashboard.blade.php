@@ -20,13 +20,13 @@
                 <a class="attention-item" href="{{ route('admin.inquiries') }}"><span class="attention-item-label">Inquiries need a response</span><span class="attention-item-count">{{ $needsAttention['inquiries_needing_response'] }}</span></a>
             @endif
             @if($needsAttention['unpaid_accepted'] > 0)
-                <a class="attention-item" href="{{ route('admin.reservations', ['status' => 'confirmed', 'payment_status' => 'Unpaid']) }}"><span class="attention-item-label">Accepted reservations with no payment on file</span><span class="attention-item-count">{{ $needsAttention['unpaid_accepted'] }}</span></a>
+                <a class="attention-item" href="{{ route('admin.reservations', ['status' => 'confirmed', 'attention' => \App\Services\ReservationNeedsAttentionService::NO_PAYMENT]) }}"><span class="attention-item-label">Accepted reservations with no payment on file</span><span class="attention-item-count">{{ $needsAttention['unpaid_accepted'] }}</span></a>
             @endif
             @if($needsAttention['missing_contracts'] > 0)
-                <a class="attention-item" href="{{ route('admin.reservations', ['status' => 'confirmed']) }}"><span class="attention-item-label">Accepted reservations missing a contract</span><span class="attention-item-count">{{ $needsAttention['missing_contracts'] }}</span></a>
+                <a class="attention-item" href="{{ route('admin.reservations', ['status' => 'confirmed', 'attention' => \App\Services\ReservationNeedsAttentionService::MISSING_CONTRACT]) }}"><span class="attention-item-label">Accepted reservations missing a contract</span><span class="attention-item-count">{{ $needsAttention['missing_contracts'] }}</span></a>
             @endif
             @if($needsAttention['outstanding_balances'] > 0)
-                <a class="attention-item" href="{{ route('admin.reservations', ['status' => 'confirmed']) }}"><span class="attention-item-label">Accepted reservations with an outstanding balance</span><span class="attention-item-count">{{ $needsAttention['outstanding_balances'] }}</span></a>
+                <a class="attention-item" href="{{ route('admin.reservations', ['status' => 'confirmed', 'attention' => \App\Services\ReservationNeedsAttentionService::OUTSTANDING_BALANCE]) }}"><span class="attention-item-label">Accepted reservations with an outstanding balance</span><span class="attention-item-count">{{ $needsAttention['outstanding_balances'] }}</span></a>
             @endif
         </div>
     @endif

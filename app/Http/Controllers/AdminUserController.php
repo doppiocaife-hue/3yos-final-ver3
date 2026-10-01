@@ -4,41 +4,130 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\User;
+use App\Services\AdminPasswordVerifier;
 use App\Support\AdminPasswordRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class AdminUserController extends Controller
 {
     public function index(): View
     {
-        return view('admin.users', ['users' => User::orderBy('name')->get()]);
+        return view('admin.users', [
+            'users' => User::orderBy('name')->get(),
+            'currentAdminName' => session('admin_name'),
+        ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, AdminPasswordVerifier $passwordVerifier): RedirectResponse
     {
-        $request->merge(['name' => trim((string) $request->input('name'))]);
+        $currentAdminPassword = $request->input('current_admin_password');
+        $request->request->remove('current_admin_password');
+        $request->json()->remove('current_admin_password');
+        $request->query->remove('current_admin_password');
+        $request->merge([
+            'name' => trim((string) $request->input('name')),
+            'email' => Str::lower(trim((string) $request->input('email'))),
+        ]);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'email' => [
+                'required',
+                'email',
+                'max:255',
+                'unique:users,email',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (is_string($value) && User::query()->whereRaw('LOWER(email) = ?', [$value])->exists()) {
+                        $fail('That email address is already in use.');
+                    }
+                },
+            ],
             'password' => AdminPasswordRules::rules(),
             'role' => ['required', 'in:full,limited'],
-        ]);
+        ], [
+            'email.unique' => 'That email address is already in use.',
+        ] + AdminPasswordRules::messages());
 
-        $roleLabel = $data['role'] === 'full' ? 'Primary admin' : 'Team admin';
+        if (! is_string($currentAdminPassword) || $currentAdminPassword === '') {
+            return back()
+                ->withErrors(['current_admin_password' => 'Enter your current Primary Admin password to authorize creating this administrator.'])
+                ->withInput($request->except(['password', 'password_confirmation', 'current_admin_password']));
+        }
 
-        User::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Hash::make($data['password']),
-            'role' => $data['role'],
-            'is_active' => true,
-        ]);
+        $adminId = $request->session()->get('admin_user_id');
+        $throttleKey = 'admin-account-create:'.$adminId.':'.$request->ip();
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            return back()
+                ->withErrors(['current_admin_password' => 'Too many password confirmation attempts. Please try again in '.ceil(RateLimiter::availableIn($throttleKey) / 60).' minute(s).'])
+                ->withInput($request->except(['password', 'password_confirmation', 'current_admin_password']));
+        }
 
-        return back()->with('success', $roleLabel . ' created successfully.');
+        $roleLabel = $data['role'] === 'full' ? 'Primary Admin' : 'Team Admin';
+
+        $created = DB::transaction(function () use ($request, $data, $currentAdminPassword, $passwordVerifier, $roleLabel): User|string {
+            $actor = User::query()
+                ->whereKey($request->session()->get('admin_user_id'))
+                ->lockForUpdate()
+                ->first();
+
+            if (! $actor
+                || $actor->role !== 'full'
+                || $actor->is_active !== true
+                || (int) $actor->session_version !== (int) $request->session()->get('admin_session_version', 0)) {
+                return 'invalid_session';
+            }
+
+            if (! $passwordVerifier->verifyUser($actor, $currentAdminPassword)) {
+                return 'invalid_password';
+            }
+
+            $newAdmin = User::create([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'password' => Hash::make($data['password']),
+                'role' => $data['role'],
+                'is_active' => true,
+            ]);
+
+            ActivityLog::create([
+                'user_id' => $actor->id,
+                'actor_name' => $actor->name,
+                'actor_email' => $actor->email,
+                'actor_role' => $actor->role,
+                'action' => 'Administrator created',
+                'method' => $request->method(),
+                'ip_address' => $request->ip(),
+                'activity_date' => now()->toDateString(),
+                'activity_time' => now()->toTimeString(),
+                'description' => 'Created '.$roleLabel.' account for '.$newAdmin->name.' ('.$newAdmin->email.').',
+            ]);
+
+            return $newAdmin;
+        });
+
+        if ($created === 'invalid_session') {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('admin.login')->with('error', 'Your Primary Admin session is no longer valid. Please sign in again.');
+        }
+
+        if ($created === 'invalid_password') {
+            RateLimiter::hit($throttleKey, 300);
+
+            return back()
+                ->withErrors(['current_admin_password' => 'Primary Admin password is incorrect.'])
+                ->withInput($request->except(['password', 'password_confirmation', 'current_admin_password']));
+        }
+
+        RateLimiter::clear($throttleKey);
+
+        return back()->with('success', $roleLabel.' created successfully.');
     }
 
     public function updateName(Request $request, User $user): RedirectResponse
@@ -75,7 +164,7 @@ class AdminUserController extends Controller
 
         if (! $enable && $user->role === 'full'
             && User::query()->where('role', 'full')->where('is_active', true)->count() <= 1) {
-            return back()->with('error', 'Cannot disable the last active Primary Administrator. At least one active Primary Administrator is required.');
+            return back()->with('error', 'Cannot disable the last active Primary Admin. At least one active Primary Admin is required.');
         }
 
         if (! $enable && (
@@ -100,7 +189,7 @@ class AdminUserController extends Controller
                     ->count();
 
                 if ($activePrimaryAdmins <= 1) {
-                    return 'Cannot disable the last active Primary Administrator. At least one active Primary Administrator is required.';
+                    return 'Cannot disable the last active Primary Admin. At least one active Primary Admin is required.';
                 }
             }
 
@@ -111,7 +200,7 @@ class AdminUserController extends Controller
             $this->recordManagementActivity(
                 $request,
                 $enable ? 'Enabled administrator' : 'Disabled administrator',
-                ($request->session()->get('admin_name', 'Primary Administrator'))
+                ($request->session()->get('admin_name', 'Primary Admin'))
                     .' '.($enable ? 'enabled ' : 'disabled ')
                     .$this->targetRoleLabel($lockedUser).' '.$lockedUser->name.'.'
             );
@@ -130,7 +219,7 @@ class AdminUserController extends Controller
     {
         $data = $request->validate([
             'password' => AdminPasswordRules::rules(),
-        ]);
+        ], AdminPasswordRules::messages());
 
         $user->update([
             'password' => Hash::make($data['password']),
@@ -160,6 +249,6 @@ class AdminUserController extends Controller
 
     private function targetRoleLabel(User $user): string
     {
-        return $user->role === 'full' ? 'Primary Administrator' : 'Team Admin';
+        return $user->role === 'full' ? 'Primary Admin' : 'Team Admin';
     }
 }

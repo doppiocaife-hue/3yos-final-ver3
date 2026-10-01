@@ -7,8 +7,8 @@
             <div class="admin-card p-4 p-lg-5">
                 <div class="text-center mb-4">
                     <span class="hero-badge">First-time system setup</span>
-                    <h1 class="fw-bold mt-3 mb-2">Create Primary Administrator</h1>
-                    <p class="text-muted mb-0">Set up the administrator account that will manage the 3YOS Catering Management System. Use an email controlled by the beneficiary and keep the password private. Setup cannot be repeated once a Primary Administrator exists.</p>
+                    <h1 class="fw-bold mt-3 mb-2">Create Primary Admin</h1>
+                    <p class="text-muted mb-0">Set up the administrator account that will manage the 3YOS Catering Management System. Use an email address you control and keep the password private. Setup cannot be repeated once a Primary Admin exists.</p>
                 </div>
 
                 @if(session('error'))
@@ -16,10 +16,10 @@
                 @endif
 
                 @if($setupComplete)
-                    <div class="alert alert-info" role="status">Primary Administrator setup has already been completed.</div>
+                    <div class="alert alert-info" role="status">Primary Admin setup has already been completed.</div>
                     <a href="{{ route('admin.login') }}" class="btn btn-primary w-100 py-2">Go to Admin Login</a>
                 @elseif(!$setupAvailable)
-                    <div class="alert alert-info" role="status">Primary Administrator setup is not available. Contact the system administrator.</div>
+                    <div class="alert alert-info" role="status">Primary Admin setup is not available. Contact the system administrator.</div>
                     <a href="{{ route('admin.login') }}" class="btn btn-primary w-100 py-2">Go to Admin Login</a>
                 @else
                     @if($errors->any())
@@ -46,15 +46,15 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label" for="setup-password">Password</label>
-                            <input id="setup-password" name="password" type="password" class="form-control @error('password') is-invalid @enderror" autocomplete="new-password" required>
-                            <div class="form-text">Use at least 12 characters with uppercase and lowercase letters, a number, and a symbol.</div>
-                            @error('password')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            <input id="setup-password" name="password" type="password" class="form-control @error('password') is-invalid @enderror" autocomplete="new-password" minlength="{{ \App\Support\AdminPasswordRules::minimumLength() }}" aria-invalid="@error('password') true @else false @enderror" aria-describedby="setup-password-help @error('password') setup-password-error @enderror" required>
+                            <div class="form-text" id="setup-password-help">{{ \App\Support\AdminPasswordRules::helperText() }}</div>
+                            @error('password')<div class="invalid-feedback" id="setup-password-error" role="alert">{{ $message }}</div>@enderror
                         </div>
                         <div class="mb-4">
                             <label class="form-label" for="setup-password-confirmation">Confirm Password</label>
-                            <input id="setup-password-confirmation" name="password_confirmation" type="password" class="form-control" autocomplete="new-password" required>
+                            <input id="setup-password-confirmation" name="password_confirmation" type="password" class="form-control" autocomplete="new-password" minlength="{{ \App\Support\AdminPasswordRules::minimumLength() }}" required>
                         </div>
-                        <button type="submit" class="btn btn-primary w-100 py-2">Create Primary Administrator</button>
+                        <button type="submit" class="btn btn-primary w-100 py-2">Create Primary Admin</button>
                     </form>
                 @endif
             </div>

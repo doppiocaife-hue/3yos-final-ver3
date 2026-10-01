@@ -20,7 +20,7 @@ class CaptureActivity
             && $request->hasAny($reservationDetailFields)
             && ! $request->hasAny(['payment_status', 'payment_type', 'amount_paid', 'total_cost', 'admin_notes']);
         $isBackupAction = $request->routeIs('admin.backups*');
-        $isExplicitlyAuditedAdminManagement = $request->routeIs('admin.users.update-name', 'admin.users.status');
+        $isExplicitlyAuditedAdminManagement = $request->routeIs('admin.users.store', 'admin.users.update-name', 'admin.users.status');
 
         if (($request->is('admin/*') || $request->is('admin')) && $request->session()->get('is_admin') && ! $request->isMethod('GET') && ! $isReservationDetailUpdate && ! $isBackupAction && ! $isExplicitlyAuditedAdminManagement) {
             ActivityLog::create([
@@ -78,7 +78,6 @@ class CaptureActivity
             'admin.gallery.store' => 'Added gallery item “' . $request->input('title') . '”.',
             'admin.gallery.update' => 'Updated gallery item “' . $request->route('gallery')?->title . '”: ' . $this->changedFields($request, ['title', 'event_type', 'description', 'image', 'is_featured']) . '.',
             'admin.gallery.destroy' => 'Deleted gallery item “' . $request->route('gallery')?->title . '”.',
-            'admin.users.store' => 'Created a Team Admin account for ' . $request->input('email') . '.',
             default => $request->method() . ' ' . $request->path(),
         };
     }

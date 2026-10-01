@@ -56,7 +56,7 @@
         <a class="nav-link {{ request()->routeIs('admin.gallery.*') ? 'active' : '' }}" href="{{ route('admin.gallery.index') }}" @if(request()->routeIs('admin.gallery.*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg></span><span>Gallery</span></a>
         <a class="nav-link {{ request()->routeIs('admin.analytics') ? 'active' : '' }}" href="{{ route('admin.analytics') }}" @if(request()->routeIs('admin.analytics')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V5M4 20h17"/><path d="m7 15 4-4 3 2 6-7"/><circle cx="7" cy="15" r=".7"/><circle cx="11" cy="11" r=".7"/><circle cx="14" cy="13" r=".7"/><circle cx="20" cy="6" r=".7"/></svg></span><span>Analytics</span></a>
         <a class="nav-link {{ request()->routeIs('admin.reports*') ? 'active' : '' }}" href="{{ route('admin.reports') }}" @if(request()->routeIs('admin.reports*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 20V3.5Z"/><path d="M14 3.5v5h5M9 13h6M9 16.5h6"/></svg></span><span>Reports</span></a>
-        <a class="nav-link {{ request()->routeIs('admin.users') ? 'active' : '' }}" href="{{ route('admin.users') }}" @if(request()->routeIs('admin.users')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0M16 5a3.4 3.4 0 0 1 0 6.7M17.3 14.2a5.8 5.8 0 0 1 4 5.3"/></svg></span><span>Team admins</span></a>
+        <a class="nav-link {{ request()->routeIs('admin.users') ? 'active' : '' }}" href="{{ route('admin.users') }}" @if(request()->routeIs('admin.users')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0M16 5a3.4 3.4 0 0 1 0 6.7M17.3 14.2a5.8 5.8 0 0 1 4 5.3"/></svg></span><span>Team Admins</span></a>
         <a class="nav-link {{ request()->routeIs('admin.activity-logs') ? 'active' : '' }}" href="{{ route('admin.activity-logs') }}" @if(request()->routeIs('admin.activity-logs')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg></span><span>Activity logs</span></a>
         <div class="nav-caption mt-3">System</div>
         <a class="nav-link {{ request()->routeIs('admin.backups') ? 'active' : '' }}" href="{{ route('admin.backups') }}" @if(request()->routeIs('admin.backups')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6M4 11.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/><path d="M4 17.5c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span><span>Backups</span></a>
@@ -84,13 +84,14 @@
 </div></div>
 <dialog id="admin-password-dialog" aria-labelledby="admin-password-title" style="width:min(440px,calc(100vw - 2rem));padding:1.35rem;border:1px solid var(--line);border-radius:12px;color:var(--ink);background:var(--surface);box-shadow:0 18px 48px rgba(0,0,0,.24)">
     <h2 id="admin-password-title" class="h5 mb-2">Confirm administrator password</h2>
+    <p id="admin-password-current-admin" class="small mb-2" hidden></p>
     <p id="admin-password-message" class="text-muted mb-3"></p>
     <form id="admin-password-dialog-form">
-        <label for="admin-password-input" class="form-label">Administrator password</label>
+        <label id="admin-password-label" for="admin-password-input" class="form-label">Administrator password</label>
         <input id="admin-password-input" type="password" class="form-control" autocomplete="current-password" required>
         <div class="d-flex justify-content-end gap-2 mt-4">
             <button type="button" id="admin-password-cancel" class="btn btn-outline-secondary">Cancel</button>
-            <button type="submit" class="btn luxury-btn">Continue</button>
+            <button id="admin-password-submit" type="submit" class="btn luxury-btn">Continue</button>
         </div>
     </form>
 </dialog>
@@ -211,6 +212,10 @@ document.querySelectorAll('form input:not([type="hidden"]), form select, form te
     const dialogForm = document.getElementById('admin-password-dialog-form');
     const passwordInput = document.getElementById('admin-password-input');
     const passwordMessage = document.getElementById('admin-password-message');
+    const passwordTitle = document.getElementById('admin-password-title');
+    const passwordLabel = document.getElementById('admin-password-label');
+    const passwordSubmit = document.getElementById('admin-password-submit');
+    const currentAdmin = document.getElementById('admin-password-current-admin');
     let pendingForm = null;
     let pendingSubmitter = null;
 
@@ -225,6 +230,13 @@ document.querySelectorAll('form input:not([type="hidden"]), form select, form te
         event.preventDefault();
         pendingForm = form;
         pendingSubmitter = event.submitter;
+        passwordTitle.textContent = form.dataset.passwordTitle || 'Confirm administrator password';
+        passwordLabel.textContent = form.dataset.passwordLabel || 'Administrator password';
+        passwordSubmit.textContent = form.dataset.passwordButton || 'Continue';
+        currentAdmin.hidden = !form.dataset.currentAdminName;
+        currentAdmin.textContent = form.dataset.currentAdminName
+            ? `Currently authenticated Primary Admin: ${form.dataset.currentAdminName}`
+            : '';
         passwordMessage.textContent = form.dataset.passwordMessage || 'Confirm your administrator password to continue.';
         passwordInput.value = '';
         dialog.showModal();

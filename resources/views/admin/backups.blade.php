@@ -5,11 +5,14 @@
     <div class="page-header">
         <div>
             <h1 class="fw-bold mb-1">Backups</h1>
-            <p class="text-muted mb-0">Backups are encrypted before storage. Encrypted backups are verified and decrypted securely before restoration.</p>
+            <p class="text-muted mb-0">Backups are encrypted before storage. Restoring replaces supported business data while preserving administrator accounts, sessions, and existing audit history.</p>
         </div>
-        <div class="page-actions">
-            <form method="POST" action="{{ route('admin.backups.create') }}">@csrf<button class="btn btn-primary" type="submit">Create Backup</button></form>
-            <button class="btn btn-outline-primary" type="button" id="upload-backup-trigger">Upload Backup</button>
+        <div class="backup-page-controls">
+            @include('admin.partials.backup-format-indicator', ['currentBackupFormat' => $currentBackupFormat])
+            <div class="page-actions">
+                <form method="POST" action="{{ route('admin.backups.create') }}">@csrf<button class="btn btn-primary" type="submit">Create Backup</button></form>
+                <button class="btn btn-outline-primary" type="button" id="upload-backup-trigger">Upload Backup</button>
+            </div>
         </div>
     </div>
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
@@ -20,14 +23,34 @@
                 <div class="backup-row">
                     <div>
                         <strong>{{ $backup['name'] }}</strong>
+                        @if($backup['latest'])
+                            <span class="badge text-bg-primary">Latest</span>
+                        @endif
                         <small class="d-block text-muted">{{ number_format($backup['size'] / 1024, 1) }} KB</small>
+                        <div class="backup-metadata">
+                            <span>{{ $backup['format'] }}</span>
+                            @if($backup['older'])
+                                <span aria-hidden="true">·</span>
+                                <span>Older backup</span>
+                            @endif
+                            @if($backup['legacy'] && $backup['format'] !== 'Legacy format')
+                                <span aria-hidden="true">·</span>
+                                <span>Legacy format</span>
+                            @endif
+                        </div>
+                        <small class="d-block {{ $backup['compatible'] ? 'text-muted' : 'text-danger' }}">
+                            {{ $backup['compatible'] ? 'Compatible' : 'Not compatible with current system' }}
+                        </small>
+                        <small class="d-block text-muted">
+                            Created: {{ $backup['created_at']?->format('F j, Y \a\t g:i A') ?? ($backup['legacy'] ? 'Legacy backup — date unavailable' : 'Date unavailable') }}
+                        </small>
                         <span class="badge {{ $backup['encrypted'] ? 'text-bg-success' : 'text-bg-warning' }}">
                             {{ $backup['encrypted'] ? 'Encrypted' : 'Legacy · Unencrypted' }}
                         </span>
                     </div>
                     <div class="backup-actions">
                         <form method="POST" action="{{ route('admin.backups.download') }}">@csrf<input type="hidden" name="backup" value="{{ $backup['name'] }}"><button class="btn btn-sm btn-outline-secondary" type="submit">Download</button></form>
-                        <form method="POST" action="{{ route('admin.backups.restore') }}" data-requires-password data-password-message="Restore this backup? Current database data will be replaced." @if(!$backup['encrypted']) data-legacy-backup @endif>@csrf<input type="hidden" name="backup" value="{{ $backup['name'] }}"><button class="btn btn-sm btn-outline-danger" type="submit">Restore</button></form>
+                        <form method="POST" action="{{ route('admin.backups.restore') }}" data-requires-password data-password-message="Restore business data from this backup? Supported business records will be replaced. Administrator accounts, sessions, and existing audit history will be preserved." @if(!$backup['encrypted']) data-legacy-backup @endif>@csrf<input type="hidden" name="backup" value="{{ $backup['name'] }}"><button class="btn btn-sm btn-outline-danger" type="submit" @disabled(!$backup['compatible']) title="{{ $backup['compatible'] ? 'Restore business data from this backup' : 'This backup cannot be restored because it is not compatible.' }}">Restore</button></form>
                         <form method="POST" action="{{ route('admin.backups.delete') }}" data-requires-password data-password-message="Permanently delete this backup? This cannot be undone.">@csrf @method('DELETE')<input type="hidden" name="backup" value="{{ $backup['name'] }}"><button class="btn btn-sm btn-outline-danger" type="submit">Delete</button></form>
                     </div>
                 </div>
@@ -140,5 +163,5 @@
     });
 })();
 </script>
-<style>.backup-list{display:grid;gap:.75rem}.backup-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.85rem 0;border-bottom:1px solid var(--line)}.backup-row:last-child{border-bottom:0}.backup-row strong{font-size:.85rem}.backup-actions{display:flex;gap:.5rem;flex-wrap:wrap}.backup-actions form{margin:0}@media(max-width:575px){.backup-row{align-items:flex-start;flex-direction:column}.backup-actions{width:100%}.backup-actions form,.backup-actions .btn{flex:1;width:100%}}</style>
+<style>.backup-list{display:grid;gap:.75rem}.backup-page-controls{display:flex;flex:0 1 auto;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:.75rem 1rem;min-width:0}.backup-format-indicator{display:flex;flex-wrap:wrap;align-items:baseline;gap:.25rem .4rem;min-width:0;padding:.35rem .65rem;border:1px solid var(--line);border-radius:var(--radius-sm, .5rem);background:var(--surface);color:var(--ink);font-size:.8rem;line-height:1.35}.backup-format-indicator strong{font-size:inherit}.backup-format-current{color:var(--muted);font-size:.75rem}.backup-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.85rem 0;border-bottom:1px solid var(--line)}.backup-row:last-child{border-bottom:0}.backup-row strong{font-size:.85rem}.backup-metadata{display:flex;flex-wrap:wrap;align-items:center;gap:.2rem .35rem;margin-top:.2rem;color:var(--ink);font-size:.8rem}.backup-actions{display:flex;gap:.5rem;flex-wrap:wrap}.backup-actions form{margin:0}@media(max-width:575px){.backup-page-controls{flex:1 1 100%;justify-content:flex-start}.backup-page-controls .page-actions{width:100%}.backup-row{align-items:flex-start;flex-direction:column}.backup-actions{width:100%}.backup-actions form,.backup-actions .btn{flex:1;width:100%}}</style>
 @endsection

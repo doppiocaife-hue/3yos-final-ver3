@@ -12,6 +12,11 @@ class EnsureAdmin
     public function handle(Request $request, Closure $next): Response
     {
         if (! $request->session()->get('is_admin', false)) {
+            if ($request->routeIs('admin.dashboard')
+                && ! User::query()->where('role', 'full')->exists()) {
+                return redirect()->route('admin.setup');
+            }
+
             return redirect()->route('admin.login')->with('error', 'You need admin access to continue.');
         }
 
@@ -26,7 +31,7 @@ class EnsureAdmin
             return redirect()->route('admin.login')->with(
                 'error',
                 $user && $user->is_active !== true
-                    ? 'Your administrator account has been disabled. Please contact a primary administrator.'
+                    ? 'Your administrator account has been disabled. Please contact a Primary Admin.'
                     : 'Your administrator session has expired. Please sign in again.'
             );
         }

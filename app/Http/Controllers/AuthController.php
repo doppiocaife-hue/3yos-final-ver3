@@ -17,13 +17,19 @@ use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
-    public function showLoginForm()
+    public function showLoginForm(Request $request)
     {
-        return view('admin.login', ['setupAvailable' => ! $this->hasPrimaryAdmin() && $this->hasSetupKey()]);
+        return view('admin.login', [
+            'setupAvailable' => ! $this->hasPrimaryAdmin()
+                && $this->hasSetupKey()
+                && ! $this->isTeamAdminSession($request),
+        ]);
     }
 
-    public function showPrimaryAdminSetup()
+    public function showPrimaryAdminSetup(Request $request)
     {
+        abort_if($this->isTeamAdminSession($request), 403);
+
         return view('admin.setup', [
             'setupComplete' => $this->hasPrimaryAdmin(),
             'setupAvailable' => $this->hasSetupKey(),
@@ -32,12 +38,14 @@ class AuthController extends Controller
 
     public function createPrimaryAdmin(Request $request)
     {
+        abort_if($this->isTeamAdminSession($request), 403);
+
         if ($this->hasPrimaryAdmin()) {
-            return redirect()->route('admin.setup')->with('error', 'Primary Administrator setup has already been completed.');
+            return redirect()->route('admin.setup')->with('error', 'Primary Admin setup has already been completed.');
         }
 
         if (! $this->hasSetupKey()) {
-            return redirect()->route('admin.setup')->with('error', 'Primary Administrator setup is not available. Contact the system administrator.');
+            return redirect()->route('admin.setup')->with('error', 'Primary Admin setup is not available. Contact the system administrator.');
         }
 
         $providedSetupKey = $request->input('setup_key');
@@ -68,19 +76,19 @@ class AuthController extends Controller
                     }
 
                     if (User::query()->whereRaw('LOWER(email) = ?', [$value])->exists()) {
-                        $fail('The email address has already been taken.');
+                        $fail('That email address is already in use.');
                     }
                 },
             ],
             'password' => AdminPasswordRules::rules(),
-        ]);
+        ], AdminPasswordRules::messages());
 
         try {
             $user = Cache::lock('3yos-primary-admin-initial-setup', 30)->block(5, function () use ($data): User {
                 return DB::transaction(function () use ($data): User {
                     $primaryAdmins = User::query()->where('role', 'full')->lockForUpdate()->exists();
                     if ($primaryAdmins) {
-                        throw new \DomainException('Primary Administrator setup has already been completed.');
+                        throw new \DomainException('Primary Admin setup has already been completed.');
                     }
 
                     User::query()->lockForUpdate()->orderBy('id')->get(['id']);
@@ -98,24 +106,24 @@ class AuthController extends Controller
                         'actor_name' => $user->name,
                         'actor_email' => $user->email,
                         'actor_role' => 'full',
-                        'action' => 'Primary Administrator account created',
+                        'action' => 'Primary Admin account created',
                         'method' => 'POST',
                         'ip_address' => request()->ip(),
                         'activity_date' => now()->toDateString(),
                         'activity_time' => now()->toTimeString(),
-                        'description' => 'Initial Primary Administrator account created during system setup.',
+                        'description' => 'Initial Primary Admin account created during system setup.',
                     ]);
 
                     return $user;
                 });
             });
         } catch (LockTimeoutException) {
-            return back()->with('error', 'Primary Administrator setup is busy. Please try again.');
+            return back()->with('error', 'Primary Admin setup is busy. Please try again.');
         } catch (\DomainException) {
-            return redirect()->route('admin.setup')->with('error', 'Primary Administrator setup has already been completed.');
+            return redirect()->route('admin.setup')->with('error', 'Primary Admin setup has already been completed.');
         }
 
-        return redirect()->route('admin.login')->with('success', 'Primary Administrator created successfully. Please sign in.');
+        return redirect()->route('admin.login')->with('success', 'Primary Admin created successfully. Please sign in.');
     }
 
     public function login(Request $request)
@@ -147,7 +155,7 @@ class AuthController extends Controller
 
             return back()->withInput($request->only('email'))->with(
                 'error',
-                'Your administrator account has been disabled. Please contact a primary administrator.'
+                'Your administrator account has been disabled. Please contact a Primary Admin.'
             );
         }
 
@@ -205,7 +213,7 @@ class AuthController extends Controller
             'token' => ['required'],
             'email' => ['required', 'email'],
             'password' => AdminPasswordRules::rules(),
-        ]);
+        ], AdminPasswordRules::messages());
 
         $status = Password::reset($request->only('email', 'password', 'password_confirmation', 'token'), function (User $user, string $password) {
             $user->forceFill([
@@ -262,6 +270,15 @@ class AuthController extends Controller
     private function hasPrimaryAdmin(): bool
     {
         return User::query()->where('role', 'full')->exists();
+    }
+
+    private function isTeamAdminSession(Request $request): bool
+    {
+        $adminUserId = $request->session()->get('admin_user_id');
+
+        return $request->session()->get('is_admin', false)
+            && $adminUserId !== null
+            && User::query()->whereKey($adminUserId)->where('role', 'limited')->exists();
     }
 
     private function hasSetupKey(): bool

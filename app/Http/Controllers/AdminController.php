@@ -14,6 +14,7 @@ use App\Models\ReservationPayment;
 use App\Models\ReservationRefund;
 use App\Models\ReservationStatusNotification;
 use App\Models\Service;
+use App\Services\ReservationNeedsAttentionService;
 use App\Services\ReservationFinancialService;
 use Illuminate\Database\Eloquent\Builder;
 use Carbon\Carbon;
@@ -27,7 +28,7 @@ use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class AdminController extends Controller
 {
-    public function index()
+    public function index(ReservationNeedsAttentionService $needsAttentionService)
     {
         $reservationCount = Reservation::count();
         $inquiryCount = Inquiry::count();
@@ -49,7 +50,7 @@ class AdminController extends Controller
             ])
             ->values();
 
-        [$needsAttention, $todaySection, $businessOverview] = $this->buildDashboardInsights();
+        [$needsAttention, $todaySection, $businessOverview] = $this->buildDashboardInsights($needsAttentionService);
 
         return view('admin.dashboard', compact(
             'reservationCount', 'inquiryCount', 'serviceCount', 'packageCount', 'calendarEvents',
@@ -62,10 +63,12 @@ class AdminController extends Controller
      * ("needs attention"), this week's schedule ("today"), and lifetime aggregate KPIs
      * ("business overview") — so aggregate totals are never mislabeled as today's activity.
      */
-    private function buildDashboardInsights(): array
+    private function buildDashboardInsights(ReservationNeedsAttentionService $needsAttentionService): array
     {
         $reservations = Reservation::with('payments', 'refunds')->get();
-        $confirmed = $reservations->where('status', 'confirmed');
+        $attentionAnalysis = $needsAttentionService->analyze($reservations);
+        $financials = $attentionAnalysis['financials'];
+        $confirmed = $reservations->where('status', Reservation::STATUS_CONFIRMED);
         // Canonical "needs a response" definition — shared with the inquiries inbox's own
         // Needs Attention section and its ?view=needs_attention filter, so the dashboard count
         // and the list it links to can never disagree.
@@ -74,9 +77,9 @@ class AdminController extends Controller
         $needsAttention = [
             'pending_reservations' => $reservations->where('status', 'pending')->count(),
             'inquiries_needing_response' => $inquiriesNeedingResponse,
-            'unpaid_accepted' => $confirmed->filter(fn (Reservation $r) => in_array($r->payment_status, [null, 'Unpaid'], true))->count(),
-            'missing_contracts' => $confirmed->filter(fn (Reservation $r) => empty($r->contractFiles()))->count(),
-            'outstanding_balances' => $confirmed->filter(fn (Reservation $r) => ($r->financials()['remaining_balance_cents'] ?? 0) > 0)->count(),
+            'unpaid_accepted' => $attentionAnalysis['counts'][ReservationNeedsAttentionService::NO_PAYMENT],
+            'missing_contracts' => $attentionAnalysis['counts'][ReservationNeedsAttentionService::MISSING_CONTRACT],
+            'outstanding_balances' => $attentionAnalysis['counts'][ReservationNeedsAttentionService::OUTSTANDING_BALANCE],
         ];
 
         $weekAhead = now()->addDays(7)->endOfDay();
@@ -86,23 +89,25 @@ class AdminController extends Controller
             'upcoming_events' => $scheduled->filter(fn (Reservation $r) => Carbon::parse($r->event_date)->isFuture() && ! Carbon::parse($r->event_date)->isToday() && Carbon::parse($r->event_date)->lte($weekAhead))->count(),
             // Reservation::isPaymentDueSoon() is the single source of truth for this figure —
             // also used by reservations() when the dashboard card links through with ?payment_due=soon.
-            'payments_due' => $confirmed->filter(fn (Reservation $r) => $r->isPaymentDueSoon($weekAhead))->count(),
+            'payments_due' => $confirmed->filter(fn (Reservation $r) => $financials[$r->id] !== null
+                && $r->isPaymentDueSoon($weekAhead, $financials[$r->id]))->count(),
             'inquiries_needing_response' => $inquiriesNeedingResponse,
         ];
 
         $businessOverview = [
             'total_reservations' => $reservations->count(),
             'total_inquiries' => Inquiry::count(),
-            'revenue' => $reservations->sum(fn (Reservation $r) => $r->financials()['net_paid_cents']) / 100,
-            'outstanding_balance' => $reservations->sum(fn (Reservation $r) => $r->financials()['remaining_balance_cents'] ?? 0) / 100,
+            'revenue' => $reservations->sum(fn (Reservation $r) => $financials[$r->id]['net_paid_cents'] ?? 0) / 100,
+            'outstanding_balance' => $reservations->sum(fn (Reservation $r) => $financials[$r->id]['remaining_balance_cents'] ?? 0) / 100,
             'completed_events' => $reservations->where('status', 'completed')->count(),
         ];
 
         return [$needsAttention, $todaySection, $businessOverview];
     }
 
-    public function reservations(Request $request)
+    public function reservations(Request $request, ?ReservationNeedsAttentionService $needsAttentionService = null)
     {
+        $needsAttentionService ??= app(ReservationNeedsAttentionService::class);
         $status = $request->input('status');
         $paymentStatus = $request->input('payment_status');
         $search = $request->input('search');
@@ -112,8 +117,17 @@ class AdminController extends Controller
         // the plain `status` dropdown so that control's own single-value binding stays untouched.
         $scope = $request->input('scope');
         $paymentDueSoon = $request->input('payment_due') === 'soon';
+        $attentionFilter = $request->input('attention');
 
         $query = Reservation::with('client', 'package', 'payments', 'refunds')->latest();
+
+        if (in_array($attentionFilter, [
+            ReservationNeedsAttentionService::NO_PAYMENT,
+            ReservationNeedsAttentionService::MISSING_CONTRACT,
+            ReservationNeedsAttentionService::OUTSTANDING_BALANCE,
+        ], true)) {
+            $query->whereIn('id', $needsAttentionService->reservationIds()[$attentionFilter]);
+        }
 
         if ($status && in_array($status, ['pending', 'confirmed', 'completed', 'cancelled'], true)) {
             $query->where('status', $status);
@@ -143,10 +157,14 @@ class AdminController extends Controller
             // Reservation::isPaymentDueSoon() is the same predicate buildDashboardInsights() counts
             // for the "Payments due soon" card, so the card and this list can never disagree.
             $weekAhead = now()->addDays(7)->endOfDay();
-            $dueSoonIds = Reservation::with('payments', 'refunds')
-                ->where('status', 'confirmed')
-                ->get()
-                ->filter(fn (Reservation $r) => $r->isPaymentDueSoon($weekAhead))
+            $acceptedReservations = Reservation::query()
+                ->openAccepted()
+                ->with(['payments', 'refunds'])
+                ->get();
+            $financials = $needsAttentionService->analyze($acceptedReservations)['financials'];
+            $dueSoonIds = $acceptedReservations
+                ->filter(fn (Reservation $r) => $financials[$r->id] !== null
+                    && $r->isPaymentDueSoon($weekAhead, $financials[$r->id]))
                 ->pluck('id');
             $query->whereIn('id', $dueSoonIds);
         }

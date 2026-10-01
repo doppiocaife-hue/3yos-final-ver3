@@ -27,6 +27,35 @@ class AdminPasswordResetSecurityTest extends TestCase
         Notification::assertSentTo($admin, \Illuminate\Auth\Notifications\ResetPassword::class);
     }
 
+    public function test_password_reset_page_shows_the_shared_password_policy(): void
+    {
+        $admin = User::factory()->create(['role' => 'full', 'is_active' => true]);
+        $token = Password::broker()->createToken($admin);
+
+        $this->get(route('password.reset', ['token' => $token, 'email' => $admin->email]))
+            ->assertOk()
+            ->assertSee('At least 12 characters. Include uppercase and lowercase letters, a number, and a symbol.')
+            ->assertSee('minlength="12"', false);
+    }
+
+    public function test_password_reset_rejects_password_shorter_than_the_shared_policy(): void
+    {
+        $admin = User::factory()->create(['role' => 'full', 'is_active' => true]);
+        $token = Password::broker()->createToken($admin);
+
+        $this->from(route('password.reset', ['token' => $token, 'email' => $admin->email]))
+            ->followingRedirects()
+            ->post(route('password.update'), [
+                'email' => $admin->email,
+                'token' => $token,
+                'password' => 'Strong#Pas2',
+                'password_confirmation' => 'Strong#Pas2',
+            ])
+            ->assertOk()
+            ->assertSee('The password field must be at least 12 characters.')
+            ->assertSee('At least 12 characters. Include uppercase and lowercase letters, a number, and a symbol.');
+    }
+
     public function test_password_reset_revokes_existing_admin_sessions(): void
     {
         $admin = User::factory()->create([

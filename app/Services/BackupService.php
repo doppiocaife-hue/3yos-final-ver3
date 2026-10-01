@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Carbon\Carbon;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +13,20 @@ use Illuminate\Support\Str;
 class BackupService
 {
     private const TABLES = [
+        'services',
+        'packages',
+        'clients',
+        'reservations',
+        'reservation_payments',
+        'reservation_refunds',
+        'inquiries',
+        'activity_logs',
+        'settings',
+        'notification_templates',
+        'gallery_items',
+    ];
+
+    private const LEGACY_TABLES = [
         'users',
         'services',
         'packages',
@@ -27,23 +42,75 @@ class BackupService
     ];
 
     private const MAX_UPLOAD_SIZE = 20 * 1024 * 1024;
-    private const BACKUP_VERSION = 1;
+    public const BACKUP_FORMAT = '3YOS_JSON_BACKUP';
+
+    public const BACKUP_VERSION = 2;
+
+    public function currentFormat(): array
+    {
+        return [
+            'name' => 'JSON v'.self::BACKUP_VERSION,
+            'identifier' => self::BACKUP_FORMAT,
+            'version' => self::BACKUP_VERSION,
+        ];
+    }
+
+    public function inspect(string $backup): array
+    {
+        $path = $this->pathFor($backup);
+
+        try {
+            $contents = $this->readBackup($backup);
+        } catch (\InvalidArgumentException) {
+            return [
+                'format' => 'Unknown format',
+                'legacy' => false,
+                'compatible' => false,
+                'created_at' => null,
+                'sort_timestamp' => null,
+            ];
+        }
+
+        $hasVersion = array_key_exists('backup_version', $contents);
+        $version = $contents['backup_version'] ?? null;
+        $hasKnownFormat = ! array_key_exists('backup_format', $contents)
+            || $contents['backup_format'] === self::BACKUP_FORMAT;
+        $format = $hasVersion && (is_int($version) || is_string($version)) && $hasKnownFormat
+            ? 'JSON v'.$version
+            : (! $hasVersion && $this->isRecognizedLegacyBackup($contents) ? 'Legacy format' : 'Unknown format');
+
+        $createdAt = null;
+        if (isset($contents['created_at'])
+            && is_string($contents['created_at'])
+            && preg_match('/(?:Z|[+-]\d{2}:\d{2})$/i', $contents['created_at']) === 1) {
+            try {
+                $createdAt = Carbon::parse($contents['created_at'])->setTimezone(config('app.timezone'));
+            } catch (\Exception) {
+                $createdAt = null;
+            }
+        }
+
+        try {
+            $this->assertBackupCompatible($contents);
+            $compatible = true;
+        } catch (\InvalidArgumentException) {
+            $compatible = false;
+        }
+
+        return [
+            'format' => $format,
+            'legacy' => ! $hasVersion || (is_numeric($version) && (float) $version < self::BACKUP_VERSION),
+            'compatible' => $compatible,
+            'created_at' => $createdAt,
+            'sort_timestamp' => $createdAt === null ? null : (float) $createdAt->format('U.u'),
+        ];
+    }
 
     public function create(): string
     {
-        $filename = 'backup-'.now()->format('YmdHis');
-        $directory = $this->privateBackupDirectory();
-        $this->ensureDirectory($directory);
-
-        $path = $directory.'/'.$filename.'.json.enc';
-        $suffix = 1;
-        while (is_file($path)) {
-            $path = $directory.'/'.$filename.'-'.$suffix++.'.json.enc';
-        }
-
         $contents = [
+            'backup_format' => self::BACKUP_FORMAT,
             'backup_version' => self::BACKUP_VERSION,
-            'created_at' => now()->toIso8601String(),
             'tables' => [],
         ];
 
@@ -51,6 +118,19 @@ class BackupService
             if (Schema::hasTable($table)) {
                 $contents['tables'][$table] = DB::table($table)->get()->map(fn ($row) => (array) $row)->all();
             }
+        }
+
+        $createdAt = now(config('app.timezone'));
+        $contents['created_at'] = $createdAt->format('Y-m-d\TH:i:s.uP');
+
+        $filename = 'backup-'.$createdAt->format('YmdHis');
+        $directory = $this->privateBackupDirectory();
+        $this->ensureDirectory($directory);
+
+        $path = $directory.'/'.$filename.'.json.enc';
+        $suffix = 1;
+        while (is_file($path)) {
+            $path = $directory.'/'.$filename.'-'.$suffix++.'.json.enc';
         }
 
         $json = json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
@@ -72,6 +152,9 @@ class BackupService
         $contents = $this->decodeBackup($file);
         $this->assertBackupCompatible($contents);
 
+        $contents['tables'] = $this->detachArchivedUserReferences($contents['tables']);
+        unset($contents['tables']['users']);
+
         $directory = $this->privateBackupDirectory();
         $this->ensureDirectory($directory);
 
@@ -82,6 +165,7 @@ class BackupService
             $path = $directory.'/'.$filename.'-'.$suffix++.'.json.enc';
         }
 
+        $contents['backup_format'] = self::BACKUP_FORMAT;
         $contents['backup_version'] = self::BACKUP_VERSION;
         $encoded = json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
         $this->writeAtomically($path, Crypt::encryptString($encoded));
@@ -94,7 +178,7 @@ class BackupService
         $contents = $this->readBackup($backup);
         $this->assertBackupCompatible($contents);
 
-        $tables = $contents['tables'];
+        $tables = $this->detachArchivedUserReferences($contents['tables']);
 
         $restoreTables = array_values(array_filter(self::TABLES, fn ($table) => array_key_exists($table, $tables) && Schema::hasTable($table)));
         $rowsByTable = [];
@@ -135,14 +219,25 @@ class BackupService
                 }
 
                 foreach (array_reverse($restoreTables) as $table) {
-                    DB::table($table)->delete();
+                    if ($table !== 'activity_logs') {
+                        DB::table($table)->delete();
+                    }
                 }
 
                 foreach ($restoreTables as $table) {
                     foreach (array_chunk($rowsByTable[$table], 500) as $chunk) {
                         if ($chunk !== []) {
-                            DB::table($table)->insert($chunk);
-                            $restoredRows += count($chunk);
+                            if ($table === 'activity_logs') {
+                                foreach ($chunk as $row) {
+                                    if (! DB::table($table)->where($row)->exists()) {
+                                        DB::table($table)->insert($row);
+                                        $restoredRows++;
+                                    }
+                                }
+                            } else {
+                                DB::table($table)->insert($chunk);
+                                $restoredRows += count($chunk);
+                            }
                         }
                     }
                 }
@@ -230,13 +325,22 @@ class BackupService
 
     private function assertBackupCompatible(array $contents): void
     {
-        if (array_key_exists('backup_version', $contents)
-            && $contents['backup_version'] !== self::BACKUP_VERSION) {
-            throw new \InvalidArgumentException('This backup is not compatible with this application version.');
+        $hasFormat = array_key_exists('backup_format', $contents);
+        $hasVersion = array_key_exists('backup_version', $contents);
+        $version = $contents['backup_version'] ?? null;
+
+        if (($hasFormat && $contents['backup_format'] !== self::BACKUP_FORMAT)
+            || ($hasVersion && ! in_array($version, [1, self::BACKUP_VERSION], true))
+            || ($hasFormat && ! $hasVersion)) {
+            throw new \InvalidArgumentException('Backup format is not compatible with the current system.');
+        }
+
+        if (! $hasVersion && ! $this->isRecognizedLegacyBackup($contents)) {
+            throw new \InvalidArgumentException('Backup format is not compatible with the current system.');
         }
 
         if (! array_key_exists('tables', $contents) || ! is_array($contents['tables'])) {
-            throw new \InvalidArgumentException('This backup is not compatible with this application version.');
+            throw new \InvalidArgumentException('Backup format is not compatible with the current system.');
         }
 
         $tables = $contents['tables'];
@@ -244,14 +348,15 @@ class BackupService
             throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
         }
 
-        $unexpectedTables = array_diff(array_keys($tables), self::TABLES);
+        $allowedTables = ! $hasVersion || $version === 1 ? self::LEGACY_TABLES : self::TABLES;
+        $unexpectedTables = array_diff(array_keys($tables), $allowedTables);
         if ($unexpectedTables !== []) {
-            throw new \InvalidArgumentException('This backup is not compatible with this application version.');
+            throw new \InvalidArgumentException('Backup format is not compatible with the current system.');
         }
 
         foreach ($tables as $table => $rows) {
-            if (! is_string($table) || ! in_array($table, self::TABLES, true)) {
-                throw new \InvalidArgumentException('This backup is not compatible with this application version.');
+            if (! is_string($table) || ! in_array($table, $allowedTables, true)) {
+                throw new \InvalidArgumentException('Backup format is not compatible with the current system.');
             }
             if (! is_array($rows) || ! array_is_list($rows)) {
                 throw new \InvalidArgumentException("The backup file is invalid or corrupted for {$table}.");
@@ -263,6 +368,44 @@ class BackupService
                 }
             }
         }
+    }
+
+    private function isRecognizedLegacyBackup(array $contents): bool
+    {
+        if (array_key_exists('backup_format', $contents)
+            || array_key_exists('backup_version', $contents)
+            || array_diff(array_keys($contents), ['created_at', 'tables']) !== []
+            || ! isset($contents['created_at'])
+            || ! is_string($contents['created_at'])
+            || strtotime($contents['created_at']) === false) {
+            return false;
+        }
+
+        return is_array($contents['tables']);
+    }
+
+    private function detachArchivedUserReferences(array $tables): array
+    {
+        $usersById = collect($tables['users'] ?? [])->keyBy('id');
+
+        foreach ($tables['activity_logs'] ?? [] as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $backupUser = $usersById->get($row['user_id'] ?? null);
+            foreach (['name' => 'actor_name', 'email' => 'actor_email', 'role' => 'actor_role'] as $userField => $actorField) {
+                if (empty($row[$actorField]) && is_array($backupUser) && isset($backupUser[$userField])) {
+                    $row[$actorField] = $backupUser[$userField];
+                }
+            }
+
+            $row['user_id'] = null;
+            unset($row['id']);
+            $tables['activity_logs'][$index] = $row;
+        }
+
+        return $tables;
     }
 
     public function isEncrypted(string $backup): bool

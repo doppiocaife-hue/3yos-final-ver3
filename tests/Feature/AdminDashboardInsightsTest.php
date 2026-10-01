@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Inquiry;
 use App\Models\Package;
 use App\Models\Reservation;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class AdminDashboardInsightsTest extends TestCase
@@ -79,6 +80,114 @@ class AdminDashboardInsightsTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Accepted reservations with no payment on file');
+    }
+
+    public function test_accepted_attention_counts_use_net_financials_and_exclude_closed_or_unactionable_reservations(): void
+    {
+        $fullyRefunded = $this->reservation([
+            'status' => 'confirmed',
+            'total_cost' => 1000,
+            'payment_status' => 'Fully Paid',
+            'full_name' => 'Fully Refunded Guest',
+        ]);
+        $fullyRefunded->payments()->create([
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Full Payment',
+            'amount' => 1000,
+            'payment_method' => 'Cash',
+        ]);
+        $fullyRefunded->refunds()->create([
+            'refund_date' => now()->toDateString(),
+            'amount' => 1000,
+            'refund_method' => 'Cash',
+            'status' => 'completed',
+            'request_key' => (string) Str::uuid(),
+        ]);
+
+        $paidWithCurrentContract = $this->reservation([
+            'status' => 'confirmed',
+            'total_cost' => 1000,
+            'payment_status' => 'Unpaid',
+            'amount_paid' => 0,
+            'service_contracts' => ['service-contracts/current-contract.png'],
+            'full_name' => 'Paid Contract Guest',
+        ]);
+        $paidWithCurrentContract->payments()->create([
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Full Payment',
+            'amount' => 1000,
+            'payment_method' => 'Cash',
+        ]);
+
+        $noContractPrice = $this->reservation([
+            'status' => 'confirmed',
+            'total_cost' => null,
+            'full_name' => 'No Contract Price Guest',
+        ]);
+        $zeroContractPrice = $this->reservation([
+            'status' => 'confirmed',
+            'total_cost' => 0,
+            'full_name' => 'Zero Contract Price Guest',
+        ]);
+        $this->reservation(['status' => 'completed', 'total_cost' => 1000, 'full_name' => 'Completed Guest']);
+        $this->reservation(['status' => 'cancelled', 'total_cost' => 1000, 'full_name' => 'Cancelled Guest']);
+        $this->reservation(['status' => 'pending', 'total_cost' => 1000, 'full_name' => 'Pending Guest']);
+
+        $response = $this->withSession(self::ADMIN)->get(route('admin.dashboard'));
+
+        $response->assertOk()->assertViewHas('needsAttention', function (array $counts): bool {
+            return $counts['unpaid_accepted'] === 3
+                && $counts['missing_contracts'] === 3
+                && $counts['outstanding_balances'] === 1;
+        });
+        $response->assertSee(route('admin.reservations', [
+            'status' => 'confirmed',
+            'attention' => 'no_payment',
+        ]));
+        $response->assertSee(route('admin.reservations', [
+            'status' => 'confirmed',
+            'attention' => 'missing_contract',
+        ]));
+        $response->assertSee(route('admin.reservations', [
+            'status' => 'confirmed',
+            'attention' => 'outstanding_balance',
+        ]));
+
+        $this->assertSame('Unpaid', $fullyRefunded->fresh()->financials()['payment_status']);
+        $this->assertSame(0, $fullyRefunded->fresh()->financials()['net_paid_cents']);
+        $this->assertNull($noContractPrice->fresh()->financials()['remaining_balance_cents']);
+        $this->assertSame(0, $zeroContractPrice->fresh()->financials()['remaining_balance_cents']);
+    }
+
+    public function test_invalid_refund_history_is_not_classified_as_unpaid_or_outstanding_and_does_not_break_dashboard(): void
+    {
+        $reservation = $this->reservation([
+            'status' => 'confirmed',
+            'total_cost' => 1000,
+        ]);
+        $payment = $reservation->payments()->create([
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'amount' => 100,
+            'payment_method' => 'Cash',
+        ]);
+        $reservation->refunds()->create([
+            'payment_id' => $payment->id,
+            'refund_date' => now()->toDateString(),
+            'amount' => 200,
+            'refund_method' => 'Cash',
+            'status' => 'completed',
+            'request_key' => (string) Str::uuid(),
+        ]);
+
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.dashboard'))
+            ->assertOk()
+            ->assertViewHas('needsAttention', function (array $counts): bool {
+                return $counts['unpaid_accepted'] === 0
+                    && $counts['missing_contracts'] === 1
+                    && $counts['outstanding_balances'] === 0;
+            });
     }
 
     public function test_business_overview_shows_lifetime_revenue_separate_from_today(): void

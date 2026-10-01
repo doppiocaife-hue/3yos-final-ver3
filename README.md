@@ -39,7 +39,7 @@ This repository is the capstone project's source code. A working deployment also
 - Manage administrator accounts, review activity logs, and create, upload, download, restore, or delete database backups.
 - Record reservation payments and refunds, attach official receipt images, and review reservation financial history.
 
-Catalog records and the initial Primary Administrator are not automatically created by the database seeder. After installation, create the administrator through the protected first-run setup and populate the catalog through the admin area.
+Catalog records and the initial Primary Admin are not automatically created by the database seeder. After installation, create the administrator through the protected first-run setup and populate the catalog through the admin area.
 
 ## Technology
 
@@ -75,12 +75,12 @@ Guests submit contact details, a subject, category, and message. Administrators 
 
 The application has two stored administrator roles:
 
-- **Primary Administrator (`full`)**: can access the full administration area, including catalog and gallery management, administrator accounts, analytics, reports, activity logs, and backups.
-- **Team Admin (`limited`)**: can access the operational reservation and inquiry areas and support. Full-administrator-only modules are restricted by server-side middleware.
+- **Primary Admin (`full`)**: can access the full administration area, including catalog and gallery management, administrator accounts, analytics, reports, activity logs, and backups.
+- **Team Admin (`limited`)**: can access the operational reservation and inquiry areas and support. Primary-Admin-only modules are restricted by server-side middleware.
 
-The first Primary Administrator is created through `/admin/setup`, not a default username/password or database seeder. The setup page is available only when no Primary Administrator has been created and a valid `PRIMARY_ADMIN_SETUP_KEY` is configured. Setup passwords must be at least 12 characters and include mixed-case letters, a number, and a symbol. There is no shared demo administrator credential.
+The first Primary Admin is created through `/admin/setup`, not a default username/password or database seeder. The setup page is available only when no Primary Admin has been created and a valid `PRIMARY_ADMIN_SETUP_KEY` is configured. All administrator passwords must be at least 12 characters and include uppercase and lowercase letters, a number, and a symbol; password confirmation is required. There is no shared demo administrator credential.
 
-Administrator passwords can be reset through the configured password-reset mail flow. Disabling an administrator or resetting their password invalidates their existing sessions. Sensitive management operations use current-password confirmation where configured. Keep the setup key private and remove it from the environment after first-run setup.
+Administrator passwords can be reset through the configured password-reset mail flow. Disabling an administrator or resetting their password invalidates their existing sessions. Creating an administrator requires the active Primary Admin to confirm their own password in the same create request; it is checked against that account's database hash and is not stored as a reusable session authorization. Five incorrect confirmations per Primary Admin and source IP are allowed in a five-minute window. Keep the setup key private and remove it from the environment after first-run setup. This step-up check does not apply to the initial `/admin/setup` flow, where no Primary Admin account exists yet.
 
 ## Payments, refunds, and audit history
 
@@ -96,7 +96,11 @@ The application does not currently provide a refund edit/delete workflow. Paymen
 
 The default local disk stores private files under `storage/app/private`; this includes payment receipts, service contracts, and generated backups. The public disk stores gallery images under `storage/app/public` and is exposed through Laravel's `public/storage` symbolic link.
 
-Admin-created backups are JSON data encrypted with Laravel's application encryption key (`APP_KEY`) and stored under `storage/app/private/backups`. The backup service includes the application tables it explicitly supports; it is not a full server, uploaded-file, or source-code backup. Uploaded legacy JSON backups may be unencrypted and require explicit confirmation before restore. Restore creates a safety backup before replacing supported database-table contents.
+Admin-created backups use the `3YOS_JSON_BACKUP` format, currently format version `2`, and are JSON data encrypted with Laravel's application encryption key (`APP_KEY`) before storage under `storage/app/private/backups`. The format and version metadata stay inside the encrypted payload; the Backup page shows the current supported format and each backup's compatibility. New backups contain supported business data but exclude administrator accounts and authentication records. Restore decrypts an encrypted backup, checks its format and version, and validates its table structure before creating a safety backup or changing database contents. Version 2 is current; version 1 and recognized versionless legacy backups have an explicit compatibility path, but their archived `users` rows are never restored. Unsupported formats and versions are rejected before database changes. Uploading a compatible older backup stores it encrypted in the current version after removing archived user records. Restore replaces supported business records, merges historical activity entries without deleting current audit history, and preserves administrator accounts and sessions. Imported activity rows are detached from current user IDs and retain actor snapshots where available. There is no public full-system restore operation. Uploaded legacy JSON backups may be unencrypted and require explicit confirmation before restore. The backup service includes only the application tables it explicitly supports; it is not a full server, uploaded-file, or source-code backup. Restore creates a safety backup before replacing supported business data.
+
+If no administrator can sign in, authorized server access can use the interactive `php artisan admin:reset-for-turnover` command to remove administrator accounts while preserving business data and historical activity; the first Primary Admin must then be created through the protected setup flow. Review the command's confirmation and configure a valid one-time setup key before running it. This recovery command was not run during development restore testing.
+
+The backup format version describes the backup JSON structure, not the Laravel or application release. Increase it only when a structural restore change makes an existing format incompatible or requires migration, such as changing required fields or relationships; do not change it for routine application or UI updates.
 
 Keep off-server copies of backups and uploaded private files as part of the deployment's backup policy. Retain the matching `APP_KEY` securely: encrypted backups cannot be decrypted after that key is lost or changed. A backup stored on the same host is not protection against host or disk loss.
 
@@ -164,7 +168,7 @@ Then, on either platform:
    ```
 
    Open the URL reported by Artisan. Run `npm run dev` in a second terminal if you are developing Vite-managed assets.
-7. Open `/admin/setup` and create the first Primary Administrator using the configured setup key. After successful setup, remove `PRIMARY_ADMIN_SETUP_KEY` from the environment and run `php artisan config:clear` locally. In production, rebuild the cache after all environment values are final with `php artisan optimize`.
+7. Open `/admin/setup` and create the first Primary Admin using the configured setup key. After successful setup, remove `PRIMARY_ADMIN_SETUP_KEY` from the environment and run `php artisan config:clear` locally. In production, rebuild the cache after all environment values are final with `php artisan optimize`.
 8. Sign in and enter the services, packages, and gallery content needed by the public site. Confirm reCAPTCHA and email delivery before accepting live submissions.
 
 ## Environment configuration
@@ -175,6 +179,7 @@ Create a deployment-specific `.env` from `.env.example`; the `.env` file is not 
 | --- | --- |
 | `APP_NAME`, `APP_ENV`, `APP_DEBUG`, `APP_URL` | Application identity, deployment mode, debug behavior, and canonical URL. Use `APP_ENV=production`, `APP_DEBUG=false`, and the real HTTPS URL in production. |
 | `APP_KEY` | Laravel encryption key. Generate once per installation and store securely outside source control. Do not replace it casually; encrypted backups depend on it. |
+| `APP_TIMEZONE` | Application timezone for local date/time handling. Defaults to `Asia/Manila`; set it explicitly in each deployment environment. |
 | `PRIMARY_ADMIN_SETUP_KEY` | Private first-administrator setup credential. Use at least 32 characters, configure it before initial setup, then remove it and refresh cached configuration. |
 | `DB_CONNECTION`, `DB_DATABASE`, `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` | Database driver and connection settings. `DB_CONNECTION=sqlite` is the default; configure the appropriate values for a server database. |
 | `SESSION_DRIVER`, `SESSION_LIFETIME`, `SESSION_SECURE_COOKIE` | Session storage/lifetime and cookie transport. Set `SESSION_SECURE_COOKIE=true` when serving production over HTTPS. |
@@ -234,7 +239,7 @@ npm run build
    ```
 
    The current migrations include administrator session-version support and a migration that moves legacy service contract files from public storage to private storage. Ensure private and public storage directories are writable by the application and keep private storage outside the web root.
-5. Create the first Primary Administrator at `/admin/setup` using the private setup key. Remove the key from the deployment environment; the final `php artisan optimize` step below rebuilds cached configuration without it. Then create any additional administrator accounts and add the live service/package/gallery content.
+5. Create the first Primary Admin at `/admin/setup` using the private setup key. Remove the key from the deployment environment; the final `php artisan optimize` step below rebuilds cached configuration without it. Then create any additional administrator accounts and add the live service/package/gallery content.
 6. Verify login, role access, reservation submission/status lookup, inquiry handling, email delivery, private contract/receipt access, gallery visibility, report exports, and backup/restore on the actual deployment configuration.
 7. Apply Laravel's deployment optimizations only after environment values are finalized:
 
@@ -248,7 +253,7 @@ npm run build
 
 - Transfer control of hosting, DNS, database, SMTP, reCAPTCHA, and source-control accounts to the designated system owner; remove departing operators' access.
 - Provide `.env` values through an approved secret-management channel, never by committing `.env` or sending secrets in the repository.
-- Confirm the designated Primary Administrator can sign in, has a recovery email route, and can manage appropriate Team Admin accounts.
+- Confirm the designated Primary Admin can sign in, has a recovery email route, and can manage appropriate Team Admin accounts.
 - Remove `PRIMARY_ADMIN_SETUP_KEY` after initial setup and confirm `/admin/setup` is no longer available for account creation.
 - Preserve `APP_KEY` securely with the backup recovery instructions. Test an encrypted backup restore before handoff and retain a separate off-host copy.
 - Verify the recipient can access private contract and receipt files, public gallery images, reports, and the application's logs.

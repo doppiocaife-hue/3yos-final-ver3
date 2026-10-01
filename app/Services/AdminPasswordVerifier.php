@@ -11,6 +11,12 @@ class AdminPasswordVerifier
     public function verify(Request $request, string $password): bool
     {
         $user = User::find($request->session()->get('admin_user_id'));
-        return $user !== null && $user->is_active === true && Hash::check($password, $user->password);
+
+        return $user !== null && $this->verifyUser($user, $password);
+    }
+
+    public function verifyUser(User $user, string $password): bool
+    {
+        return $user->is_active === true && Hash::check($password, $user->password);
     }
 }
