@@ -10,6 +10,7 @@
                 <span class="eyebrow">Reservation status</span>
                 <h1 class="mt-2 mb-2">Check your booking</h1>
                 <p class="text-muted mb-0">Enter the unique reservation ID you received after submitting your request.</p>
+                <p class="small mt-2 mb-0"><a href="{{ route('support') }}#category-reservations">What do the statuses mean? &rarr;</a></p>
             </div>
 
             <form method="GET" action="{{ route('reservation.status') }}" class="status-search">

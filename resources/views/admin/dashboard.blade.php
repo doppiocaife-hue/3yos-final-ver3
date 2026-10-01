@@ -35,10 +35,26 @@
 <section class="card mb-4">
     <div class="panel-header"><div><h2 class="h5 fw-bold mb-1">Today</h2><p class="text-muted small mb-0">What’s on the schedule this week — not lifetime totals.</p></div></div>
     <div class="row g-3">
-        <div class="col-6 col-lg-3"><div class="today-tile"><span>Events today</span><strong>{{ $todaySection['events_today'] }}</strong></div></div>
-        <div class="col-6 col-lg-3"><div class="today-tile"><span>Upcoming (next 7 days)</span><strong>{{ $todaySection['upcoming_events'] }}</strong></div></div>
-        <div class="col-6 col-lg-3"><div class="today-tile"><span>Payments due soon</span><strong>{{ $todaySection['payments_due'] }}</strong></div></div>
-        <div class="col-6 col-lg-3"><div class="today-tile"><span>Inquiries needing response</span><strong>{{ $todaySection['inquiries_needing_response'] }}</strong></div></div>
+        <div class="col-6 col-lg-3">
+            <a class="today-tile today-tile-link" href="{{ route('admin.reservations', ['scope' => 'scheduled', 'date_from' => now()->toDateString(), 'date_to' => now()->toDateString()]) }}">
+                <span>Events today</span><strong>{{ $todaySection['events_today'] }}</strong><em>View schedule &rarr;</em>
+            </a>
+        </div>
+        <div class="col-6 col-lg-3">
+            <a class="today-tile today-tile-link" href="{{ route('admin.reservations', ['scope' => 'scheduled', 'date_from' => now()->addDay()->toDateString(), 'date_to' => now()->addDays(7)->toDateString()]) }}">
+                <span>Upcoming (next 7 days)</span><strong>{{ $todaySection['upcoming_events'] }}</strong><em>View schedule &rarr;</em>
+            </a>
+        </div>
+        <div class="col-6 col-lg-3">
+            <a class="today-tile today-tile-link" href="{{ route('admin.reservations', ['payment_due' => 'soon']) }}">
+                <span>Payments due soon</span><strong>{{ $todaySection['payments_due'] }}</strong><em>View reservations &rarr;</em>
+            </a>
+        </div>
+        <div class="col-6 col-lg-3">
+            <a class="today-tile today-tile-link" href="{{ route('admin.inquiries', ['view' => 'needs_attention']) }}">
+                <span>Inquiries needing response</span><strong>{{ $todaySection['inquiries_needing_response'] }}</strong><em>View inquiries &rarr;</em>
+            </a>
+        </div>
     </div>
 </section>
 
@@ -61,6 +77,7 @@
         <div>
             <h5 class="fw-bold mb-1" id="reservation-calendar-title">Reservation calendar</h5>
             <p class="text-muted small mb-0">Pending, accepted, completed, and cancelled events by date.</p>
+            <p class="small mb-0"><a href="{{ route('admin.support') }}#category-admin-calendar">How do I use the calendar?</a></p>
         </div>
         <div class="calendar-legend" aria-label="Reservation status legend">
             <span><i class="calendar-dot calendar-dot--pending"></i>Pending</span>
@@ -86,10 +103,14 @@
 .attention-item-label{font-size:.85rem;font-weight:600}
 .attention-item-count{display:inline-flex;min-width:26px;height:26px;align-items:center;justify-content:center;padding:0 .5rem;border-radius:999px;background:#fff5d8;color:#714d00;font-weight:800;font-size:.8rem}
 body.dark-mode .attention-item-count{background:rgba(146,99,0,.28);color:#f7d57a}
-.today-tile{height:100%;padding:.9rem 1rem;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.today-tile{display:block;height:100%;padding:.9rem 1rem;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:inherit;text-decoration:none;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
 .today-tile span{display:block;margin-bottom:.35rem;color:var(--muted);font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
 .today-tile strong{display:block;font-family:Manrope,sans-serif;font-size:1.5rem;font-weight:800;color:var(--navy)}
 body.dark-mode .today-tile strong{color:#f1f6f8}
+.today-tile-link{cursor:pointer}
+.today-tile-link em{display:block;margin-top:.4rem;color:var(--teal-dark);font-size:.72rem;font-weight:700;font-style:normal}
+.today-tile-link:hover,.today-tile-link:focus-visible{transform:translateY(-2px);box-shadow:0 14px 30px rgba(30,50,62,.1);border-color:var(--teal);color:inherit}
+.today-tile-link:focus-visible{outline:3px solid rgba(34,130,121,.35);outline-offset:2px}
 .calendar-card{overflow:visible}
 .calendar-legend{display:flex;align-items:center;flex-wrap:wrap;gap:.9rem;color:var(--muted);font-size:.72rem;font-weight:700}
 .calendar-legend span{display:inline-flex;align-items:center;gap:.35rem}
@@ -107,6 +128,12 @@ body.dark-mode .calendar-event--cancelled .calendar-event__status{color:#6d1818}
 @media(max-width:992px){.calendar-events{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:575px){.calendar-events{grid-template-columns:1fr}.calendar-legend{gap:.5rem}}
 .calendar-toolbar{display:flex;align-items:center;justify-content:center;gap:1.25rem;margin-bottom:1rem}.calendar-nav{width:34px;height:34px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--teal-dark);font-size:1.1rem;line-height:1}.calendar-nav:hover{background:var(--mint)}.calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}.calendar-weekdays{color:var(--muted);font-size:.68rem;font-weight:800;letter-spacing:.08em;text-align:center;text-transform:uppercase;margin-bottom:6px}.calendar-day{position:relative;min-height:92px;padding:.55rem;background:#fbfcfd;border:1px solid var(--line);border-radius:8px}.calendar-day--empty{background:transparent;border-color:transparent}.calendar-day--today{border-color:#71c9c0;box-shadow:inset 0 0 0 1px #71c9c0}.calendar-day-number{font-size:.78rem;font-weight:800}.calendar-event{display:flex;flex-direction:column;gap:.1rem;width:100%;margin-top:.45rem;padding:.28rem .35rem;border:0;border-left:3px solid;border-radius:4px;background:var(--mint);color:var(--ink);font-size:.68rem;text-align:left;line-height:1.2;white-space:normal;overflow:hidden;word-break:break-word}.calendar-event__title{display:block;font-weight:700;line-height:1.2;color:inherit}.calendar-event__status{display:block;font-size:.52rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:inherit;opacity:1}.calendar-event--pending{border-color:#d49b28}.calendar-event--confirmed{border-color:#0d8b83}.calendar-event--completed{border-color:#4d77b8}.calendar-event--cancelled{border-color:#a73838;background:#f9e0e1;color:#4d1316;box-shadow:inset 0 0 0 1px rgba(167,56,56,.2)}.calendar-event--cancelled .calendar-event__status{color:#6d1818}.calendar-hover-card{position:absolute;z-index:20;top:calc(100% + 6px);left:0;width:240px;padding:.7rem;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 28px rgba(21,37,55,.18);opacity:0;pointer-events:none;transform:translateY(-4px);transition:opacity .15s ease,transform .15s ease}.calendar-day:hover .calendar-hover-card,.calendar-day:focus-within .calendar-hover-card{opacity:1;transform:translateY(0)}.calendar-hover-item{padding:.35rem 0;border-top:1px solid var(--line);font-size:.7rem}.calendar-hover-item:first-child{padding-top:0;border-top:0}.calendar-hover-item strong{display:block}.calendar-hover-item small{display:block;color:var(--muted);margin-top:.12rem}.calendar-legend{display:flex;flex-wrap:wrap;gap:.8rem;color:var(--muted);font-size:.72rem;font-weight:700}.calendar-legend span{display:inline-flex;align-items:center;gap:.35rem}.calendar-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.calendar-dot--pending{background:#d49b28}.calendar-dot--confirmed{background:#0d8b83}.calendar-dot--completed{background:#4d77b8}.calendar-dot--cancelled{background:#c54545}.calendar-events{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;margin-top:1rem}.calendar-event-detail{padding:.75rem;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.calendar-event-detail strong{display:block;font-size:.8rem}.calendar-event-detail small{display:block;color:var(--muted);margin-top:.15rem}.calendar-event-detail--pending{border-left:3px solid #d49b28}.calendar-event-detail--cancelled{border-left:3px solid #c54545}.calendar-event-detail--confirmed{border-left:3px solid #0d8b83}.calendar-event-detail--completed{border-left:3px solid #4d77b8}
+.calendar-event{cursor:pointer;text-decoration:none;transition:filter .12s ease,box-shadow .12s ease}
+.calendar-event:hover,.calendar-event:focus-visible{filter:brightness(.96)}
+.calendar-event:focus-visible{outline:2px solid var(--teal-dark);outline-offset:1px}
+.calendar-event-detail{color:inherit;text-decoration:none;cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease}
+.calendar-event-detail:hover,.calendar-event-detail:focus-visible{border-color:var(--teal);box-shadow:0 8px 18px rgba(30,50,62,.08);color:inherit}
+.calendar-event-detail:focus-visible{outline:2px solid var(--teal-dark);outline-offset:1px}
 body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{background:var(--surface)}
 
 @media(max-width:992px){
@@ -124,6 +151,10 @@ body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{backgroun
 <script>
 (() => {
     const reservations = @json($calendarEvents);
+    // Reuses the existing reservation detail route — '__ID__' is swapped for each event's real
+    // reservation id so every calendar event/list card opens that exact reservation.
+    const reservationUrlTemplate = @json(route('admin.reservations.show', ['reservation' => '__ID__']));
+    const reservationUrl = (id) => reservationUrlTemplate.replace('__ID__', id);
     const calendar = document.getElementById('reservationCalendar');
     const monthLabel = document.getElementById('calendarMonth');
     const eventsPanel = document.getElementById('calendarEvents');
@@ -143,7 +174,7 @@ body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{backgroun
         const monthPrefix = `${displayedMonth.getFullYear()}-${String(displayedMonth.getMonth() + 1).padStart(2, '0')}`;
         const monthEvents = reservations.filter((reservation) => reservation.date.startsWith(monthPrefix));
         eventsPanel.innerHTML = monthEvents.length
-            ? monthEvents.map((event) => `<article class="calendar-event-detail calendar-event-detail--${event.status}"><strong>${escapeHtml(event.eventType)} · ${statusLabels[event.status]}</strong><small>${escapeHtml(event.date)} · ${escapeHtml(event.time)}</small><small>${escapeHtml(event.name)} · ${escapeHtml(event.venue)}</small></article>`).join('')
+            ? monthEvents.map((event) => `<a class="calendar-event-detail calendar-event-detail--${event.status}" href="${reservationUrl(event.id)}"><strong>${escapeHtml(event.eventType)} · ${statusLabels[event.status]}</strong><small>${escapeHtml(event.date)} · ${escapeHtml(event.time)}</small><small>${escapeHtml(event.name)} · ${escapeHtml(event.venue)}</small></a>`).join('')
             : '<p class="text-muted small mb-0">No reservations scheduled this month.</p>';
     };
 
@@ -174,15 +205,15 @@ body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{backgroun
             dayElement.append(dayNumber);
 
             dayEvents.forEach((event) => {
-                const eventButton = document.createElement('button');
-                eventButton.type = 'button';
-                eventButton.className = `calendar-event calendar-event--${event.status}`;
-                eventButton.innerHTML = `
+                const eventLink = document.createElement('a');
+                eventLink.href = reservationUrl(event.id);
+                eventLink.className = `calendar-event calendar-event--${event.status}`;
+                eventLink.innerHTML = `
                     <span class="calendar-event__title">${escapeHtml(event.eventType)}</span>
                     ${event.status === 'cancelled' ? '<span class="calendar-event__status">Cancelled</span>' : ''}
                 `;
-                eventButton.setAttribute('aria-label', `${event.eventType}, ${statusLabels[event.status]}, ${event.time}, ${event.name}, ${event.venue}`);
-                dayElement.append(eventButton);
+                eventLink.setAttribute('aria-label', `${event.eventType}, ${statusLabels[event.status]}, ${event.time}, ${event.name}, ${event.venue}. Open reservation detail.`);
+                dayElement.append(eventLink);
             });
 
             if (dayEvents.length) {

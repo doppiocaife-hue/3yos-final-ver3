@@ -8,6 +8,7 @@
         <div class="eyebrow">Reservation request</div>
         <h1 class="fw-bold mt-2 mb-2">Plan your perfect event.</h1>
         <p class="text-muted mb-0">We accept up to four events each day so every celebration gets the attention it deserves.</p>
+        <p class="small mt-2 mb-0"><a href="{{ route('support') }}#category-reservations">Need help? Learn how reservations work &rarr;</a></p>
     </div>
 
     @if($reservation)

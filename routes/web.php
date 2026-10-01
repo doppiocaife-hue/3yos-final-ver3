@@ -3,6 +3,7 @@
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AdminGalleryController;
+use App\Http\Controllers\AdminHelpController;
 use App\Http\Controllers\AdminPackageController;
 use App\Http\Controllers\AdminReservationController;
 use App\Http\Controllers\AdminServiceController;
@@ -31,6 +32,9 @@ Route::post('/reservation', [ReservationController::class, 'store'])->middleware
 Route::get('/inquiry', [PublicController::class, 'inquiry'])->name('inquiry');
 Route::post('/inquiry', [InquiryController::class, 'store'])->middleware('throttle:5,10')->name('inquiry.store');
 Route::get('/contact', [PublicController::class, 'contact'])->name('contact');
+Route::get('/support', [PublicController::class, 'support'])->name('support');
+Route::get('/help', fn () => redirect()->route('support'))->name('help');
+Route::get('/manual', fn () => redirect()->route('support'))->name('manual');
 
 Route::get('/admin/login', [AuthController::class, 'showLoginForm'])->name('admin.login');
 Route::post('/admin/login', [AuthController::class, 'login'])->name('admin.login.post');
@@ -69,6 +73,10 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     Route::post('/inquiries/{inquiry}/reply', [AdminController::class, 'replyToInquiry'])->name('admin.inquiries.reply');
     Route::patch('/inquiries/{inquiry}/priority', [AdminController::class, 'updateInquiryPriority'])->name('admin.inquiries.priority');
     Route::delete('/inquiries/{inquiry}', [AdminController::class, 'destroyInquiry'])->name('admin.inquiries.destroy');
+    // Available to every authenticated admin (full or limited) — documentation, not a sensitive operation.
+    Route::get('/support', [AdminHelpController::class, 'support'])->name('admin.support');
+    Route::get('/help', fn () => redirect()->route('admin.support'))->name('admin.help');
+    Route::get('/manual', fn () => redirect()->route('admin.support'))->name('admin.manual');
     Route::middleware('ensure.full-admin')->group(function () {
         Route::resource('packages', AdminPackageController::class)
             ->except('show')

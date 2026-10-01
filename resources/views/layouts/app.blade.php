@@ -101,6 +101,7 @@
                     <li class="nav-item"><a class="nav-link {{ request()->routeIs('gallery') ? 'active' : '' }}" href="{{ route('gallery') }}">Gallery</a></li>
                     <li class="nav-item"><a class="nav-link {{ request()->routeIs('reservation.status') ? 'active' : '' }}" href="{{ route('reservation.status') }}">Status</a></li>
                     <li class="nav-item"><a class="nav-link {{ request()->routeIs('inquiry') ? 'active' : '' }}" href="{{ route('inquiry') }}">Inquiry</a></li>
+                    <li class="nav-item"><a class="nav-link {{ request()->routeIs('support*') ? 'active' : '' }}" href="{{ route('support') }}">Support</a></li>
                     <li class="nav-item ms-lg-2"><button type="button" class="theme-toggle" id="customerThemeToggle" aria-label="Enable dark mode" title="Enable dark mode"><span aria-hidden="true">&#9790;</span></button></li>
                     <li class="nav-item ms-lg-2"><a class="btn btn-primary" href="{{ route('reservation') }}">Book an event</a></li>
                 </ul>
@@ -125,6 +126,7 @@
                         <a href="{{ route('services') }}">Services</a>
                         <a href="{{ route('packages') }}">Packages</a>
                         <a href="{{ route('reservation') }}">Book now</a>
+                        <a href="{{ route('support') }}">Support</a>
                     </div>
                 </div>
                 <div class="col-12 col-sm-6 col-md-4 col-lg-3">

@@ -22,22 +22,44 @@ class InquiryFilteringTest extends TestCase
         ]);
     }
 
+    /** Already-handled fixture that never qualifies for "Needs attention", so it can't leak
+     *  into assertions meant to test the independent "All inquiries" list/filters. */
+    private function handledInquiry(array $overrides = []): Inquiry
+    {
+        return $this->inquiry($overrides + [
+            'status' => 'responded',
+            'admin_reply' => 'Thanks for reaching out.',
+            'replied_at' => now(),
+        ]);
+    }
+
+    /** Everything from the "All inquiries" results container onward, since that section (unlike
+     *  "Needs attention") is the one actually affected by the view/priority/search filters. */
+    private function allInquiriesSection(string $html): string
+    {
+        $position = strpos($html, 'id="inquiry-results"');
+        $this->assertNotFalse($position, 'Expected to find the #inquiry-results container.');
+
+        return substr($html, $position);
+    }
+
     public function test_view_tab_narrows_the_all_inquiries_list(): void
     {
-        $this->inquiry(['status' => 'new', 'subject' => 'New one']);
-        $this->inquiry(['status' => 'responded', 'subject' => 'Responded one']);
+        $this->handledInquiry(['status' => 'closed', 'subject' => 'Closed one']);
+        $this->handledInquiry(['subject' => 'Responded one']);
 
         $response = $this->withSession(self::ADMIN)->get(route('admin.inquiries', ['view' => 'responded']));
-
         $response->assertOk();
-        $response->assertSee('Responded one');
-        $response->assertDontSee('New one');
+
+        $section = $this->allInquiriesSection($response->getContent());
+        $this->assertStringContainsString('Responded one', $section);
+        $this->assertStringNotContainsString('Closed one', $section);
     }
 
     public function test_priority_filter_narrows_the_list(): void
     {
-        $this->inquiry(['priority' => 'urgent', 'subject' => 'Urgent one']);
-        $this->inquiry(['priority' => 'low', 'subject' => 'Low one']);
+        $this->handledInquiry(['priority' => 'urgent', 'subject' => 'Urgent one']);
+        $this->handledInquiry(['priority' => 'low', 'subject' => 'Low one']);
 
         $response = $this->withSession(self::ADMIN)->get(route('admin.inquiries', ['priority' => 'urgent']));
 
@@ -48,8 +70,8 @@ class InquiryFilteringTest extends TestCase
 
     public function test_search_matches_subject_and_email(): void
     {
-        $this->inquiry(['subject' => 'Wedding catering question', 'email' => 'bride@example.com']);
-        $this->inquiry(['subject' => 'Corporate event pricing', 'email' => 'office@example.com']);
+        $this->handledInquiry(['subject' => 'Wedding catering question', 'email' => 'bride@example.com']);
+        $this->handledInquiry(['subject' => 'Corporate event pricing', 'email' => 'office@example.com']);
 
         $response = $this->withSession(self::ADMIN)->get(route('admin.inquiries', ['search' => 'wedding']));
 
@@ -60,8 +82,10 @@ class InquiryFilteringTest extends TestCase
 
     public function test_search_matches_inquiry_id(): void
     {
-        $match = $this->inquiry(['subject' => 'Findable by ID']);
-        $other = $this->inquiry(['subject' => 'Not this one']);
+        // Fixed (non-random) emails: the default helper email uses uniqid(), which can coincidentally
+        // contain the same digits as a small auto-increment ID and produce an unrelated LIKE match.
+        $match = $this->handledInquiry(['subject' => 'Findable by ID', 'email' => 'match@example.com']);
+        $this->handledInquiry(['subject' => 'Not this one', 'email' => 'other@example.com']);
 
         $response = $this->withSession(self::ADMIN)->get(route('admin.inquiries', ['search' => (string) $match->id]));
 
@@ -74,16 +98,19 @@ class InquiryFilteringTest extends TestCase
     {
         $this->inquiry(['status' => 'new', 'subject' => 'Needs attention A']);
         $this->inquiry(['status' => 'in_progress', 'admin_reply' => null, 'subject' => 'Needs attention B']);
-        $this->inquiry(['status' => 'responded', 'admin_reply' => 'Thanks', 'replied_at' => now(), 'subject' => 'Already handled']);
-        $this->inquiry(['status' => 'closed', 'subject' => 'Closed one']);
+        $this->handledInquiry(['subject' => 'Already handled']);
+        $this->handledInquiry(['status' => 'closed', 'subject' => 'Closed one']);
 
         $response = $this->withSession(self::ADMIN)->get(route('admin.inquiries'));
-
         $response->assertOk();
-        $response->assertSee('Needs attention A');
-        $response->assertSee('Needs attention B');
-        $response->assertDontSee('Already handled');
-        $response->assertDontSee('Closed one');
+
+        $html = $response->getContent();
+        $needsAttentionSection = substr($html, 0, strpos($html, 'All inquiries'));
+
+        $this->assertStringContainsString('Needs attention A', $needsAttentionSection);
+        $this->assertStringContainsString('Needs attention B', $needsAttentionSection);
+        $this->assertStringNotContainsString('Already handled', $needsAttentionSection);
+        $this->assertStringNotContainsString('Closed one', $needsAttentionSection);
     }
 
     public function test_needs_attention_count_and_empty_state(): void

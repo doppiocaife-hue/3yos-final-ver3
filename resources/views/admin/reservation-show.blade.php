@@ -172,7 +172,10 @@
 
         <div class="col-lg-6">
             <section class="card h-100">
-                <h2 class="h6 fw-bold mb-3">Contract</h2>
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h2 class="h6 fw-bold mb-0">Contract</h2>
+                    <a class="small" href="{{ route('admin.support') }}#category-admin-contracts">How do contracts work?</a>
+                </div>
                 <div class="contract-detail-list">
                     @forelse($reservation->contractFiles() as $contractIndex => $contractPath)
                         @php($contractExists = \Illuminate\Support\Facades\Storage::disk('public')->exists($contractPath))
@@ -217,7 +220,10 @@
         </div>
         <div class="col-lg-6">
             <section class="card h-100">
-                <h2 class="h6 fw-bold mb-3">Payment</h2>
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h2 class="h6 fw-bold mb-0">Payment</h2>
+                    <a class="small" href="{{ route('admin.support') }}#category-admin-payments">How do payments work?</a>
+                </div>
                 <div class="summary-grid summary-grid--compact">
                     <div class="summary-item summary-item--accent"><span>Contract amount</span><strong>{!! $reservation->total_cost !== null ? $peso($reservation->total_cost) : 'Not set' !!}</strong></div>
                     <div class="summary-item"><span>Paid</span><strong>{!! $peso($financials['gross_paid_cents'] / 100) !!}</strong></div>

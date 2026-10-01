@@ -54,7 +54,7 @@
             </select>
         </div>
         <div class="filter-field">
-            @if($status || $paymentStatus || ($search ?? '') !== '' || ($dateFrom ?? '') !== '' || ($dateTo ?? '') !== '')
+            @if($status || $paymentStatus || ($search ?? '') !== '' || ($dateFrom ?? '') !== '' || ($dateTo ?? '') !== '' || ($scope ?? '') !== '' || ($paymentDueSoon ?? false))
                 <a href="{{ route('admin.reservations') }}" class="btn btn-outline-secondary w-100" data-live-filter-clear="#reservation-filter-form">Clear</a>
             @endif
         </div>

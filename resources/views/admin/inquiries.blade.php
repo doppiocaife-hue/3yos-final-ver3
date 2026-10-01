@@ -118,7 +118,10 @@
 
     @media (max-width: 575.98px) {
         .inquiry-card { flex-direction: column; align-items: stretch; }
-        .inquiry-card-action { margin-left: 0; }
+        /* flex-basis values above size *width* in row mode; reset to auto so they don't force
+           tall empty space once flex-direction switches to column (basis would size *height*). */
+        .inquiry-card-identity, .inquiry-card-meta { flex: 0 1 auto; }
+        .inquiry-card-action { flex: 0 1 auto; margin-left: 0; }
         .inquiry-card-action .btn { width: 100%; }
     }
 </style>

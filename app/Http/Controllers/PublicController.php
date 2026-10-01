@@ -6,6 +6,7 @@ use App\Models\Package;
 use App\Models\GalleryItem;
 use App\Models\Reservation;
 use App\Models\Service;
+use App\Support\HelpCenterContent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -100,6 +101,24 @@ class PublicController extends Controller
     public function contact()
     {
         return view('public.contact');
+    }
+
+    public function support()
+    {
+        $categories = HelpCenterContent::guestHelpCategories();
+        $chapters = HelpCenterContent::guestManualChapters();
+
+        return view('public.help', compact('categories', 'chapters'));
+    }
+
+    public function help()
+    {
+        return redirect()->route('support');
+    }
+
+    public function manual()
+    {
+        return redirect()->route('support');
     }
 
     private function ensureSignaturePackages(): void

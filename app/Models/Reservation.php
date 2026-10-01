@@ -128,6 +128,18 @@ class Reservation extends Model
         return $this->financials()['remaining_balance_cents'];
     }
 
+    /**
+     * The single definition of "payment due soon" — shared by the admin dashboard's count
+     * and the reservation list filter it links to, so the two can never disagree.
+     */
+    public function isPaymentDueSoon(\Carbon\Carbon $byDate): bool
+    {
+        return $this->status === 'confirmed'
+            && $this->payment_due_date !== null
+            && $this->payment_due_date->lte($byDate)
+            && ($this->remainingBalanceCents() ?? 0) > 0;
+    }
+
     public static function toCents(float|int|string|null $amount): int
     {
         return (int) round(((float) $amount) * 100);
