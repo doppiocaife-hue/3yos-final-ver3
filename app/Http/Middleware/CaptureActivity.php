@@ -19,8 +19,10 @@ class CaptureActivity
         $isReservationDetailUpdate = $request->routeIs('admin.reservations.status')
             && $request->hasAny($reservationDetailFields)
             && ! $request->hasAny(['payment_status', 'payment_type', 'amount_paid', 'total_cost', 'admin_notes']);
+        $isBackupAction = $request->routeIs('admin.backups*');
+        $isExplicitlyAuditedAdminManagement = $request->routeIs('admin.users.update-name', 'admin.users.status');
 
-        if (($request->is('admin/*') || $request->is('admin')) && $request->session()->get('is_admin') && ! $request->isMethod('GET') && ! $isReservationDetailUpdate) {
+        if (($request->is('admin/*') || $request->is('admin')) && $request->session()->get('is_admin') && ! $request->isMethod('GET') && ! $isReservationDetailUpdate && ! $isBackupAction && ! $isExplicitlyAuditedAdminManagement) {
             ActivityLog::create([
                 'user_id' => $request->session()->get('admin_user_id'),
                 'actor_name' => $request->session()->get('admin_name', 'Unknown administrator'),

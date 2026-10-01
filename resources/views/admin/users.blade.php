@@ -8,6 +8,7 @@
     </div></div>
 
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
+    @if(session('error'))<div class="alert alert-danger" role="alert">{{ session('error') }}</div>@endif
     @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
 
     <div class="row g-4">
@@ -58,7 +59,8 @@
                                 <th>Name</th>
                                 <th>Email</th>
                                 <th>Role</th>
-                                <th>Access</th>
+                                <th>Status</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -72,21 +74,48 @@
                                         <span class="badge-soft {{ $user->role === 'full' ? 'badge-primary' : 'badge-team' }}">{{ $user->role === 'full' ? 'Primary admin' : 'Team admin' }}</span>
                                     </td>
                                     <td>
-                                        <div class="team-admin-access">
-                                            <form method="POST" action="{{ route('admin.users.reset', $user) }}" class="team-admin-reset-form">
+                                        <span class="badge {{ $user->is_active ? 'text-bg-success' : 'text-bg-secondary' }}">
+                                            {{ $user->is_active ? 'Active' : 'Disabled' }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="team-admin-actions">
+                                            <details class="team-admin-edit">
+                                                <summary class="btn btn-sm btn-outline-primary">Edit name</summary>
+                                                <form method="POST" action="{{ route('admin.users.update-name', $user) }}" class="team-admin-edit-form mt-2">
+                                                    @csrf
+                                                    @method('PUT')
+                                                    <label class="form-label small mb-1" for="admin-name-{{ $user->id }}">Administrator name</label>
+                                                    <input id="admin-name-{{ $user->id }}" name="name" class="form-control form-control-sm" value="{{ $user->name }}" maxlength="255" required>
+                                                    <button type="submit" class="btn btn-sm btn-outline-primary mt-2">Save name</button>
+                                                </form>
+                                            </details>
+                                            <form method="POST" action="{{ route('admin.users.status', $user) }}" data-password-confirm data-password-message="Confirm your administrator password to change this account's access."
+                                                data-confirm-message="{{ $user->is_active ? $user->name.' will no longer be able to log in to the admin system. Their account and activity history will be preserved. Disable this administrator?' : $user->name.' will be able to access the admin system again. Enable this administrator?' }}">
                                                 @csrf
-                                                @method('PUT')
-                                                <input type="password" name="password" class="form-control form-control-sm" placeholder="New password" required minlength="8">
-                                                <input type="password" name="password_confirmation" class="form-control form-control-sm" placeholder="Confirm" required minlength="8">
-                                                <div class="d-grid">
-                                                    <button type="submit" class="btn btn-sm btn-outline-primary">Reset</button>
-                                                </div>
+                                                @method('PATCH')
+                                                <input type="hidden" name="is_active" value="{{ $user->is_active ? '0' : '1' }}">
+                                                <button type="submit" class="btn btn-sm {{ $user->is_active ? 'btn-outline-danger' : 'btn-outline-success' }}">
+                                                    {{ $user->is_active ? 'Disable' : 'Enable' }}
+                                                </button>
                                             </form>
+                                            <details class="team-admin-reset">
+                                                <summary class="btn btn-sm btn-outline-secondary">Reset password</summary>
+                                                <form method="POST" action="{{ route('admin.users.reset', $user) }}" class="team-admin-reset-form mt-2" data-password-confirm data-password-message="Confirm your administrator password before changing this administrator's password.">
+                                                    @csrf
+                                                    @method('PUT')
+                                                    <label class="visually-hidden" for="admin-password-{{ $user->id }}">New password</label>
+                                                    <input id="admin-password-{{ $user->id }}" type="password" name="password" class="form-control form-control-sm" placeholder="New password" required minlength="12">
+                                                    <label class="visually-hidden" for="admin-password-confirm-{{ $user->id }}">Confirm new password</label>
+                                                    <input id="admin-password-confirm-{{ $user->id }}" type="password" name="password_confirmation" class="form-control form-control-sm" placeholder="Confirm" required minlength="12">
+                                                    <button type="submit" class="btn btn-sm btn-outline-primary">Reset</button>
+                                                </form>
+                                            </details>
                                         </div>
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="4" class="text-muted text-center py-3">No admins yet.</td></tr>
+                                <tr><td colspan="5" class="text-muted text-center py-3">No admins yet.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -97,18 +126,23 @@
 </div>
 
 <style>
-    .team-admin-table { table-layout: fixed; min-width: 680px; }
+    .team-admin-table { table-layout: fixed; min-width: 780px; }
     .team-admin-table th, .team-admin-table td { vertical-align: middle; }
-    .team-admin-table th:nth-child(1), .team-admin-table td:nth-child(1) { width: 16%; }
-    .team-admin-table th:nth-child(2), .team-admin-table td:nth-child(2) { width: 24%; }
-    .team-admin-table th:nth-child(3), .team-admin-table td:nth-child(3) { width: 17%; }
-    .team-admin-table th:nth-child(4), .team-admin-table td:nth-child(4) { width: 43%; }
-    .team-admin-table td:nth-child(2), .team-admin-table td:nth-child(4) { overflow-wrap: anywhere; }
-    .team-admin-access { display: grid; gap: .35rem; }
+    .team-admin-table th:nth-child(1), .team-admin-table td:nth-child(1) { width: 17%; }
+    .team-admin-table th:nth-child(2), .team-admin-table td:nth-child(2) { width: 23%; }
+    .team-admin-table th:nth-child(3), .team-admin-table td:nth-child(3) { width: 16%; }
+    .team-admin-table th:nth-child(4), .team-admin-table td:nth-child(4) { width: 12%; }
+    .team-admin-table th:nth-child(5), .team-admin-table td:nth-child(5) { width: 32%; }
+    .team-admin-table td:nth-child(2), .team-admin-table td:nth-child(5) { overflow-wrap: anywhere; }
+    .team-admin-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .4rem; }
+    .team-admin-edit-form { min-width: 210px; }
+    .team-admin-actions summary { cursor: pointer; list-style: none; }
+    .team-admin-actions summary::-webkit-details-marker { display: none; }
     .team-admin-reset-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: .3rem; align-items: center; }
     .team-admin-reset-form .form-control { min-width: 0; }
     @media(max-width:768px){
-        .team-admin-table { min-width: 560px; }
+        .team-admin-table { min-width: 780px; }
+        .team-admin-reset-form { grid-template-columns: 1fr; }
     }
 </style>
 @endsection

@@ -38,6 +38,8 @@ Route::get('/manual', fn () => redirect()->route('support'))->name('manual');
 
 Route::get('/admin/login', [AuthController::class, 'showLoginForm'])->name('admin.login');
 Route::post('/admin/login', [AuthController::class, 'login'])->name('admin.login.post');
+Route::get('/admin/setup', [AuthController::class, 'showPrimaryAdminSetup'])->name('admin.setup');
+Route::post('/admin/setup', [AuthController::class, 'createPrimaryAdmin'])->middleware('throttle:3,10')->name('admin.setup.store');
 Route::get('/admin/forgot-password', [AuthController::class, 'showForgotPasswordForm'])->middleware('guest')->name('password.request');
 Route::post('/admin/forgot-password', [AuthController::class, 'sendPasswordResetLink'])->middleware(['guest', 'throttle:3,10'])->name('password.email');
 Route::get('/admin/reset-password/{token}', [AuthController::class, 'showResetPasswordForm'])->middleware('guest')->name('password.reset');
@@ -95,7 +97,13 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
             ->names('admin.gallery');
         Route::get('/team-admins', [AdminUserController::class, 'index'])->name('admin.users');
         Route::post('/team-admins', [AdminUserController::class, 'store'])->name('admin.users.store');
-        Route::put('/team-admins/{user}/reset-password', [AdminUserController::class, 'resetPassword'])->name('admin.users.reset');
+        Route::put('/team-admins/{user}/name', [AdminUserController::class, 'updateName'])->name('admin.users.update-name');
+        Route::patch('/team-admins/{user}/status', [AdminUserController::class, 'updateStatus'])
+            ->middleware('confirm.admin-password')
+            ->name('admin.users.status');
+        Route::put('/team-admins/{user}/reset-password', [AdminUserController::class, 'resetPassword'])
+            ->middleware('confirm.admin-password')
+            ->name('admin.users.reset');
         Route::get('/reports', [ReportController::class, 'index'])->name('admin.reports');
         Route::get('/reports/export/{period}', [ReportController::class, 'export'])->whereIn('period', ['daily', 'weekly', 'monthly', 'yearly'])->name('admin.reports.export');
         Route::get('/reports/export/{period}/excel', [ReportController::class, 'exportExcel'])->whereIn('period', ['daily', 'weekly', 'monthly', 'yearly'])->name('admin.reports.export.excel');

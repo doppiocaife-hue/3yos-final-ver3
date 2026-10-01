@@ -115,6 +115,13 @@
                 @if(session('success'))
                     <div class="alert alert-success">{{ session('success') }}</div>
                 @endif
+                @if($setupAvailable)
+                    <div class="alert alert-info">
+                        <strong class="d-block mb-1">Primary Administrator Setup Required</strong>
+                        <p class="mb-0">No Primary Administrator account has been set up yet. Please create the Primary Administrator account to continue.</p>
+                    </div>
+                    <a href="{{ route('admin.setup') }}" class="btn btn-outline-primary w-100 mb-3">Create Primary Administrator</a>
+                @endif
                 <form method="POST" action="{{ route('admin.login.post') }}">
                     @csrf
                     <div class="mb-3">

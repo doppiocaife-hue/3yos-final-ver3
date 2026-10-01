@@ -10,6 +10,7 @@ use App\Models\ReservationRefund;
 use App\Services\BackupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -541,7 +542,7 @@ class ReservationPaymentTest extends TestCase
         $service = app(BackupService::class);
         $path = $service->pathFor(basename($service->create()));
         try {
-            $contents = json_decode(file_get_contents($path), true);
+            $contents = json_decode(Crypt::decryptString(file_get_contents($path)), true, 512, JSON_THROW_ON_ERROR);
         } finally {
             @unlink($path);
         }
@@ -562,10 +563,10 @@ class ReservationPaymentTest extends TestCase
 
         try {
             // Simulate an older backup file that predates the payments table.
-            $backup = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+            $backup = json_decode(Crypt::decryptString(file_get_contents($path)), true, 512, JSON_THROW_ON_ERROR);
             unset($backup['tables']['reservation_payments']);
             unset($backup['tables']['reservation_refunds']);
-            file_put_contents($path, json_encode($backup, JSON_THROW_ON_ERROR), LOCK_EX);
+            file_put_contents($path, Crypt::encryptString(json_encode($backup, JSON_THROW_ON_ERROR)), LOCK_EX);
 
             $this->pay($reservation, 500);
             $this->assertSame(2, ReservationPayment::count());

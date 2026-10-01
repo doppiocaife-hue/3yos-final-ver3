@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -25,22 +27,25 @@ class BackupService
     ];
 
     private const MAX_UPLOAD_SIZE = 20 * 1024 * 1024;
+    private const BACKUP_VERSION = 1;
 
     public function create(): string
     {
-        $filename = 'backup-' . now()->format('YmdHis');
-        $path = storage_path('app/backups/' . $filename);
-        if (! is_dir(dirname($path)) && ! mkdir(dirname($path), 0755, true) && ! is_dir(dirname($path))) {
-            throw new \RuntimeException('The backup directory could not be created.');
-        }
+        $filename = 'backup-'.now()->format('YmdHis');
+        $directory = $this->privateBackupDirectory();
+        $this->ensureDirectory($directory);
 
+        $path = $directory.'/'.$filename.'.json.enc';
         $suffix = 1;
-        while (is_file($path.'.json')) {
-            $path = storage_path('app/backups/'.$filename.'-'.$suffix++);
+        while (is_file($path)) {
+            $path = $directory.'/'.$filename.'-'.$suffix++.'.json.enc';
         }
-        $path .= '.json';
 
-        $contents = ['created_at' => now()->toIso8601String(), 'tables' => []];
+        $contents = [
+            'backup_version' => self::BACKUP_VERSION,
+            'created_at' => now()->toIso8601String(),
+            'tables' => [],
+        ];
 
         foreach (self::TABLES as $table) {
             if (Schema::hasTable($table)) {
@@ -48,17 +53,8 @@ class BackupService
             }
         }
 
-        $temporaryPath = $path.'.'.Str::uuid().'.tmp';
-        try {
-            if (file_put_contents($temporaryPath, json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR), LOCK_EX) === false
-                || ! rename($temporaryPath, $path)) {
-                throw new \RuntimeException('The database backup could not be written.');
-            }
-        } finally {
-            if (is_file($temporaryPath)) {
-                unlink($temporaryPath);
-            }
-        }
+        $json = json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        $this->writeAtomically($path, Crypt::encryptString($json));
 
         return $path;
     }
@@ -76,41 +72,26 @@ class BackupService
         $contents = $this->decodeBackup($file);
         $this->assertBackupCompatible($contents);
 
-        $directory = storage_path('app/backups');
-        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
-            throw new \RuntimeException('The backup directory could not be created.');
-        }
+        $directory = $this->privateBackupDirectory();
+        $this->ensureDirectory($directory);
 
-        $filename = 'uploaded-backup-' . now()->format('Ymd-His');
-        $path = $directory . '/' . $filename . '.json';
+        $filename = 'uploaded-backup-'.now()->format('Ymd-His');
+        $path = $directory.'/'.$filename.'.json.enc';
         $suffix = 1;
         while (is_file($path)) {
-            $path = $directory . '/' . $filename . '-' . $suffix++ . '.json';
+            $path = $directory.'/'.$filename.'-'.$suffix++.'.json.enc';
         }
 
-        $temporaryPath = $path . '.' . Str::uuid() . '.tmp';
-        try {
-            $encoded = json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
-            if (file_put_contents($temporaryPath, $encoded, LOCK_EX) === false || ! rename($temporaryPath, $path)) {
-                throw new \RuntimeException('The uploaded backup could not be stored.');
-            }
-        } finally {
-            if (is_file($temporaryPath)) {
-                unlink($temporaryPath);
-            }
-        }
+        $contents['backup_version'] = self::BACKUP_VERSION;
+        $encoded = json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        $this->writeAtomically($path, Crypt::encryptString($encoded));
 
         return basename($path);
     }
 
     public function restore(string $backup): int
     {
-        $path = $this->pathFor($backup);
-        $json = file_get_contents($path);
-        if ($json === false) {
-            throw new \RuntimeException('The selected backup could not be read.');
-        }
-        $contents = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        $contents = $this->readBackup($backup);
         $this->assertBackupCompatible($contents);
 
         $tables = $contents['tables'];
@@ -173,12 +154,19 @@ class BackupService
         return $restoredRows;
     }
 
+    public function validate(string $backup): void
+    {
+        $this->assertBackupCompatible($this->readBackup($backup));
+    }
+
     public function pathFor(string $backup): string
     {
-        if (preg_match('/^(?:backup-\d{14}(?:-\d+)?|uploaded-backup-\d{8}(?:-\d{6})?(?:-\d+)?)\.json$/D', $backup) === 1) {
-            $path = storage_path('app/backups/' . $backup);
-            if (is_file($path)) {
-                return $path;
+        if (preg_match('/^(?:backup-\d{14}(?:-\d+)?|uploaded-backup-\d{8}(?:-\d{6})?(?:-\d+)?)\.json(?:\.enc)?$/D', $backup) === 1) {
+            foreach ([$this->privateBackupDirectory(), storage_path('app/backups')] as $directory) {
+                $path = $directory.'/'.$backup;
+                if (is_file($path)) {
+                    return $path;
+                }
             }
         }
 
@@ -194,17 +182,21 @@ class BackupService
 
     public function listBackups(): array
     {
-        $dir = storage_path('app/backups');
-        if (! is_dir($dir)) {
-            return [];
+        $files = [];
+        foreach ([$this->privateBackupDirectory(), storage_path('app/backups')] as $directory) {
+            if (! is_dir($directory)) {
+                continue;
+            }
+            $entries = scandir($directory);
+            if ($entries !== false) {
+                $files = array_merge($files, array_filter(
+                    $entries,
+                    fn (string $file) => preg_match('/^(?:backup-\d{14}(?:-\d+)?|uploaded-backup-\d{8}(?:-\d{6})?(?:-\d+)?)\.json(?:\.enc)?$/D', $file) === 1
+                ));
+            }
         }
 
-        $entries = scandir($dir);
-        if ($entries === false) {
-            return [];
-        }
-
-        $files = array_values(array_filter($entries, fn ($file) => preg_match('/^(?:backup-\d{14}(?:-\d+)?|uploaded-backup-\d{8}(?:-\d{6})?(?:-\d+)?)\.json$/D', $file) === 1));
+        $files = array_values(array_unique($files));
         rsort($files, SORT_STRING);
 
         return $files;
@@ -215,6 +207,12 @@ class BackupService
         $contents = file_get_contents($file->getRealPath());
         if ($contents === false) {
             throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
+        }
+
+        if (strtolower($file->getClientOriginalExtension()) === 'enc') {
+            $contents = $this->decryptBackup($contents);
+        } elseif (strtolower($file->getClientOriginalExtension()) !== 'json') {
+            throw new \InvalidArgumentException('Unsupported backup file type.');
         }
 
         try {
@@ -232,6 +230,11 @@ class BackupService
 
     private function assertBackupCompatible(array $contents): void
     {
+        if (array_key_exists('backup_version', $contents)
+            && $contents['backup_version'] !== self::BACKUP_VERSION) {
+            throw new \InvalidArgumentException('This backup is not compatible with this application version.');
+        }
+
         if (! array_key_exists('tables', $contents) || ! is_array($contents['tables'])) {
             throw new \InvalidArgumentException('This backup is not compatible with this application version.');
         }
@@ -247,6 +250,9 @@ class BackupService
         }
 
         foreach ($tables as $table => $rows) {
+            if (! is_string($table) || ! in_array($table, self::TABLES, true)) {
+                throw new \InvalidArgumentException('This backup is not compatible with this application version.');
+            }
             if (! is_array($rows) || ! array_is_list($rows)) {
                 throw new \InvalidArgumentException("The backup file is invalid or corrupted for {$table}.");
             }
@@ -255,6 +261,70 @@ class BackupService
                 if (! is_array($row)) {
                     throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
                 }
+            }
+        }
+    }
+
+    public function isEncrypted(string $backup): bool
+    {
+        return str_ends_with($backup, '.json.enc');
+    }
+
+    private function readBackup(string $backup): array
+    {
+        $raw = file_get_contents($this->pathFor($backup));
+        if ($raw === false) {
+            throw new \RuntimeException('The selected backup could not be read.');
+        }
+        if ($this->isEncrypted($backup)) {
+            $raw = $this->decryptBackup($raw);
+        }
+
+        try {
+            $contents = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            throw new \InvalidArgumentException('Backup verification failed. The backup may be corrupted or modified.');
+        }
+
+        if (! is_array($contents)) {
+            throw new \InvalidArgumentException('Backup verification failed. The backup may be corrupted or modified.');
+        }
+
+        return $contents;
+    }
+
+    private function decryptBackup(string $contents): string
+    {
+        try {
+            return Crypt::decryptString($contents);
+        } catch (DecryptException) {
+            throw new \InvalidArgumentException('Backup verification failed. The backup may be corrupted or modified.');
+        }
+    }
+
+    private function privateBackupDirectory(): string
+    {
+        return storage_path('app/private/backups');
+    }
+
+    private function ensureDirectory(string $directory): void
+    {
+        if (! is_dir($directory) && ! mkdir($directory, 0700, true) && ! is_dir($directory)) {
+            throw new \RuntimeException('The backup directory could not be created.');
+        }
+    }
+
+    private function writeAtomically(string $path, string $contents): void
+    {
+        $temporaryPath = $path.'.'.Str::uuid().'.tmp';
+        try {
+            if (file_put_contents($temporaryPath, $contents, LOCK_EX) === false || ! rename($temporaryPath, $path)) {
+                throw new \RuntimeException('The backup file could not be written.');
+            }
+            @chmod($path, 0600);
+        } finally {
+            if (is_file($temporaryPath)) {
+                unlink($temporaryPath);
             }
         }
     }

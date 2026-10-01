@@ -248,7 +248,7 @@ document.querySelectorAll('form input:not([type="hidden"]), form select, form te
 
         const confirmation = document.createElement('input');
         confirmation.type = 'hidden';
-        confirmation.name = 'password_confirmation';
+        confirmation.name = 'current_admin_password';
         confirmation.value = passwordInput.value;
         form.append(confirmation);
         form.dataset.passwordConfirmed = 'true';

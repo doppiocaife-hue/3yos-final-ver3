@@ -79,6 +79,7 @@ class AdminReservationDetailTest extends TestCase
 
     public function test_admin_can_preview_download_and_delete_multiple_contract_images(): void
     {
+        Storage::fake('local');
         Storage::fake('public');
         $reservation = $this->reservation();
 
@@ -93,8 +94,10 @@ class AdminReservationDetailTest extends TestCase
 
         $files = $reservation->fresh()->contractFiles();
         $this->assertCount(2, $files);
-        $this->assertTrue(Storage::disk('public')->exists($files[0]));
-        $this->assertTrue(Storage::disk('public')->exists($files[1]));
+        $this->assertTrue(Storage::disk('local')->exists($files[0]));
+        $this->assertTrue(Storage::disk('local')->exists($files[1]));
+        Storage::disk('public')->assertMissing($files[0]);
+        Storage::disk('public')->assertMissing($files[1]);
 
         $detail = $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation));
         $detail->assertOk();
@@ -106,6 +109,7 @@ class AdminReservationDetailTest extends TestCase
         $detail->assertSee('data-contract-preview', false);
         $detail->assertSee('data-contract-preview-close', false);
         $detail->assertSee('Download');
+        $detail->assertDontSee('File is no longer available.');
         $detail->assertDontSee('storage/service-contracts/');
 
         $preview = $this->withSession(self::ADMIN)
@@ -139,9 +143,9 @@ class AdminReservationDetailTest extends TestCase
 
     public function test_contract_preview_and_download_require_admin_access(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         $reservation = $this->reservation();
-        $contractPath = $this->pngUpload('private-contract.png')->store('service-contracts', 'public');
+        $contractPath = $this->pngUpload('private-contract.png')->store('service-contracts', 'local');
         $reservation->update(['service_contracts' => [$contractPath]]);
 
         $this->get(route('admin.reservations.contract.preview', [$reservation, 0]))
@@ -152,7 +156,7 @@ class AdminReservationDetailTest extends TestCase
 
     public function test_missing_contract_files_are_reported_and_not_previewed(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         $reservation = $this->reservation([
             'service_contracts' => ['service-contracts/missing-contract.png'],
         ]);
@@ -300,6 +304,43 @@ class AdminReservationDetailTest extends TestCase
             'notification_type' => 'updated',
             'status' => 'sent',
         ]);
+    }
+
+    public function test_contract_storage_migration_moves_public_files_without_changing_database_paths(): void
+    {
+        Storage::fake('public');
+        Storage::fake('local');
+        $path = 'service-contracts/legacy-contract.png';
+        Storage::disk('public')->put($path, 'contract-file');
+        $reservation = $this->reservation(['service_contracts' => [$path]]);
+
+        $migration = require database_path('migrations/2026_10_01_000005_move_service_contracts_to_private_storage.php');
+        $migration->up();
+
+        Storage::disk('local')->assertExists($path);
+        Storage::disk('public')->assertMissing($path);
+        $this->assertSame([$path], $reservation->fresh()->service_contracts);
+    }
+
+    public function test_contract_storage_migration_does_not_delete_a_conflicting_public_file(): void
+    {
+        Storage::fake('public');
+        Storage::fake('local');
+        $path = 'service-contracts/conflicting-contract.png';
+        Storage::disk('public')->put($path, 'public-contract');
+        Storage::disk('local')->put($path, 'private-contract');
+
+        $migration = require database_path('migrations/2026_10_01_000005_move_service_contracts_to_private_storage.php');
+
+        try {
+            $migration->up();
+            $this->fail('Expected the migration to reject the conflicting contract file.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('conflicting private contract file', $exception->getMessage());
+        }
+
+        Storage::disk('public')->assertExists($path);
+        Storage::disk('local')->assertExists($path);
     }
 
     public function test_unchanged_confirmed_reservation_fields_do_not_create_an_audit_or_send_email(): void

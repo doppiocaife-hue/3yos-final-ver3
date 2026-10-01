@@ -3,24 +3,126 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Auth\Events\PasswordReset;
+use App\Models\ActivityLog;
 use App\Models\User;
+use App\Support\AdminPasswordRules;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\RateLimiter;
-use App\Models\ActivityLog;
 use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
     public function showLoginForm()
     {
-        return view('admin.login');
+        return view('admin.login', ['setupAvailable' => ! $this->hasPrimaryAdmin() && $this->hasSetupKey()]);
+    }
+
+    public function showPrimaryAdminSetup()
+    {
+        return view('admin.setup', [
+            'setupComplete' => $this->hasPrimaryAdmin(),
+            'setupAvailable' => $this->hasSetupKey(),
+        ]);
+    }
+
+    public function createPrimaryAdmin(Request $request)
+    {
+        if ($this->hasPrimaryAdmin()) {
+            return redirect()->route('admin.setup')->with('error', 'Primary Administrator setup has already been completed.');
+        }
+
+        if (! $this->hasSetupKey()) {
+            return redirect()->route('admin.setup')->with('error', 'Primary Administrator setup is not available. Contact the system administrator.');
+        }
+
+        $providedSetupKey = $request->input('setup_key');
+        if (! is_string($providedSetupKey)
+            || strlen($providedSetupKey) > 512
+            || ! hash_equals((string) config('admin.primary_admin_setup_key'), $providedSetupKey)) {
+            return back()->with('error', 'The setup key is invalid.');
+        }
+        $request->request->remove('setup_key');
+        $request->json()->remove('setup_key');
+
+        $name = $request->input('name');
+        $email = $request->input('email');
+        $request->merge([
+            'name' => is_string($name) ? trim($name) : $name,
+            'email' => is_string($email) ? Str::lower(trim($email)) : $email,
+        ]);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255', "regex:/^[\\pL\\pM][\\pL\\pM\\s.\\x27’\\-]*$/u"],
+            'email' => [
+                'required',
+                'string',
+                'email',
+                'max:255',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (! is_string($value)) {
+                        return;
+                    }
+
+                    if (User::query()->whereRaw('LOWER(email) = ?', [$value])->exists()) {
+                        $fail('The email address has already been taken.');
+                    }
+                },
+            ],
+            'password' => AdminPasswordRules::rules(),
+        ]);
+
+        try {
+            $user = Cache::lock('3yos-primary-admin-initial-setup', 30)->block(5, function () use ($data): User {
+                return DB::transaction(function () use ($data): User {
+                    $primaryAdmins = User::query()->where('role', 'full')->lockForUpdate()->exists();
+                    if ($primaryAdmins) {
+                        throw new \DomainException('Primary Administrator setup has already been completed.');
+                    }
+
+                    User::query()->lockForUpdate()->orderBy('id')->get(['id']);
+
+                    $user = User::create([
+                        'name' => $data['name'],
+                        'email' => $data['email'],
+                        'password' => Hash::make($data['password']),
+                        'role' => 'full',
+                        'is_active' => true,
+                    ]);
+
+                    ActivityLog::create([
+                        'user_id' => $user->id,
+                        'actor_name' => $user->name,
+                        'actor_email' => $user->email,
+                        'actor_role' => 'full',
+                        'action' => 'Primary Administrator account created',
+                        'method' => 'POST',
+                        'ip_address' => request()->ip(),
+                        'activity_date' => now()->toDateString(),
+                        'activity_time' => now()->toTimeString(),
+                        'description' => 'Initial Primary Administrator account created during system setup.',
+                    ]);
+
+                    return $user;
+                });
+            });
+        } catch (LockTimeoutException) {
+            return back()->with('error', 'Primary Administrator setup is busy. Please try again.');
+        } catch (\DomainException) {
+            return redirect()->route('admin.setup')->with('error', 'Primary Administrator setup has already been completed.');
+        }
+
+        return redirect()->route('admin.login')->with('success', 'Primary Administrator created successfully. Please sign in.');
     }
 
     public function login(Request $request)
     {
-        $request->validate(['email' => ['required', 'email'], 'password' => ['required', 'string']]);
+        $email = $request->input('email');
+        $request->merge(['email' => is_string($email) ? Str::lower(trim($email)) : $email]);
+        $request->validate(['email' => ['required', 'string', 'email'], 'password' => ['required', 'string']]);
         $email = $request->input('email');
         $password = $request->input('password');
 
@@ -36,22 +138,28 @@ class AuthController extends Controller
             );
         }
 
-        $expectedEmail = (string) env('ADMIN_EMAIL', 'admin@3yos.com');
-        $expectedPassword = (string) env('ADMIN_PASSWORD', 'admin123');
+        $user = User::query()->whereRaw('LOWER(email) = ?', [$email])->first();
+        $isAdminRole = $user && in_array($user->role, ['full', 'limited'], true);
+        $validPassword = $isAdminRole && Hash::check($password, $user->password);
 
-        $user = User::where('email', $email)->first();
-        $isPrimaryAdmin = hash_equals($expectedEmail, $email) && hash_equals($expectedPassword, $password);
-        $isFullAdminUser = $user && $user->role === 'full' && Hash::check($password, $user->password);
-        $isTeamAdmin = $user && $user->role === 'limited' && Hash::check($password, $user->password);
+        if ($validPassword && $user->is_active === false) {
+            RateLimiter::clear($throttleKey);
 
-        if ($isPrimaryAdmin || $isFullAdminUser || $isTeamAdmin) {
+            return back()->withInput($request->only('email'))->with(
+                'error',
+                'Your administrator account has been disabled. Please contact a primary administrator.'
+            );
+        }
+
+        if ($validPassword && $user->is_active === true) {
             RateLimiter::clear($throttleKey);
             $request->session()->regenerate();
             $request->session()->put('is_admin', true);
-            $request->session()->put('admin_role', $isPrimaryAdmin || $isFullAdminUser ? 'full' : 'limited');
-            $request->session()->put('admin_user_id', $user?->id);
-            $request->session()->put('admin_name', $isPrimaryAdmin ? 'Primary Administrator' : $user->name);
-            $request->session()->put('admin_email', $email);
+            $request->session()->put('admin_role', $user->role);
+            $request->session()->put('admin_user_id', $user->id);
+            $request->session()->put('admin_name', $user->name);
+            $request->session()->put('admin_email', $user->email);
+            $request->session()->put('admin_session_version', $user->session_version);
             $this->logAuthentication($request, 'Signed in');
 
             return redirect()->route('admin.dashboard');
@@ -71,25 +179,18 @@ class AuthController extends Controller
     {
         $request->validate(['email' => ['required', 'email']]);
 
-        $status = Password::sendResetLink($request->only('email'));
+        $email = Str::lower(trim($request->string('email')->toString()));
+        $admin = User::query()
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->whereIn('role', ['full', 'limited'])
+            ->where('is_active', true)
+            ->exists();
 
-        if ($status !== Password::RESET_LINK_SENT) {
-            return back()->with('error', 'We could not send the reset link. Please try again shortly.');
+        if ($admin) {
+            Password::sendResetLink(['email' => $email]);
         }
 
-        $user = User::where('email', $request->email)->first();
-        $resetUrl = $user ? route('password.reset', ['token' => Password::broker()->createToken($user), 'email' => $user->email]) : null;
-
-        if (config('mail.default') === 'log' || config('mail.default') === 'array') {
-            return back()->with(
-                'status',
-                $resetUrl
-                    ? 'Development mode: password reset link generated successfully: ' . $resetUrl . ' (also written to the Laravel log).'
-                    : 'Password reset link generated successfully. Check the Laravel log for the full reset URL.'
-            );
-        }
-
-        return back()->with('status', 'If that Team Admin email exists, a password reset link has been sent.');
+        return back()->with('status', 'If an active administrator account matches that email, a password reset link has been sent.');
     }
 
     public function showResetPasswordForm(Request $request, string $token)
@@ -99,14 +200,30 @@ class AuthController extends Controller
 
     public function resetPassword(Request $request)
     {
+        $request->merge(['email' => Str::lower(trim((string) $request->input('email')))]);
         $request->validate([
             'token' => ['required'],
             'email' => ['required', 'email'],
-            'password' => ['required', 'confirmed', 'min:8'],
+            'password' => AdminPasswordRules::rules(),
         ]);
 
         $status = Password::reset($request->only('email', 'password', 'password_confirmation', 'token'), function (User $user, string $password) {
-            $user->forceFill(['password' => Hash::make($password), 'remember_token' => Str::random(60)])->save();
+            $user->forceFill([
+                'password' => Hash::make($password),
+                'remember_token' => Str::random(60),
+                'session_version' => $user->session_version + 1,
+            ])->save();
+            ActivityLog::create([
+                'user_id' => $user->id,
+                'actor_name' => $user->name,
+                'actor_email' => $user->email,
+                'actor_role' => $user->role,
+                'action' => 'Administrator password reset',
+                'method' => 'PASSWORD',
+                'activity_date' => now()->toDateString(),
+                'activity_time' => now()->toTimeString(),
+                'description' => 'Administrator password reset completed. Existing sessions were revoked.',
+            ]);
             event(new PasswordReset($user));
         });
 
@@ -140,5 +257,17 @@ class AuthController extends Controller
             'activity_time' => now()->toTimeString(),
             'description' => $action . ' to the admin panel.',
         ]);
+    }
+
+    private function hasPrimaryAdmin(): bool
+    {
+        return User::query()->where('role', 'full')->exists();
+    }
+
+    private function hasSetupKey(): bool
+    {
+        $key = config('admin.primary_admin_setup_key');
+
+        return is_string($key) && strlen($key) >= 32;
     }
 }

@@ -2,27 +2,38 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class AdminLoginSecurityTest extends TestCase
 {
-    public function test_correct_primary_admin_credentials_still_log_in(): void
+    use RefreshDatabase;
+
+    public function test_active_primary_admin_database_credentials_log_in(): void
     {
-        $response = $this->post('/admin/login', [
-            'email' => 'admin@3yos.com',
-            'password' => 'admin123',
+        $admin = $this->createPrimaryAdmin();
+
+        $response = $this->post(route('admin.login.post'), [
+            'email' => $admin->email,
+            'password' => 'ValidPrimarySecret#2026',
         ]);
 
         $response->assertRedirect(route('admin.dashboard'));
         $this->assertTrue(session('is_admin'));
+        $this->assertSame($admin->id, session('admin_user_id'));
         $this->assertSame('full', session('admin_role'));
     }
 
-    public function test_wrong_password_is_rejected(): void
+    public function test_wrong_password_is_rejected_for_a_known_admin(): void
     {
-        $response = $this->post('/admin/login', [
-            'email' => 'admin@3yos.com',
-            'password' => 'not-the-password',
+        $admin = $this->createPrimaryAdmin();
+
+        $response = $this->post(route('admin.login.post'), [
+            'email' => $admin->email,
+            'password' => 'incorrect-secret',
         ]);
 
         $response->assertSessionHas('error', 'Invalid admin credentials.');
@@ -31,16 +42,18 @@ class AdminLoginSecurityTest extends TestCase
 
     public function test_repeated_failed_attempts_are_rate_limited(): void
     {
+        $admin = $this->createPrimaryAdmin();
+        $throttleKey = Str::lower($admin->email).'|127.0.0.1';
+        RateLimiter::clear($throttleKey);
+
         for ($i = 0; $i < 5; $i++) {
-            $this->post('/admin/login', ['email' => 'admin@3yos.com', 'password' => 'wrong'])
+            $this->post(route('admin.login.post'), ['email' => $admin->email, 'password' => 'wrong'])
                 ->assertSessionHas('error', 'Invalid admin credentials.');
         }
 
-        // The 6th attempt is blocked before credentials are even checked — even with the
-        // correct password, since the lockout protects against a compromised/guessed password too.
-        $response = $this->post('/admin/login', [
-            'email' => 'admin@3yos.com',
-            'password' => 'admin123',
+        $response = $this->post(route('admin.login.post'), [
+            'email' => $admin->email,
+            'password' => 'ValidPrimarySecret#2026',
         ]);
 
         $response->assertSessionHas('error');
@@ -50,36 +63,78 @@ class AdminLoginSecurityTest extends TestCase
 
     public function test_successful_login_clears_the_rate_limit_counter(): void
     {
-        $this->post('/admin/login', ['email' => 'admin@3yos.com', 'password' => 'wrong']);
-        $this->post('/admin/login', ['email' => 'admin@3yos.com', 'password' => 'wrong']);
+        $admin = $this->createPrimaryAdmin();
+        $throttleKey = Str::lower($admin->email).'|127.0.0.1';
+        RateLimiter::clear($throttleKey);
+        $this->post(route('admin.login.post'), ['email' => $admin->email, 'password' => 'wrong']);
+        $this->post(route('admin.login.post'), ['email' => $admin->email, 'password' => 'wrong']);
 
-        $this->post('/admin/login', ['email' => 'admin@3yos.com', 'password' => 'admin123'])
-            ->assertRedirect(route('admin.dashboard'));
+        $this->post(route('admin.login.post'), [
+            'email' => $admin->email,
+            'password' => 'ValidPrimarySecret#2026',
+        ])->assertRedirect(route('admin.dashboard'));
 
-        // Further failed attempts start counting fresh, not continuing from before the success.
         for ($i = 0; $i < 4; $i++) {
-            $this->post('/admin/login', ['email' => 'admin@3yos.com', 'password' => 'wrong'])
+            $this->post(route('admin.login.post'), ['email' => $admin->email, 'password' => 'wrong'])
                 ->assertSessionHas('error', 'Invalid admin credentials.');
         }
     }
 
     public function test_limited_admin_cannot_access_backups(): void
     {
-        $response = $this->withSession([
+        $this->withSession([
             'is_admin' => true,
             'admin_role' => 'limited',
-        ])->get(route('admin.backups'));
-
-        $response->assertForbidden();
+        ])->get(route('admin.backups'))
+            ->assertForbidden();
     }
 
     public function test_full_admin_can_still_access_backups(): void
     {
-        $response = $this->withSession([
+        $this->withSession([
             'is_admin' => true,
             'admin_role' => 'full',
-        ])->get(route('admin.backups'));
+        ])->get(route('admin.backups'))
+            ->assertOk();
+    }
 
-        $response->assertOk();
+    public function test_admin_session_without_a_database_identity_is_invalidated(): void
+    {
+        $this->withSession([
+            'is_admin' => true,
+            'admin_role' => 'full',
+            'admin_user_id' => null,
+        ])->get(route('admin.dashboard'))
+            ->assertRedirect(route('admin.login'))
+            ->assertSessionHas('error', 'Your administrator session has expired. Please sign in again.');
+
+        $this->assertNull(session('is_admin'));
+    }
+
+    public function test_admin_session_is_invalidated_after_session_version_changes(): void
+    {
+        $admin = $this->createPrimaryAdmin();
+        $session = [
+            'is_admin' => true,
+            'admin_role' => 'full',
+            'admin_user_id' => $admin->id,
+            'admin_session_version' => $admin->session_version,
+        ];
+        $admin->increment('session_version');
+
+        $this->withSession($session)
+            ->get(route('admin.dashboard'))
+            ->assertRedirect(route('admin.login'))
+            ->assertSessionHas('error', 'Your administrator session has expired. Please sign in again.');
+    }
+
+    private function createPrimaryAdmin(): User
+    {
+        return User::factory()->create([
+            'role' => 'full',
+            'email' => 'primary.admin@example.test',
+            'password' => 'ValidPrimarySecret#2026',
+            'is_active' => true,
+        ]);
     }
 }

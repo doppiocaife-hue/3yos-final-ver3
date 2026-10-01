@@ -15,7 +15,7 @@ class ConfirmAdminPassword
 
     public function handle(Request $request, Closure $next): Response
     {
-        $password = $request->input('password_confirmation');
+        $password = $request->input('current_admin_password');
 
         if (! is_string($password) || ! $this->passwordVerifier->verify($request, $password)) {
             $message = is_string($password) && $password !== ''
@@ -23,8 +23,8 @@ class ConfirmAdminPassword
                 : 'Confirm your administrator password to continue.';
 
             return back()
-                ->withErrors(['password_confirmation' => $message])
-                ->withInput($request->except('password_confirmation'));
+                ->withErrors(['current_admin_password' => $message])
+                ->withInput($request->except('current_admin_password'));
         }
 
         return $next($request);

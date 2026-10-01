@@ -808,7 +808,7 @@ class AdminController extends Controller
 
         $paths = $reservation->service_contracts ?? [];
         foreach ($data['service_contract'] as $file) {
-            $paths[] = $file->store('service-contracts', 'public');
+            $paths[] = $file->store('service-contracts', 'local');
         }
         $reservation->update(['service_contracts' => $paths]);
 
@@ -818,7 +818,7 @@ class AdminController extends Controller
     public function previewReservationContract(Reservation $reservation, int $contract)
     {
         $path = $this->reservationContractPath($reservation, $contract);
-        $disk = Storage::disk('public');
+        $disk = Storage::disk('local');
         $mimeType = $disk->mimeType($path);
         abort_unless(in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true), 415);
 
@@ -847,7 +847,7 @@ class AdminController extends Controller
     public function downloadReservationContract(Reservation $reservation, int $contract)
     {
         $path = $this->reservationContractPath($reservation, $contract);
-        $disk = Storage::disk('public');
+        $disk = Storage::disk('local');
 
         return $disk->download($path, basename($path), [
             'Cache-Control' => 'private, no-store, max-age=0',
@@ -860,7 +860,7 @@ class AdminController extends Controller
         $files = $reservation->contractFiles();
         abort_unless(isset($files[$contract]), 404);
 
-        Storage::disk('public')->delete($files[$contract]);
+        Storage::disk('local')->delete($files[$contract]);
         $files = array_values(array_diff($files, [$files[$contract]]));
 
         $reservation->update([
@@ -878,7 +878,7 @@ class AdminController extends Controller
 
         $path = $files[$contract];
         abort_unless(str_starts_with($path, 'service-contracts/'), 404);
-        abort_unless(Storage::disk('public')->exists($path), 404);
+        abort_unless(Storage::disk('local')->exists($path), 404);
 
         return $path;
     }

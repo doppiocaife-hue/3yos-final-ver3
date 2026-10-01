@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -13,6 +14,26 @@ class EnsureAdmin
         if (! $request->session()->get('is_admin', false)) {
             return redirect()->route('admin.login')->with('error', 'You need admin access to continue.');
         }
+
+        $adminUserId = $request->session()->get('admin_user_id');
+        $user = $adminUserId === null ? null : User::find($adminUserId);
+
+        if (! $user || ! in_array($user->role, ['full', 'limited'], true) || $user->is_active !== true
+            || (int) $user->session_version !== (int) $request->session()->get('admin_session_version', 0)) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('admin.login')->with(
+                'error',
+                $user && $user->is_active !== true
+                    ? 'Your administrator account has been disabled. Please contact a primary administrator.'
+                    : 'Your administrator session has expired. Please sign in again.'
+            );
+        }
+
+        $request->session()->put('admin_name', $user->name);
+        $request->session()->put('admin_email', $user->email);
+        $request->session()->put('admin_role', $user->role);
 
         return $next($request);
     }

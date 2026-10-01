@@ -31,18 +31,18 @@ class ModulePasswordConfirmationTest extends TestCase
         foreach (['admin.packages.store', 'admin.services.store', 'admin.gallery.store'] as $routeName) {
             $response = $this->withSession($session)
                 ->from(route('admin.dashboard'))
-                ->post(route($routeName), ['password_confirmation' => 'incorrect-password']);
+                ->post(route($routeName), ['current_admin_password' => 'incorrect-password']);
 
             $response->assertRedirect(route('admin.dashboard'));
-            $response->assertSessionHasErrors('password_confirmation');
+            $response->assertSessionHasErrors('current_admin_password');
         }
 
         $response = $this->withSession($session)
             ->from(route('admin.dashboard'))
-            ->patch(route('admin.services.toggle', $service), ['password_confirmation' => 'incorrect-password']);
+            ->patch(route('admin.services.toggle', $service), ['current_admin_password' => 'incorrect-password']);
 
         $response->assertRedirect(route('admin.dashboard'));
-        $response->assertSessionHasErrors('password_confirmation');
+        $response->assertSessionHasErrors('current_admin_password');
     }
 
     public function test_correct_password_allows_package_creation(): void
@@ -58,7 +58,7 @@ class ModulePasswordConfirmationTest extends TestCase
             'admin_user_id' => $admin->id,
             'admin_email' => $admin->email,
         ])->post(route('admin.packages.store'), [
-            'password_confirmation' => 'the-correct-password',
+            'current_admin_password' => 'the-correct-password',
             'name' => 'Protected package',
             'price' => 500,
         ]);

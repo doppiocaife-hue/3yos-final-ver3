@@ -142,7 +142,7 @@ class PublicCatalogFeaturesTest extends TestCase
             'admin_user_id' => $admin->id,
             'admin_email' => $admin->email,
         ])->from(route('admin.gallery.index'))->post(route('admin.gallery.store'), [
-            'password_confirmation' => 'gallery-admin-password',
+            'current_admin_password' => 'gallery-admin-password',
             'is_featured' => '1',
         ]);
 
@@ -167,7 +167,7 @@ class PublicCatalogFeaturesTest extends TestCase
         $image = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lb8AAAAASUVORK5CYII=');
 
         $packageResponse = $this->withSession($session)->post(route('admin.packages.store'), [
-            'password_confirmation' => 'image-admin-password',
+            'current_admin_password' => 'image-admin-password',
             'name' => 'Image package',
             'price' => 500,
             'image' => UploadedFile::fake()->createWithContent('package.png', $image),
@@ -185,7 +185,7 @@ class PublicCatalogFeaturesTest extends TestCase
         $catalog->assertOk()->assertSee(route('package.image', ['path' => $package->image_path]), false);
 
         $galleryResponse = $this->withSession($session)->from(route('admin.gallery.index'))->post(route('admin.gallery.store'), [
-            'password_confirmation' => 'image-admin-password',
+            'current_admin_password' => 'image-admin-password',
             'image' => UploadedFile::fake()->createWithContent('gallery.png', $image),
         ]);
         $galleryResponse->assertRedirect(route('admin.gallery.index'));

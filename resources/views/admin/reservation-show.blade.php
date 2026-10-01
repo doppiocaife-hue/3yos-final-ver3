@@ -178,8 +178,8 @@
                 </div>
                 <div class="contract-detail-list">
                     @forelse($reservation->contractFiles() as $contractIndex => $contractPath)
-                        @php($contractExists = \Illuminate\Support\Facades\Storage::disk('public')->exists($contractPath))
-                        @php($contractMimeType = $contractExists ? \Illuminate\Support\Facades\Storage::disk('public')->mimeType($contractPath) : null)
+                        @php($contractExists = \Illuminate\Support\Facades\Storage::disk('local')->exists($contractPath))
+                        @php($contractMimeType = $contractExists ? \Illuminate\Support\Facades\Storage::disk('local')->mimeType($contractPath) : null)
                         @php($contractPreviewable = in_array($contractMimeType, ['image/jpeg', 'image/png', 'image/webp'], true))
                         <div class="contract-detail-item">
                             <div class="contract-detail-meta">

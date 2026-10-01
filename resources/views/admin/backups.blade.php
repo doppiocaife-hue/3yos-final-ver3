@@ -5,7 +5,7 @@
     <div class="page-header">
         <div>
             <h1 class="fw-bold mb-1">Backups</h1>
-            <p class="text-muted mb-0">Create a downloadable snapshot of your catering data.</p>
+            <p class="text-muted mb-0">Backups are encrypted before storage. Encrypted backups are verified and decrypted securely before restoration.</p>
         </div>
         <div class="page-actions">
             <form method="POST" action="{{ route('admin.backups.create') }}">@csrf<button class="btn btn-primary" type="submit">Create Backup</button></form>
@@ -18,11 +18,17 @@
         <div class="backup-list">
             @forelse($backups as $backup)
                 <div class="backup-row">
-                    <div><strong>{{ $backup }}</strong><small class="d-block text-muted">{{ number_format(filesize(storage_path('app/backups/' . $backup)) / 1024, 1) }} KB</small></div>
+                    <div>
+                        <strong>{{ $backup['name'] }}</strong>
+                        <small class="d-block text-muted">{{ number_format($backup['size'] / 1024, 1) }} KB</small>
+                        <span class="badge {{ $backup['encrypted'] ? 'text-bg-success' : 'text-bg-warning' }}">
+                            {{ $backup['encrypted'] ? 'Encrypted' : 'Legacy · Unencrypted' }}
+                        </span>
+                    </div>
                     <div class="backup-actions">
-                        <form method="POST" action="{{ route('admin.backups.download') }}">@csrf<input type="hidden" name="backup" value="{{ $backup }}"><button class="btn btn-sm btn-outline-secondary" type="submit">Download</button></form>
-                        <form method="POST" action="{{ route('admin.backups.restore') }}" data-requires-password data-password-message="Restore this backup? Current database data will be replaced.">@csrf<input type="hidden" name="backup" value="{{ $backup }}"><button class="btn btn-sm btn-outline-danger" type="submit">Restore</button></form>
-                        <form method="POST" action="{{ route('admin.backups.delete') }}" data-requires-password data-password-message="Permanently delete this backup? This cannot be undone.">@csrf @method('DELETE')<input type="hidden" name="backup" value="{{ $backup }}"><button class="btn btn-sm btn-outline-danger" type="submit">Delete</button></form>
+                        <form method="POST" action="{{ route('admin.backups.download') }}">@csrf<input type="hidden" name="backup" value="{{ $backup['name'] }}"><button class="btn btn-sm btn-outline-secondary" type="submit">Download</button></form>
+                        <form method="POST" action="{{ route('admin.backups.restore') }}" data-requires-password data-password-message="Restore this backup? Current database data will be replaced." @if(!$backup['encrypted']) data-legacy-backup @endif>@csrf<input type="hidden" name="backup" value="{{ $backup['name'] }}"><button class="btn btn-sm btn-outline-danger" type="submit">Restore</button></form>
+                        <form method="POST" action="{{ route('admin.backups.delete') }}" data-requires-password data-password-message="Permanently delete this backup? This cannot be undone.">@csrf @method('DELETE')<input type="hidden" name="backup" value="{{ $backup['name'] }}"><button class="btn btn-sm btn-outline-danger" type="submit">Delete</button></form>
                     </div>
                 </div>
             @empty
@@ -35,10 +41,10 @@
     <form id="upload-backup-form" method="POST" action="{{ route('admin.backups.upload') }}" enctype="multipart/form-data">
         @csrf
         <h2 id="upload-backup-title">Upload Backup</h2>
-        <p class="text-muted mb-3">Select a backup file to upload.</p>
+        <p class="text-muted mb-3">Encrypted backups are verified before they are stored. Legacy JSON backups are accepted and encrypted on upload.</p>
         <div class="mb-3">
             <label for="backup-file-input" class="form-label">Choose file</label>
-            <input id="backup-file-input" name="backup_file" class="form-control" type="file" accept=".json,application/json" required>
+            <input id="backup-file-input" name="backup_file" class="form-control" type="file" accept=".json,.enc,application/json,application/octet-stream" required>
         </div>
         <div class="small text-muted mb-3">Selected file: <span id="selected-backup-file-name">No file selected.</span></div>
         <div class="d-flex justify-content-end gap-2 mt-4">
@@ -99,6 +105,15 @@
                 return;
             }
             event.preventDefault();
+            if (form.hasAttribute('data-legacy-backup')) {
+                const confirmed = window.confirm('This legacy backup is unencrypted. Restoring it will replace current system data. Continue only if you trust this file.');
+                if (!confirmed) return;
+                const confirmation = document.createElement('input');
+                confirmation.type = 'hidden';
+                confirmation.name = 'confirm_legacy';
+                confirmation.value = '1';
+                form.append(confirmation);
+            }
             protectedForm = form;
             document.getElementById('backup-password-message').textContent = form.dataset.passwordMessage;
             passwordInput.value = '';
@@ -114,7 +129,7 @@
 
         const confirmation = document.createElement('input');
         confirmation.type = 'hidden';
-        confirmation.name = 'password_confirmation';
+        confirmation.name = 'current_admin_password';
         confirmation.value = passwordInput.value;
         protectedForm.append(confirmation);
         protectedForm.dataset.passwordConfirmed = 'true';
