@@ -24,6 +24,9 @@ class PublicPagesTest extends TestCase
         $response->assertStatus(200);
         $response->assertSee('placeholder="Juan dela Cruz"', false);
         $response->assertSee('pattern="(?:\\+63[0-9]{10}|09[0-9]{9})"', false);
+        $response->assertSee('aria-describedby="date-availability"', false);
+        $response->assertSee('data-next="2" disabled', false);
+        $response->assertSee("dateAvailabilityState !== 'available'", false);
     }
 
     public function test_inquiry_page_is_accessible(): void

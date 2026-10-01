@@ -36,20 +36,26 @@
         .btn-outline-primary:hover{background:var(--wine);border-color:var(--wine)}
         .eyebrow{color:var(--terracotta);font-size:.75rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
         .theme-toggle{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:transparent;color:var(--ink);padding:.48rem .7rem;font-size:.78rem;font-weight:700;border-radius:999px;min-width:42px;min-height:42px;line-height:1}
-        .footer{margin-top:3rem;background:#211b18;color:#f6f0e8;padding-top:1.5rem;padding-bottom:.85rem}
-        .footer a{color:#f6f0e8;text-decoration:none}
-        .footer a:hover{color:#e7b77a}
-        .footer-title{font-family:'Playfair Display',Georgia,serif;font-size:1.35rem;line-height:1.2}
-        .footer-kicker{color:#d9a45f;font-size:.68rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase}
-        .footer-heading{color:#fffaf3;font-size:.76rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
-        .footer-links{display:grid;gap:.35rem;font-size:.88rem}
-        .footer-contact{display:flex;align-items:center;gap:.6rem;padding:.42rem 0;line-height:1.3;border-top:1px solid rgba(255,255,255,.12)}
-        .footer-contact-icon{display:grid;place-items:center;flex:0 0 26px;width:26px;height:26px;border:1px solid rgba(231,183,122,.45);border-radius:50%;color:#e7b77a;font-size:.68rem;font-weight:800}
-        .footer-contact small{display:block;color:#c8bdb3;font-size:.7rem;letter-spacing:.04em;text-transform:uppercase}
-        .footer-contact a,.footer-contact div>span{font-size:.88rem}
-        .footer-contact a{display:inline-block;padding:.2rem 0;overflow-wrap:anywhere}
-        .footer-facebook{display:inline-flex;align-items:center;gap:.5rem;padding:.48rem .85rem;border:1px solid rgba(231,183,122,.6);color:#fff8ef!important;font-size:.82rem;font-weight:700;transition:.2s ease;border-radius:999px}
-        .footer-facebook:hover{background:#b66545;border-color:#b66545;color:#fff!important;transform:translateY(-2px)}
+        .footer{margin-top:3rem;padding:3.25rem 0 1rem;background:var(--cream);color:var(--ink);border-top:1px solid var(--line)}
+        .footer a{color:inherit;text-decoration:none}
+        .footer a:hover{color:var(--terracotta)}
+        .footer-title{margin:.55rem 0 1rem;color:var(--wine);font-family:'Playfair Display',Georgia,serif;font-size:clamp(1.8rem,2.5vw,2.35rem);line-height:1.15;letter-spacing:-.03em}
+        .footer-kicker{color:var(--wine);font-size:.7rem;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
+        .footer-heading{margin:0 0 1.1rem;color:var(--wine);font-size:.73rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase}
+        .footer-description,.footer-planning-copy{max-width:23rem;margin:0;color:var(--muted);font-size:.92rem;line-height:1.75}
+        .footer-links{display:grid;gap:.62rem;font-size:.9rem;line-height:1.45}
+        .footer-links a{width:max-content;max-width:100%;padding:.1rem 0}
+        .footer-contact-list{display:grid;gap:.72rem;font-size:.86rem;line-height:1.55}
+        .footer-contact-list a{width:max-content;max-width:100%;overflow-wrap:anywhere}
+        .footer-contact-list a:hover{text-decoration:underline;text-decoration-color:var(--terracotta);text-underline-offset:3px}
+        .footer-booking-link{display:inline-flex;align-items:center;justify-content:center;gap:.75rem;min-height:46px;margin-top:1.2rem;padding:.65rem 1.15rem;border:1px solid var(--wine);border-radius:999px;color:var(--wine)!important;font-size:.85rem;font-weight:700;transition:background-color .2s ease,color .2s ease,border-color .2s ease}
+        .footer-booking-link:hover,.footer-booking-link:focus-visible{background:var(--wine);color:var(--paper)!important}
+        .footer-booking-link:focus-visible,.footer-social-link:focus-visible,.footer-links a:focus-visible,.footer-contact a:focus-visible{outline:2px solid var(--terracotta);outline-offset:3px}
+        .footer-bottom{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.78rem;line-height:1.5}
+        .footer-socials{display:flex;align-items:center;gap:.35rem}
+        .footer-social-link{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;color:var(--wine)!important;transition:background-color .2s ease,color .2s ease}
+        .footer-social-link:hover{background:var(--paper);color:var(--terracotta)!important}
+        .footer-social-link svg{width:17px;height:17px;fill:currentColor}
         body.dark-mode{--ink:#f5f1e9;--muted:#c9c3b9;--cream:#151515;--paper:#201f1d;--line:#575148;--wine:#e6ad92;--terracotta:#edb18f;--gold:#e7bd72;background:var(--cream);color:var(--ink)}
         body.dark-mode .navbar{background:rgba(27,26,24,.95)!important;border-color:#403c35}
         body.dark-mode .navbar-brand,body.dark-mode .nav-link,body.dark-mode .theme-toggle{color:#f5f1e9!important}
@@ -70,13 +76,14 @@
         body.dark-mode .btn-outline-primary{color:#f5f1e9;border-color:#d9b18f;background:transparent}
         body.dark-mode .btn-outline-primary:hover{background:#d9b18f;color:#1b1714}
         body.dark-mode .btn-primary{background:#d79c6a;border-color:#d79c6a;color:#1b1714}
-        body.dark-mode .footer{background:#0f0d0c}
-        body.dark-mode .footer a,body.dark-mode .footer p,body.dark-mode .footer small,body.dark-mode .footer span{color:#f3ebdf!important}
-        body.dark-mode .footer-contact-icon{border-color:rgba(231,183,122,.8);color:#e7b77a}
+        body.dark-mode .footer{background:var(--paper);color:var(--ink);border-color:var(--line)}
+        body.dark-mode .footer-booking-link:hover,body.dark-mode .footer-booking-link:focus-visible{color:#1b1714!important}
+        body.dark-mode .footer-social-link:hover{background:#292521}
         body.dark-mode .card,body.dark-mode .process-item{border-color:#403b36!important}
         body.dark-mode .navbar-toggler-icon{filter:invert(1)}
         @media(min-width:768px) and (max-width:991.98px){:root{--public-header-offset:4.75rem;--public-content-gap:clamp(2rem,4vw,3rem)}}
         @media(max-width:767.98px){:root{--public-header-offset:4.75rem;--public-content-gap:clamp(1.5rem,6vw,2.25rem)}}
+        @media(max-width:767.98px){.footer{padding-top:2.5rem}.footer-bottom{align-items:flex-start;flex-direction:column;margin-top:2rem}.footer-socials{margin-left:-.45rem}}
     </style>
 </head>
 <body>
@@ -101,7 +108,6 @@
                     <li class="nav-item"><a class="nav-link {{ request()->routeIs('gallery') ? 'active' : '' }}" href="{{ route('gallery') }}">Gallery</a></li>
                     <li class="nav-item"><a class="nav-link {{ request()->routeIs('reservation.status') ? 'active' : '' }}" href="{{ route('reservation.status') }}">Status</a></li>
                     <li class="nav-item"><a class="nav-link {{ request()->routeIs('inquiry') ? 'active' : '' }}" href="{{ route('inquiry') }}">Inquiry</a></li>
-                    <li class="nav-item"><a class="nav-link {{ request()->routeIs('support*') ? 'active' : '' }}" href="{{ route('support') }}">Support</a></li>
                     <li class="nav-item ms-lg-2"><button type="button" class="theme-toggle" id="customerThemeToggle" aria-label="Enable dark mode" title="Enable dark mode"><span aria-hidden="true">&#9790;</span></button></li>
                     <li class="nav-item ms-lg-2"><a class="btn btn-primary" href="{{ route('reservation') }}">Book an event</a></li>
                 </ul>
@@ -113,68 +119,47 @@
 
     <footer class="footer">
         <div class="container">
-            <div class="row gx-4 gy-3 pb-3">
-                <div class="col-md-5 col-lg-4">
-                    <div class="footer-kicker mb-1">Catering & party needs</div>
-                    <div class="footer-title">3YOS Catering</div>
-                    <p class="text-white-50 small mt-2 mb-0">Thoughtful food, graceful styling, and dependable service for celebrations that deserve to feel effortless.</p>
+            <div class="row gx-4 gy-4 gx-lg-5 footer-main">
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="footer-kicker">3YOS Catering</div>
+                    <h2 class="footer-title">3YOS Catering</h2>
+                    <p class="footer-description">Thoughtful food, graceful styling, and dependable service for celebrations that deserve to feel effortless.</p>
                 </div>
-                <div class="col-12 col-sm-6 col-md-3 col-lg-2">
-                    <div class="footer-heading mb-2">Explore</div>
-                    <div class="footer-links">
-                        <a href="{{ route('home') }}">Home</a>
-                        <a href="{{ route('services') }}">Services</a>
-                        <a href="{{ route('packages') }}">Packages</a>
-                        <a href="{{ route('reservation') }}">Book now</a>
-                        <a href="{{ route('support') }}">Support</a>
-                    </div>
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <nav aria-label="Quick links">
+                        <h2 class="footer-heading">Quick links</h2>
+                        <div class="footer-links">
+                            <a href="{{ route('home') }}">Home</a>
+                            <a href="{{ route('services') }}">Services</a>
+                            <a href="{{ route('packages') }}">Packages</a>
+                            <a href="{{ route('reservation') }}">Book now</a>
+                            <a href="{{ route('support') }}">Support</a>
+                        </div>
+                    </nav>
                 </div>
-                <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-                    <div class="footer-heading mb-2">Get in touch</div>
-                    <div class="footer-contact">
-                        <span class="footer-contact-icon">AD</span>
-                        <div>
-                            <small>Address</small>
-                            <span>Marikina City, Metro Manila</span>
-                        </div>
-                    </div>
-                    <div class="footer-contact">
-                        <span class="footer-contact-icon">PH</span>
-                        <div>
-                            <small>Phone</small>
-                            <a href="tel:+639982422719">0998 242 2719</a>
-                        </div>
-                    </div>
-                    <div class="footer-contact">
-                        <span class="footer-contact-icon">EM</span>
-                        <div>
-                            <small>Email</small>
-                            <a href="mailto:3yoscatering@gmail.com">3yoscatering@gmail.com</a>
-                        </div>
-                    </div>
-                    <div class="footer-contact">
-                        <span class="footer-contact-icon">FB</span>
-                        <div>
-                            <small>Facebook</small>
-                            <a href="https://www.facebook.com/profile.php?id=100063690915629" target="_blank" rel="noopener noreferrer">Message 3YOS Catering</a>
-                        </div>
-                    </div>
-                    <div class="footer-contact">
-                        <span class="footer-contact-icon">IN</span>
-                        <div>
-                            <small>Inquiry</small>
-                            <a href="{{ route('inquiry') }}">Tell us about your event</a>
-                        </div>
-                    </div>
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <h2 class="footer-heading">Get in touch</h2>
+                    <address class="footer-contact-list mb-0">
+                        <span>Marikina City, Metro Manila</span>
+                        <a href="tel:+639982422719">0998 242 2719</a>
+                        <a href="mailto:3yoscatering@gmail.com">3yoscatering@gmail.com</a>
+                        <a href="https://www.facebook.com/profile.php?id=100063690915629" target="_blank" rel="noopener noreferrer">Message 3YOS Catering</a>
+                        <a href="{{ route('inquiry') }}">Tell us about your event</a>
+                    </address>
                 </div>
-                <div class="col-lg-3">
-                    <div class="footer-heading mb-2">Start planning</div>
-                    <p class="text-white-50 small mb-2">Share your date, venue, guest count, and celebration vision. We’ll help you build the right package.</p>
-                    <a href="{{ route('reservation') }}" class="footer-facebook">Book an event <span>→</span></a>
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <h2 class="footer-heading">Start planning</h2>
+                    <p class="footer-planning-copy">Share your date, venue, guest count, and celebration vision. We’ll help you build the right package.</p>
+                    <a href="{{ route('reservation') }}" class="footer-booking-link">Book an event <span aria-hidden="true">→</span></a>
                 </div>
             </div>
-            <div class="border-top border-secondary pt-2 d-flex flex-column flex-md-row justify-content-between gap-2 small text-white-50">
+            <div class="footer-bottom">
                 <span>&copy; {{ date('Y') }} 3YOS Catering Services & Party Needs. All rights reserved.</span>
+                <nav class="footer-socials" aria-label="Social media links">
+                    <a class="footer-social-link" href="https://www.facebook.com/profile.php?id=100063690915629" target="_blank" rel="noopener noreferrer" aria-label="Visit 3YOS Catering on Facebook">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.4 21v-8h2.7l.4-3.1h-3.1v-2c0-.9.3-1.5 1.6-1.5h1.7V3.6c-.3 0-1.3-.1-2.4-.1-2.4 0-4.1 1.5-4.1 4.2v2.3H7.5v3.1h2.7v8h3.2Z"/></svg>
+                    </a>
+                </nav>
             </div>
         </div>
     </footer>

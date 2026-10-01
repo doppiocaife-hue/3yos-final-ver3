@@ -68,6 +68,17 @@ class Reservation extends Model
         return $query->where('status', self::STATUS_CONFIRMED);
     }
 
+    public static function acceptedCountForDate(string $eventDate, bool $lockForUpdate = false): int
+    {
+        $query = static::query()->openAccepted()->whereDate('event_date', $eventDate);
+
+        if ($lockForUpdate) {
+            $query->lockForUpdate();
+        }
+
+        return $query->count();
+    }
+
     public function client()
     {
         return $this->belongsTo(Client::class);

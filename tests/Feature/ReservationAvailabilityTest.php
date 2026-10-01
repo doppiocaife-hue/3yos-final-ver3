@@ -134,4 +134,44 @@ class ReservationAvailabilityTest extends TestCase
 
         $this->assertFalse($response['available']);
     }
+
+    public function test_fully_booked_date_rejects_reservation_submission_before_recaptcha(): void
+    {
+        $eventDate = now()->addDays(7)->toDateString();
+        $package = Package::create([
+            'name' => 'Submission Package',
+            'slug' => 'submission-package',
+            'price' => 750,
+            'min_guests' => 20,
+            'max_guests' => 200,
+        ]);
+
+        for ($i = 0; $i < Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE; $i++) {
+            $this->reservation([
+                'event_date' => $eventDate,
+                'status' => Reservation::STATUS_CONFIRMED,
+            ]);
+        }
+
+        $response = $this->from('/reservation')->post(route('reservation.store'), [
+            'full_name' => 'Test Client',
+            'contact_number' => '09171234567',
+            'email' => 'submission@example.com',
+            'address' => '123 Garden Street',
+            'event_type' => 'Wedding',
+            'event_date' => $eventDate,
+            'event_time' => '18:00',
+            'venue' => 'Garden Hall',
+            'guest_count' => 80,
+            'package_id' => $package->id,
+            'form_started' => now()->subSeconds(5)->timestamp,
+            'g-recaptcha-response' => 'test',
+        ]);
+
+        $response->assertRedirect('/reservation');
+        $response->assertSessionHasErrors([
+            'event_date' => 'This date is fully booked. Please choose another date.',
+        ]);
+        $this->assertSame(4, Reservation::whereDate('event_date', $eventDate)->count());
+    }
 }

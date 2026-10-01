@@ -25,9 +25,7 @@ class ReservationController extends Controller
                 }
             }],
         ]);
-        $bookings = Reservation::whereDate('event_date', $data['date'])
-            ->where('status', 'confirmed')
-            ->count();
+        $bookings = Reservation::acceptedCountForDate($data['date']);
 
         return response()->json([
             'bookings' => $bookings,
@@ -42,6 +40,10 @@ class ReservationController extends Controller
             return back()->withInput()->withErrors(['full_name' => 'Unable to submit this request. Please try again.']);
         }
 
+        if (Reservation::acceptedCountForDate($request->input('event_date')) >= Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) {
+            throw ValidationException::withMessages(['event_date' => 'This date is fully booked. Please choose another date.']);
+        }
+
         // Verify reCAPTCHA
         $recaptcha = new ReCaptcha(config('services.recaptcha.secret_key'));
         $resp = $recaptcha->verify($request->input('g-recaptcha-response'), $_SERVER['REMOTE_ADDR'] ?? '');
@@ -52,10 +54,7 @@ class ReservationController extends Controller
 
         // Locks matching rows so a concurrent submission for the same date can't race past this count.
         $reservation = DB::transaction(function () use ($request) {
-            $acceptedCount = Reservation::whereDate('event_date', $request->input('event_date'))
-                ->where('status', 'confirmed')
-                ->lockForUpdate()
-                ->count();
+            $acceptedCount = Reservation::acceptedCountForDate($request->input('event_date'), true);
 
             if ($acceptedCount >= Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) {
                 throw ValidationException::withMessages(['event_date' => 'This date is fully booked. Please choose another date.']);

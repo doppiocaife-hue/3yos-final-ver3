@@ -48,30 +48,27 @@
     </div>
 </section>
 
-<section class="py-5 py-lg-5">
+<section class="home-services py-5 py-lg-5">
     <div class="container">
         <div class="section-heading text-center mb-4">
             <div class="eyebrow mb-2">Our services</div>
             <h2 class="section-title mb-3">Thoughtful service, beautifully executed.</h2>
         </div>
         <div class="row g-4">
-            <div class="col-md-4">
+            <div class="col-12 col-md-6 col-lg-4">
                 <article class="service-tile h-100">
-                    <div class="service-number">01</div>
                     <h3>Weddings</h3>
                     <p>Elegant catering for your most meaningful day.</p>
                 </article>
             </div>
-            <div class="col-md-4">
+            <div class="col-12 col-md-6 col-lg-4">
                 <article class="service-tile h-100">
-                    <div class="service-number">02</div>
                     <h3>Private events</h3>
                     <p>Birthdays, debuts, and family gatherings with ease.</p>
                 </article>
             </div>
-            <div class="col-md-4">
+            <div class="col-12 col-md-6 col-lg-4">
                 <article class="service-tile h-100">
-                    <div class="service-number">03</div>
                     <h3>Corporate events</h3>
                     <p>Professional service for meetings and company milestones.</p>
                 </article>
@@ -236,10 +233,10 @@
     .hero-art__label{position:absolute;z-index:2;bottom:28px;left:28px;color:#fff;max-width:78%}
     .hero-art__label span{display:block;font-size:.7rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;margin-bottom:.45rem}
     .hero-art__label strong{font-family:'Playfair Display',serif;font-size:1.65rem;line-height:1.1}
-    .service-tile{padding:2rem;border:1px solid rgba(109,48,36,.08);background:#f9f2ea;border-radius:22px;box-shadow:0 10px 28px rgba(109,48,36,.04)}
-    .service-number{font-size:.75rem;font-weight:800;color:var(--terracotta);letter-spacing:.14em;margin-bottom:2rem}
-    .service-tile h3{font-size:1.5rem}
-    .service-tile p{color:var(--muted);line-height:1.65;margin-bottom:0}
+    .home-services .service-tile{padding:clamp(1.5rem,2.2vw,2rem);border:1px solid var(--line);background:var(--paper);border-radius:14px;transition:border-color .2s ease,transform .2s ease}
+    .home-services .service-tile:hover{border-color:color-mix(in srgb,var(--wine) 28%,var(--line));transform:translateY(-2px)}
+    .home-services .service-tile h3{margin:0 0 .65rem;color:var(--wine);font-family:'Playfair Display',Georgia,serif;font-size:1.45rem}
+    .home-services .service-tile p{color:var(--muted);line-height:1.7;margin-bottom:0}
     .why-card{display:flex;flex-direction:column;gap:.85rem;padding:1.5rem}
     .why-card h3{font-size:1.25rem;line-height:1.2;margin:0}
     .why-card p{margin:0}

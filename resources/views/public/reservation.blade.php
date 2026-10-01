@@ -117,7 +117,7 @@
                             <legend class="wizard-step-title">Tell us about your event</legend>
                             <div class="row g-3">
                                 <div class="col-md-6"><label class="form-label">Event type</label><select name="event_type" class="form-select" required><option value="">Select an event type</option>@foreach(['Wedding','Birthday','Debut','Anniversary','Corporate Event','Baptism','Graduation','Other'] as $type)<option value="{{ $type }}" @selected(old('event_type') === $type)>{{ $type }}</option>@endforeach</select></div>
-                                <div class="col-md-6"><label class="form-label">Event date</label><input type="date" name="event_date" id="event_date" value="{{ old('event_date') }}" min="{{ now()->addDays(2)->toDateString() }}" class="form-control" required><div id="date-availability" class="date-availability form-text">Choose a date at least 2 days in advance.</div></div>
+                                <div class="col-md-6"><label class="form-label" for="event_date">Event date</label><input type="date" name="event_date" id="event_date" value="{{ old('event_date') }}" min="{{ now()->addDays(2)->toDateString() }}" class="form-control" aria-describedby="date-availability" required><div id="date-availability" class="date-availability form-text" role="status" aria-live="polite" aria-atomic="true">Choose a date at least 2 days in advance.</div></div>
                                 <div class="col-md-6 clock-time-field">
                                     <label class="form-label" for="event_time">Event time</label>
                                     <input type="time" name="event_time" id="event_time" value="{{ old('event_time') }}" class="form-control" required>
@@ -153,7 +153,7 @@
                                 <div class="col-md-6"><label class="form-label">Venue</label><input type="text" name="venue" value="{{ old('venue') }}" class="form-control" required></div>
                                 <div class="col-md-6"><label class="form-label">Expected guests</label><input type="number" name="guest_count" id="guest_count" value="{{ old('guest_count', request()->query('guests')) }}" min="1" max="1000" class="form-control" required><small class="form-text">Enter the total number of attendees.</small></div>
                             </div>
-                            <div class="wizard-actions"><span></span><button type="button" class="btn btn-primary wizard-next" data-next="2">Next: Package</button></div>
+                            <div class="wizard-actions"><span></span><button type="button" class="btn btn-primary wizard-next" data-next="2" disabled>Next: Package</button></div>
                         </fieldset>
 
                         <fieldset class="wizard-step" data-step="2" hidden>
@@ -289,6 +289,9 @@
     .wizard-step-title{padding:0;margin:0 0 1.25rem;font-family:'Playfair Display',Georgia,serif;font-size:1.4rem;color:var(--ink);border:0}
     .wizard-actions{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:1.75rem;padding-top:1.5rem;border-top:1px solid rgba(109,48,36,.08)}
     .wizard-actions .btn-primary{margin-left:auto}
+    .wizard-step[data-step="1"] .wizard-next:disabled,
+    .wizard-step[data-step="1"] .wizard-next:disabled:hover,
+    .wizard-step[data-step="1"] .wizard-next:disabled:focus{background-color:color-mix(in srgb,var(--wine) 55%,var(--muted));border-color:color-mix(in srgb,var(--wine) 55%,var(--muted));color:var(--paper);opacity:.72;box-shadow:none;transform:none;cursor:not-allowed}
 
     .review-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.25rem}
     .review-block{padding:1.1rem 1.25rem;border:1px solid #e7ddd0;border-radius:16px;background:#fff}
@@ -402,29 +405,68 @@ if (reservationToast) {
 }
 
 const dateInput=document.getElementById('event_date'), availability=document.getElementById('date-availability'), submitButton=document.getElementById('submit-reservation');
+const nextPackageButton=document.querySelector('.wizard-step[data-step="1"] .wizard-next');
+let dateAvailabilityState='unknown', dateAvailabilityCheckedFor='', availabilityRequestDate='', availabilityRequestId=0;
+
+const setDateAvailability = (state, date, message, className) => {
+    dateAvailabilityState = state;
+    dateAvailabilityCheckedFor = state === 'available' ? date : '';
+    availability.textContent = message;
+    availability.className = className;
+    dateInput.setAttribute('aria-invalid', ['full', 'invalid', 'error'].includes(state) ? 'true' : 'false');
+    if (nextPackageButton) {
+        nextPackageButton.disabled = state !== 'available' || date !== dateInput.value;
+    }
+    submitButton.disabled = state !== 'available' || date !== dateInput.value;
+};
+
 if (dateInput && availability && submitButton) {
-    const minReservationDate = new Date();
-    minReservationDate.setDate(minReservationDate.getDate() + 2);
+    const checkDateAvailability = async () => {
+        const selectedDate = dateInput.value;
 
-    const formatDateInputValue = (d) => {
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    };
+        if (dateAvailabilityState === 'loading' && availabilityRequestDate === selectedDate) return;
+        if (['available', 'full'].includes(dateAvailabilityState) && dateAvailabilityCheckedFor === selectedDate) return;
 
-    dateInput.addEventListener('change', async () => { if (!dateInput.value) return;
-        const selectedDate = new Date(dateInput.value + 'T00:00:00');
-        const earliestAllowed = new Date(formatDateInputValue(minReservationDate) + 'T00:00:00');
+        const requestId = ++availabilityRequestId;
+        availabilityRequestDate = selectedDate;
 
-        if (selectedDate < earliestAllowed) {
-            availability.textContent='Reservations must be booked at least 2 days in advance.';
-            availability.className='date-availability text-danger';
-            submitButton.disabled=true;
+        if (!selectedDate) {
+            setDateAvailability('unknown', '', 'Choose a date at least 2 days in advance.', 'date-availability form-text');
             return;
         }
 
-        availability.textContent='Checking availability…'; submitButton.disabled=true; try { const response=await fetch(`{{ route('reservation.availability') }}?date=${encodeURIComponent(dateInput.value)}`); const data=await response.json(); if (data.available) { availability.textContent=`Available — ${data.remaining} event slot${data.remaining===1?'':'s'} remaining.`; availability.className='date-availability text-success'; submitButton.disabled=false; } else { availability.textContent='This date is fully booked. Please choose another date.'; availability.className='date-availability text-danger'; } } catch { availability.textContent='We could not check this date. Please try again.'; availability.className='date-availability text-danger'; } });
+        if (selectedDate < dateInput.min) {
+            setDateAvailability('invalid', selectedDate, 'Reservations must be booked at least 2 days in advance.', 'date-availability text-danger');
+            return;
+        }
+
+        setDateAvailability('loading', selectedDate, 'Checking availability…', 'date-availability form-text');
+
+        try {
+            const response = await fetch(`{{ route('reservation.availability') }}?date=${encodeURIComponent(selectedDate)}`, {
+                headers: { Accept: 'application/json' },
+            });
+            if (!response.ok) throw new Error('Availability request failed.');
+
+            const data = await response.json();
+            if (requestId !== availabilityRequestId || dateInput.value !== selectedDate) return;
+
+            if (data.available === true) {
+                setDateAvailability('available', selectedDate, `Available — ${data.remaining} event slot${data.remaining === 1 ? '' : 's'} remaining.`, 'date-availability text-success');
+            } else if (data.available === false) {
+                setDateAvailability('full', selectedDate, 'This date is fully booked. Please choose another date.', 'date-availability text-danger');
+            } else {
+                throw new Error('Availability response was invalid.');
+            }
+        } catch {
+            if (requestId !== availabilityRequestId || dateInput.value !== selectedDate) return;
+            setDateAvailability('error', selectedDate, 'We could not check this date. Please try again.', 'date-availability text-danger');
+        }
+    };
+
+    dateInput.addEventListener('input', checkDateAvailability);
+    dateInput.addEventListener('change', checkDateAvailability);
+    checkDateAvailability();
 }
 
 const packageInput = document.getElementById('package_id');
@@ -691,6 +733,13 @@ if (reservationForm) {
             const errorEl = document.getElementById('clock-time-error');
             if (errorEl) errorEl.hidden = false;
             clockTimeToggle?.focus();
+            return false;
+        }
+        if (stepEl.dataset.step === '1' && (
+            dateAvailabilityState !== 'available' ||
+            dateAvailabilityCheckedFor !== dateInput.value
+        )) {
+            dateInput.focus();
             return false;
         }
         return true;
