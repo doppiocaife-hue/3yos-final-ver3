@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Inquiry;
 use App\Models\Reservation;
+use App\Models\ReservationPayment;
+use App\Models\ReservationRefund;
 use App\Services\ReportService;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
@@ -101,10 +103,61 @@ class ReportServiceTest extends TestCase
             $this->assertStringContainsString('3YOS CATERING', $sheet);
             $this->assertStringContainsString((string) $expected['revenue'], $sheet);
             $this->assertStringContainsString('pane', $sheet);
+            $this->assertStringContainsString('Catering Management System', $sheet);
+            $this->assertStringContainsString('REPORT SUMMARY', $sheet);
+            $this->assertStringContainsString('FINANCIAL SUMMARY', $sheet);
             $this->assertStringContainsString('numFmt', $styles);
             $this->assertStringContainsString(ucfirst($period).' Report', $workbook);
+            $this->assertStringContainsString('fitToWidth="1"', $sheet);
             $archive->close();
+
+            if ($period === 'daily') {
+                $this->assertSame('1', $this->excelCellValue($sheet, 'B9'));
+                $this->assertSame('1', $this->excelCellValue($sheet, 'B10'));
+                $this->assertSame((string) $expected['revenue'], $this->excelCellValue($sheet, 'B14'));
+            }
         }
+    }
+
+    public function test_empty_daily_excel_report_has_a_complete_zero_value_summary(): void
+    {
+        Carbon::setTestNow('2026-10-03 15:45:00');
+        config(['app.timezone' => 'Asia/Manila']);
+
+        Inquiry::unguarded(fn () => Inquiry::create([
+            'full_name' => 'Report Client',
+            'contact_number' => '09171234567',
+            'email' => 'report@example.com',
+            'subject' => 'Daily report inquiry',
+            'category' => 'Catering',
+            'message' => 'Please send a report.',
+            'status' => 'new',
+            'created_at' => '2026-10-03 10:00:00',
+            'updated_at' => '2026-10-03 10:00:00',
+        ]));
+
+        $excel = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])
+            ->get(route('admin.reports.export.excel', ['period' => 'daily']));
+        $excel->assertDownload('3YOS-Catering-Daily-Report-2026-10-03.xlsx');
+
+        $archive = new \ZipArchive();
+        $this->assertSame(true, $archive->open($excel->baseResponse->getFile()->getPathname()));
+        $sheet = $archive->getFromName('xl/worksheets/sheet1.xml');
+        $this->assertNotFalse($sheet);
+        $this->assertStringContainsString('DAILY BUSINESS REPORT', $sheet);
+        $this->assertStringContainsString('October 3, 2026', $sheet);
+        $this->assertStringContainsString('October 3, 2026 3:45 PM PST', $sheet);
+        $this->assertStringContainsString('Reservations', $sheet);
+        $this->assertStringContainsString('FINANCIAL SUMMARY', $sheet);
+        $this->assertSame('0', $this->excelCellValue($sheet, 'B9'));
+        $this->assertSame('0', $this->excelCellValue($sheet, 'B10'));
+        $this->assertSame('0', $this->excelCellValue($sheet, 'B11'));
+        $this->assertSame('0', $this->excelCellValue($sheet, 'B12'));
+        $this->assertSame('1', $this->excelCellValue($sheet, 'B13'));
+        $this->assertSame('0', $this->excelCellValue($sheet, 'B14'));
+        $this->assertStringContainsString('pageMargins', $sheet);
+        $this->assertStringContainsString('pageSetup', $sheet);
+        $archive->close();
     }
 
     public function test_reports_separate_booking_financials_from_payment_and_refund_transactions(): void
@@ -165,6 +218,119 @@ class ReportServiceTest extends TestCase
         $this->assertStringContainsString('Gross Paid (Bookings Created in Period)', $sheet);
         $this->assertStringContainsString('Refunds (Transactions in Period)', $sheet);
         $this->assertStringContainsString('500', $sheet);
+        $this->assertSame('1000', $this->excelCellValue($sheet, 'B18'));
+        $this->assertSame('800', $this->excelCellValue($sheet, 'B19'));
+        $this->assertSame('300', $this->excelCellValue($sheet, 'B20'));
+        $this->assertSame('500', $this->excelCellValue($sheet, 'B21'));
+        $this->assertSame('500', $this->excelCellValue($sheet, 'B22'));
+        $this->assertSame('800', $this->excelCellValue($sheet, 'B23'));
+        $this->assertSame('300', $this->excelCellValue($sheet, 'B24'));
+        $this->assertSame('500', $this->excelCellValue($sheet, 'B25'));
+        $archive->close();
+    }
+
+    public function test_report_keeps_exact_cents_for_the_reported_gross_refund_and_net_values(): void
+    {
+        Carbon::setTestNow('2026-09-29 15:30:00');
+        config(['app.timezone' => 'Asia/Manila']);
+        $reservation = $this->createReservation('2026-09-29 09:00:00', 'confirmed', 1000);
+        $reservation->update(['total_cost' => 741000]);
+        $this->recordPayment($reservation, '2026-09-29', '700000.00');
+        $this->recordPayment($reservation, '2026-09-29', '31011.01');
+        $this->recordRefund($reservation, '2026-09-29', '54001.00');
+
+        $periods = ['daily', 'weekly', 'monthly', 'yearly'];
+        foreach ($periods as $period) {
+            $summary = app(ReportService::class)->getSummary($period);
+
+            $this->assertSame(73101101, (int) round($summary['gross_paid'] * 100));
+            $this->assertSame(5400100, (int) round($summary['total_refunded'] * 100));
+            $this->assertSame(67701001, (int) round($summary['net_paid'] * 100));
+            $this->assertSame(
+                (int) round($summary['gross_paid'] * 100) - (int) round($summary['total_refunded'] * 100),
+                (int) round($summary['net_paid'] * 100),
+            );
+
+            $excel = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])
+                ->get(route('admin.reports.export.excel', ['period' => $period]));
+            $excel->assertDownload();
+            $archive = new \ZipArchive();
+            $this->assertSame(true, $archive->open($excel->baseResponse->getFile()->getPathname()));
+            $sheet = $archive->getFromName('xl/worksheets/sheet1.xml');
+            $this->assertNotFalse($sheet);
+            $this->assertSame('731011.01', $this->excelCellValue($sheet, 'B19'));
+            $this->assertSame('54001', $this->excelCellValue($sheet, 'B20'));
+            $this->assertSame('677010.01', $this->excelCellValue($sheet, 'B21'));
+            $archive->close();
+        }
+
+        $page = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])->get(route('admin.reports'));
+        $page->assertOk()
+            ->assertSee('₱731,011.01')
+            ->assertSee('−₱54,001.00')
+            ->assertSee('₱677,010.01');
+    }
+
+    public function test_booking_created_and_transaction_period_totals_keep_their_separate_scopes(): void
+    {
+        Carbon::setTestNow('2026-09-29 15:30:00');
+        config(['app.timezone' => 'Asia/Manila']);
+
+        $bookingCreatedThisWeek = $this->createReservation('2026-09-29 09:00:00', 'cancelled', 1000);
+        $bookingCreatedThisWeek->update(['total_cost' => 200]);
+        $this->recordPayment($bookingCreatedThisWeek, '2026-09-27', '100.01');
+        $this->recordRefund($bookingCreatedThisWeek, '2026-09-27', '100.01');
+
+        $bookingCreatedEarlier = $this->createReservation('2026-09-20 09:00:00', 'cancelled', 1000);
+        $bookingCreatedEarlier->update(['total_cost' => 50]);
+        $this->recordPayment($bookingCreatedEarlier, '2026-09-29', '49.99');
+        $this->recordPayment($bookingCreatedEarlier, '2026-09-29', '0.01');
+        $this->recordRefund($bookingCreatedEarlier, '2026-09-29', '20.00');
+
+        $noPayment = $this->createReservation('2026-09-29 10:00:00', 'pending', 1000);
+        $noPayment->update(['total_cost' => 10]);
+
+        $summary = app(ReportService::class)->getSummary('weekly');
+
+        $this->assertSame(2, $summary['reservation_count']);
+        $this->assertSame(21000, (int) round($summary['contract_value'] * 100));
+        $this->assertSame(10001, (int) round($summary['gross_paid'] * 100));
+        $this->assertSame(10001, (int) round($summary['total_refunded'] * 100));
+        $this->assertSame(0, (int) round($summary['net_paid'] * 100));
+        $this->assertSame(21000, (int) round($summary['outstanding_balance'] * 100));
+        $this->assertSame(5000, (int) round($summary['gross_payments_in_period'] * 100));
+        $this->assertSame(2000, (int) round($summary['refunds_in_period'] * 100));
+        $this->assertSame(3000, (int) round($summary['net_collected_in_period'] * 100));
+        $this->assertSame(
+            (int) round($summary['gross_payments_in_period'] * 100) - (int) round($summary['refunds_in_period'] * 100),
+            (int) round($summary['net_collected_in_period'] * 100),
+        );
+
+        $page = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])->get(route('admin.reports'));
+        $page->assertOk()
+            ->assertSee('₱100.01')
+            ->assertSee('−₱100.01')
+            ->assertSee('₱0.00');
+
+        $excel = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])
+            ->get(route('admin.reports.export.excel', ['period' => 'weekly']));
+        $excel->assertDownload();
+        $archive = new \ZipArchive();
+        $this->assertSame(true, $archive->open($excel->baseResponse->getFile()->getPathname()));
+        $sheet = $archive->getFromName('xl/worksheets/sheet1.xml');
+        $this->assertNotFalse($sheet);
+        foreach ([
+            'B18' => '210',
+            'B19' => '100.01',
+            'B20' => '100.01',
+            'B21' => '0',
+            'B22' => '210',
+            'B23' => '50',
+            'B24' => '20',
+            'B25' => '30',
+        ] as $cell => $expectedValue) {
+            $this->assertSame($expectedValue, $this->excelCellValue($sheet, $cell), $cell);
+        }
         $archive->close();
     }
 
@@ -185,5 +351,36 @@ class ReportServiceTest extends TestCase
             'created_at' => $createdAt,
             'updated_at' => $createdAt,
         ]));
+    }
+
+    private function recordPayment(Reservation $reservation, string $paymentDate, string $amount): ReservationPayment
+    {
+        return $reservation->payments()->create([
+            'payment_date' => $paymentDate,
+            'payment_type' => 'Partial Payment',
+            'amount' => $amount,
+            'payment_method' => 'Cash',
+        ]);
+    }
+
+    private function recordRefund(Reservation $reservation, string $refundDate, string $amount): ReservationRefund
+    {
+        return $reservation->refunds()->create([
+            'refund_date' => $refundDate,
+            'amount' => $amount,
+            'refund_method' => 'Cash',
+            'status' => 'completed',
+            'request_key' => (string) Str::uuid(),
+        ]);
+    }
+
+    private function excelCellValue(string $sheetXml, string $cellReference): ?string
+    {
+        $sheet = simplexml_load_string($sheetXml);
+        $this->assertNotFalse($sheet);
+        $sheet->registerXPathNamespace('x', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+        $values = $sheet->xpath('//x:c[@r="'.$cellReference.'"]/x:v');
+
+        return isset($values[0]) ? (string) $values[0] : null;
     }
 }

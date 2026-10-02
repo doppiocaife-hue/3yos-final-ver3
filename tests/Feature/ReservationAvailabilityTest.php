@@ -201,6 +201,11 @@ class ReservationAvailabilityTest extends TestCase
             'event_date' => 'This date is fully booked. Please choose another date.',
         ]);
         $this->assertSame(4, Reservation::whereDate('event_date', $eventDate)->count());
+
+        $this->get('/reservation')
+            ->assertOk()
+            ->assertSee('This date is currently fully booked. Please select another available date.')
+            ->assertDontSee('This date is fully booked. Please choose another date.');
     }
 
     public function test_capacity_date_lock_is_idempotent_inside_a_transaction(): void

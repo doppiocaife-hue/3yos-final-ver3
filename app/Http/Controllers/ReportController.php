@@ -13,6 +13,7 @@ use OpenSpout\Common\Entity\Style\Style;
 use OpenSpout\Writer\XLSX\Entity\SheetView;
 use OpenSpout\Writer\XLSX\Options;
 use OpenSpout\Writer\XLSX\Options\HeaderFooter;
+use OpenSpout\Writer\XLSX\Options\PageMargin;
 use OpenSpout\Writer\XLSX\Options\PageOrientation;
 use OpenSpout\Writer\XLSX\Options\PageSetup;
 use OpenSpout\Writer\XLSX\Options\PaperSize;
@@ -107,31 +108,32 @@ class ReportController extends Controller
     private function writeExcel(string $path, array $summary, string $period): void
     {
         $options = new Options();
-        $options->mergeCells(0, 1, 1, 1);
-        $options->mergeCells(0, 2, 1, 2);
-        $options->mergeCells(0, 3, 1, 3);
-        $options->mergeCells(0, 4, 1, 4);
-        $options->setPageSetup(new PageSetup(PageOrientation::PORTRAIT, PaperSize::A4, 1, 1));
-        $options->setHeaderFooter(new HeaderFooter(oddFooter: '&C3YOS Catering | Confidential'));
+        foreach ([1, 2, 3, 7, 16] as $row) {
+            $options->mergeCells(0, $row, 1, $row);
+        }
+        $options->setPageSetup(new PageSetup(PageOrientation::PORTRAIT, PaperSize::A4, null, 1));
+        $options->setPageMargin(new PageMargin(top: 0.55, right: 0.6, bottom: 0.55, left: 0.6));
+        $options->setHeaderFooter(new HeaderFooter(oddFooter: '3YOS Catering | Confidential'));
 
         $writer = new Writer($options);
         $writer->openToFile($path);
         $sheet = $writer->getCurrentSheet();
         $sheet->setName(ucfirst($period).' Report');
-        $sheet->setColumnWidth(36, 1);
-        $sheet->setColumnWidth(22, 2);
-        $sheet->setSheetView((new SheetView())->setShowGridLines(false)->setFreezeRow(7));
+        $sheet->setColumnWidth(45, 1);
+        $sheet->setColumnWidth(28, 2);
+        $sheet->setSheetView((new SheetView())->setShowGridLines(false)->setFreezeRow(9));
 
         $titleStyle = (new Style())->setFontBold()->setFontSize(18)->setFontColor(Color::WHITE)->setBackgroundColor('176B68');
+        $brandSubtitleStyle = (new Style())->setFontSize(10)->setFontColor(Color::WHITE)->setBackgroundColor('176B68');
         $subtitleStyle = (new Style())->setFontBold()->setFontSize(13)->setFontColor(Color::WHITE)->setBackgroundColor('176B68');
         $metaStyle = (new Style())->setFontSize(10)->setFontColor('52616B');
+        $metaLabelStyle = (new Style())->setFontBold()->setFontSize(10)->setFontColor('52616B');
         $tableBorder = new Border(new BorderPart(Border::BOTTOM, 'D7E2E4', Border::WIDTH_THIN));
         $headerStyle = (new Style())->setFontBold()->setFontColor(Color::WHITE)->setBackgroundColor('244A57')->setBorder($tableBorder);
+        $sectionStyle = (new Style())->setFontBold()->setFontSize(11)->setFontColor(Color::WHITE)->setBackgroundColor('176B68');
         $labelStyle = (new Style())->setFontColor('24353D')->setBorder($tableBorder);
         $valueStyle = (new Style())->setFontBold()->setFontColor('24353D')->setCellAlignment('right')->setFormat('#,##0')->setBorder($tableBorder);
         $financialValueStyle = (new Style())->setFontBold()->setFontColor('24353D')->setCellAlignment('right')->setFormat('"₱"#,##0.00')->setBorder($tableBorder);
-        $revenueLabelStyle = (new Style())->setFontBold()->setFontSize(12)->setFontColor('176B68')->setBackgroundColor('E7F4F1')->setBorder($tableBorder);
-        $revenueValueStyle = (new Style())->setFontBold()->setFontSize(13)->setFontColor('176B68')->setBackgroundColor('E7F4F1')->setCellAlignment('right')->setFormat('"₱"#,##0.00')->setBorder($tableBorder);
         $periodStart = $summary['period_start'];
         $periodEnd = $summary['period_end'];
         $periodText = $periodStart->format('F j, Y');
@@ -140,18 +142,31 @@ class ReportController extends Controller
         }
 
         $writer->addRow(Row::fromValues(['3YOS CATERING'], $titleStyle)->setHeight(32));
-        $writer->addRow(Row::fromValues([strtoupper(ucfirst($period).' Operations Report')], $subtitleStyle)->setHeight(24));
-        $writer->addRow(Row::fromValues(['Period: '.$periodText], $metaStyle)->setHeight(21));
-        $writer->addRow(Row::fromValues(['Generated: '.$summary['generated_at']->format('F j, Y g:i A T')], $metaStyle)->setHeight(21));
+        $writer->addRow(Row::fromValues(['Catering Management System'], $brandSubtitleStyle)->setHeight(20));
+        $writer->addRow(Row::fromValues([strtoupper($period === 'daily' ? 'Daily Business Report' : ucfirst($period).' Business Report')], $subtitleStyle)->setHeight(26));
+        $writer->addRow(Row::fromValuesWithStyles(
+            [$period === 'daily' ? 'Report Date' : 'Report Period', $periodText],
+            null,
+            [$metaLabelStyle, $metaStyle],
+        )->setHeight(21));
+        $writer->addRow(Row::fromValuesWithStyles(
+            ['Generated On', $summary['generated_at']->format('F j, Y g:i A T')],
+            null,
+            [$metaLabelStyle, $metaStyle],
+        )->setHeight(21));
         $writer->addRow(Row::fromValues([], null)->setHeight(10));
-        $writer->addRow(Row::fromValues(['METRIC', 'VALUE'], $headerStyle)->setHeight(23));
+        $writer->addRow(Row::fromValues(['REPORT SUMMARY'], $sectionStyle)->setHeight(24));
+        $writer->addRow(Row::fromValues(['Metric', 'Value'], $headerStyle)->setHeight(23));
 
-        $metrics = [
+        $summaryMetrics = [
             ['Reservations', $summary['reservation_count']],
-            ['Confirmed', $summary['confirmed_reservations']],
+            ['Accepted', $summary['confirmed_reservations']],
             ['Completed', $summary['completed_events']],
             ['Cancelled', $summary['cancelled_reservations']],
             ['Inquiries', $summary['inquiry_count']],
+            ['Estimated Revenue', $summary['estimated_revenue']],
+        ];
+        $financialMetrics = [
             ['Contract Value (Bookings Created in Period)', $summary['contract_value']],
             ['Gross Paid (Bookings Created in Period)', $summary['gross_paid']],
             ['Refunded (Bookings Created in Period)', $summary['total_refunded']],
@@ -161,23 +176,28 @@ class ReportController extends Controller
             ['Refunds (Transactions in Period)', $summary['refunds_in_period']],
             ['Net Collected (Transactions in Period)', $summary['net_collected_in_period']],
         ];
-        $financialLabels = [
-            'Contract Value (Bookings Created in Period)',
-            'Gross Paid (Bookings Created in Period)',
-            'Refunded (Bookings Created in Period)',
-            'Net Paid (Bookings Created in Period)',
-            'Outstanding Balance (Current Bookings)',
-            'Gross Payments (Transactions in Period)',
-            'Refunds (Transactions in Period)',
-            'Net Collected (Transactions in Period)',
-        ];
 
-        foreach ($metrics as [$label, $value]) {
-            $metricValueStyle = in_array($label, $financialLabels, true) ? $financialValueStyle : $valueStyle;
-            $writer->addRow(Row::fromValuesWithStyles([$label, $value], null, [$labelStyle, $metricValueStyle])->setHeight(21));
+        foreach ($summaryMetrics as [$label, $value]) {
+            $metricValueStyle = $label === 'Estimated Revenue' ? $financialValueStyle : $valueStyle;
+            $writer->addRow(Row::fromValuesWithStyles(
+                [$label, $value],
+                null,
+                [$labelStyle, $metricValueStyle],
+            )->setHeight(21));
         }
 
-        $writer->addRow(Row::fromValuesWithStyles(['Estimated Revenue', $summary['estimated_revenue']], null, [$revenueLabelStyle, $revenueValueStyle])->setHeight(28));
+        $writer->addRow(Row::fromValues([], null)->setHeight(10));
+        $writer->addRow(Row::fromValues(['FINANCIAL SUMMARY'], $sectionStyle)->setHeight(24));
+        $writer->addRow(Row::fromValues(['Metric', 'Value'], $headerStyle)->setHeight(23));
+
+        foreach ($financialMetrics as [$label, $value]) {
+            $writer->addRow(Row::fromValuesWithStyles(
+                [$label, $value],
+                null,
+                [$labelStyle, $financialValueStyle],
+            )->setHeight(21));
+        }
+
         $writer->close();
     }
 

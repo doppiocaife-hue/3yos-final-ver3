@@ -27,9 +27,12 @@ class PublicPagesTest extends TestCase
         $response->assertSee('aria-describedby="date-availability"', false);
         $response->assertSee('data-next="2" disabled', false);
         $response->assertSee("dateAvailabilityState !== 'available'", false);
-        $response->assertSee('A maximum of 4 active reservations/events is allowed per date.', false);
-        $response->assertSee('${data.bookings}/${data.capacity} occupied', false);
-        $response->assertSee('${data.bookings}/${data.capacity} occupied — this date is fully booked.', false);
+        $response->assertSee("setDateAvailability('available', selectedDate, ''", false);
+        $response->assertSee('This date is currently fully booked. Please select another available date.', false);
+        $response->assertDontSee('A maximum of 4 active reservations/events', false);
+        $response->assertDontSee('${data.bookings}/${data.capacity}', false);
+        $response->assertDontSee('event slot', false);
+        $response->assertDontSee('occupied', false);
     }
 
     public function test_inquiry_page_is_accessible(): void
