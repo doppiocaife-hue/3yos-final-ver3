@@ -8,7 +8,7 @@
 
 @php($attentionTotal = array_sum($needsAttention))
 <section class="card mb-4 attention-card">
-    <div class="panel-header"><div><h2 class="h5 fw-bold mb-1">Needs attention</h2><p class="text-muted small mb-0">Open items that need a decision.</p></div>@if($attentionTotal > 0)<span class="badge-soft badge-soft--warn">{{ $attentionTotal }} open</span>@endif</div>
+    <div class="panel-header"><div><h2 class="h5 fw-bold mb-1">Needs attention</h2><p class="text-muted small mb-0">Open items that need a decision.</p></div>@if($attentionTotal > 0)<span class="badge-soft badge-soft--warn">{{ $attentionTotal }} OPEN ITEMS</span>@endif</div>
     @if($attentionTotal === 0)
         <p class="text-muted small mb-0">Nothing needs attention right now.</p>
     @else
@@ -93,7 +93,6 @@
     </div>
     <div class="calendar-weekdays" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
     <div class="calendar-grid" id="reservationCalendar" aria-label="Calendar days"></div>
-    <div class="calendar-events" id="calendarEvents" aria-live="polite"></div>
 </section>
 <style>
 .attention-card .panel-header{align-items:center}
@@ -116,10 +115,6 @@ body.dark-mode .today-tile strong{color:#f1f6f8}
 .calendar-legend span{display:inline-flex;align-items:center;gap:.35rem}
 .calendar-dot{width:9px;height:9px;border-radius:50%;background:var(--teal)}
 .calendar-dot--pending{background:#d49b28}.calendar-dot--confirmed{background:#0d8b83}.calendar-dot--completed{background:#4d77b8}.calendar-dot--cancelled{background:#c54545}
-.calendar-events{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin-top:1rem}
-.calendar-event-detail{display:grid;gap:.25rem;padding:.7rem .8rem;border:1px solid var(--line);border-left:3px solid #0d8b83;border-radius:8px;background:var(--surface);font-size:.75rem;overflow-wrap:anywhere}
-.calendar-event-detail--pending{border-left-color:#d49b28}.calendar-event-detail--completed{border-left-color:#4d77b8}.calendar-event-detail--cancelled{border-left-color:#c54545}
-.calendar-event-detail strong{font-size:.78rem}.calendar-event-detail small{color:var(--muted);line-height:1.35}
 .calendar-day:focus-within{outline:2px solid #71c9c0;outline-offset:1px}
 .calendar-capacity{display:block;margin-top:.2rem;color:var(--teal-dark);font-size:.56rem;font-weight:800;line-height:1.1}
 .calendar-capacity--full{color:var(--danger)}
@@ -127,23 +122,17 @@ body.dark-mode .today-tile strong{color:#f1f6f8}
 .calendar-hover-card{max-width:min(240px,calc(100vw - 2rem))}
 body.dark-mode .calendar-event--cancelled{background:#f9e0e1;border-color:#a73838;color:#4d1316;box-shadow:inset 0 0 0 1px rgba(167,56,56,.2)}
 body.dark-mode .calendar-event--cancelled .calendar-event__status{color:#6d1818}
-@media(max-width:992px){.calendar-events{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:575px){.calendar-events{grid-template-columns:1fr}.calendar-legend{gap:.5rem}}
 .calendar-toolbar{display:flex;align-items:center;justify-content:center;gap:1.25rem;margin-bottom:1rem}.calendar-nav{width:34px;height:34px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--teal-dark);font-size:1.1rem;line-height:1}.calendar-nav:hover{background:var(--mint)}.calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}.calendar-weekdays{color:var(--muted);font-size:.68rem;font-weight:800;letter-spacing:.08em;text-align:center;text-transform:uppercase;margin-bottom:6px}.calendar-day{position:relative;min-height:92px;padding:.55rem;background:#fbfcfd;border:1px solid var(--line);border-radius:8px}.calendar-day--empty{background:transparent;border-color:transparent}.calendar-day--today{border-color:#71c9c0;box-shadow:inset 0 0 0 1px #71c9c0}.calendar-day-number{font-size:.78rem;font-weight:800}.calendar-event{display:flex;flex-direction:column;gap:.1rem;width:100%;margin-top:.45rem;padding:.28rem .35rem;border:0;border-left:3px solid;border-radius:4px;background:var(--mint);color:var(--ink);font-size:.68rem;text-align:left;line-height:1.2;white-space:normal;overflow:hidden;word-break:break-word}.calendar-event__title{display:block;font-weight:700;line-height:1.2;color:inherit}.calendar-event__status{display:block;font-size:.52rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:inherit;opacity:1}.calendar-event--pending{border-color:#d49b28}.calendar-event--confirmed{border-color:#0d8b83}.calendar-event--completed{border-color:#4d77b8}.calendar-event--cancelled{border-color:#a73838;background:#f9e0e1;color:#4d1316;box-shadow:inset 0 0 0 1px rgba(167,56,56,.2)}.calendar-event--cancelled .calendar-event__status{color:#6d1818}.calendar-hover-card{position:absolute;z-index:20;top:calc(100% + 6px);left:0;width:240px;padding:.7rem;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 28px rgba(21,37,55,.18);opacity:0;pointer-events:none;transform:translateY(-4px);transition:opacity .15s ease,transform .15s ease}.calendar-day:hover .calendar-hover-card,.calendar-day:focus-within .calendar-hover-card{opacity:1;transform:translateY(0)}.calendar-hover-item{padding:.35rem 0;border-top:1px solid var(--line);font-size:.7rem}.calendar-hover-item:first-child{padding-top:0;border-top:0}.calendar-hover-item strong{display:block}.calendar-hover-item small{display:block;color:var(--muted);margin-top:.12rem}.calendar-legend{display:flex;flex-wrap:wrap;gap:.8rem;color:var(--muted);font-size:.72rem;font-weight:700}.calendar-legend span{display:inline-flex;align-items:center;gap:.35rem}.calendar-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.calendar-dot--pending{background:#d49b28}.calendar-dot--confirmed{background:#0d8b83}.calendar-dot--completed{background:#4d77b8}.calendar-dot--cancelled{background:#c54545}.calendar-events{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;margin-top:1rem}.calendar-event-detail{padding:.75rem;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.calendar-event-detail strong{display:block;font-size:.8rem}.calendar-event-detail small{display:block;color:var(--muted);margin-top:.15rem}.calendar-event-detail--pending{border-left:3px solid #d49b28}.calendar-event-detail--cancelled{border-left:3px solid #c54545}.calendar-event-detail--confirmed{border-left:3px solid #0d8b83}.calendar-event-detail--completed{border-left:3px solid #4d77b8}
 .calendar-event{cursor:pointer;text-decoration:none;transition:filter .12s ease,box-shadow .12s ease}
 .calendar-event:hover,.calendar-event:focus-visible{filter:brightness(.96)}
 .calendar-event:focus-visible{outline:2px solid var(--teal-dark);outline-offset:1px}
-.calendar-event-detail{color:inherit;text-decoration:none;cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease}
-.calendar-event-detail:hover,.calendar-event-detail:focus-visible{border-color:var(--teal);box-shadow:0 8px 18px rgba(30,50,62,.08);color:inherit}
-.calendar-event-detail:focus-visible{outline:2px solid var(--teal-dark);outline-offset:1px}
-body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{background:var(--surface)}
+body.dark-mode .calendar-day{background:#12202e}
 
 @media(max-width:992px){
-    .calendar-events{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 @media(max-width:768px){
-    .calendar-day{min-height:72px;padding:.35rem}.calendar-event{font-size:.6rem;padding:.2rem}.calendar-events{grid-template-columns:1fr}.calendar-legend{gap:.5rem}
+    .calendar-day{min-height:72px;padding:.35rem}.calendar-event{font-size:.6rem;padding:.2rem}.calendar-legend{gap:.5rem}
 }
 
 @media(max-width:575px){
@@ -156,13 +145,12 @@ body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{backgroun
     const capacityByDate = @json($calendarCapacityByDate);
     const maximumCapacity = @json(\App\Models\Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE);
     // Reuses the existing reservation detail route — '__ID__' is swapped for each event's real
-    // reservation id so every calendar event/list card opens that exact reservation.
+    // reservation id so each calendar event opens that exact reservation.
     const reservationUrlTemplate = @json(route('admin.reservations.show', ['reservation' => '__ID__']));
     const reservationUrl = (id) => reservationUrlTemplate.replace('__ID__', id);
     const calendar = document.getElementById('reservationCalendar');
     const monthLabel = document.getElementById('calendarMonth');
-    const eventsPanel = document.getElementById('calendarEvents');
-    if (!calendar || !monthLabel || !eventsPanel) return;
+    if (!calendar || !monthLabel) return;
 
     const today = new Date();
     let displayedMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -173,14 +161,6 @@ body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{backgroun
         (events[reservation.date] ??= []).push(reservation);
         return events;
     }, {});
-
-    const renderMonthEvents = () => {
-        const monthPrefix = `${displayedMonth.getFullYear()}-${String(displayedMonth.getMonth() + 1).padStart(2, '0')}`;
-        const monthEvents = reservations.filter((reservation) => reservation.date.startsWith(monthPrefix));
-        eventsPanel.innerHTML = monthEvents.length
-            ? monthEvents.map((event) => `<a class="calendar-event-detail calendar-event-detail--${event.status}" href="${reservationUrl(event.id)}"><strong>${escapeHtml(event.eventType)} · ${statusLabels[event.status]}</strong><small>${escapeHtml(event.date)} · ${escapeHtml(event.time)}</small><small>${escapeHtml(event.name)} · ${escapeHtml(event.venue)}</small></a>`).join('')
-            : '<p class="text-muted small mb-0">No reservations scheduled this month.</p>';
-    };
 
     const renderCalendar = () => {
         const year = displayedMonth.getFullYear();
@@ -242,7 +222,6 @@ body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{backgroun
             calendar.append(dayElement);
         }
 
-        renderMonthEvents();
     };
 
     document.getElementById('calendarPrevious')?.addEventListener('click', () => {

@@ -22,7 +22,7 @@ class AdminDashboardTest extends TestCase
         $response->assertDontSee('href="'.route('admin.dashboard').'#reservation-calendar"', false);
     }
 
-    public function test_calendar_includes_event_details_for_hover_and_month_list(): void
+    public function test_calendar_includes_event_details_without_a_duplicate_month_list(): void
     {
         Reservation::create([
             'full_name' => 'Calendar Test Client',
@@ -48,6 +48,9 @@ class AdminDashboardTest extends TestCase
         $response->assertSee('Calendar Test Client');
         $response->assertSee('Anniversary');
         $response->assertSee('Celebration Hall');
-        $response->assertSee('confirmed');
+        $response->assertSee('calendar-hover-item', false);
+        $response->assertSee('Open reservation detail.', false);
+        $response->assertDontSee('id="calendarEvents"', false);
+        $response->assertDontSee('<a class="calendar-event-detail', false);
     }
 }

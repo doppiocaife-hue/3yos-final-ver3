@@ -50,6 +50,7 @@ class AdminDashboardInsightsTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Pending reservations need a decision');
+        $response->assertSee('1 OPEN ITEMS');
         $response->assertSee(route('admin.reservations', ['status' => 'pending']), false);
     }
 
