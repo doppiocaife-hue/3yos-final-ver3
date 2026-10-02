@@ -73,10 +73,6 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
             ->withoutMiddleware('capture.activity')
             ->middleware('confirm.admin-password')
             ->name('admin.reservations.payments.update');
-        Route::delete('/reservations/{reservation}/payments/{payment}', [ReservationPaymentController::class, 'destroy'])
-            ->withoutMiddleware('capture.activity')
-            ->middleware('confirm.admin-password')
-            ->name('admin.reservations.payments.destroy');
     });
     Route::get('/inquiries', [AdminController::class, 'inquiries'])->name('admin.inquiries');
     Route::get('/inquiries/{inquiry}', [AdminController::class, 'showInquiry'])->name('admin.inquiries.show');

@@ -50,7 +50,7 @@
                 @if(! $contractSet)
                     <div class="alert alert-warning mb-0">Set the contract price first, then record payments against it.</div>
                 @elseif($fullyPaid)
-                    <div class="alert alert-success mb-0">This booking is fully paid. Edit or delete a payment below to make changes.</div>
+                    <div class="alert alert-success mb-0">This booking is fully paid. Edit a payment below to make changes.</div>
                 @else
                     <form method="POST" enctype="multipart/form-data" action="{{ route('admin.reservations.payments.store', $reservation) }}" data-submit-once data-confirm-message="Record this payment? The balance and status will be recalculated.">
                         @csrf
@@ -199,12 +199,6 @@
                                             data-method="{{ $transaction->payment->payment_method }}"
                                             data-notes="{{ $transaction->payment->notes }}"
                                             data-receipt-url="{{ $transaction->payment->receipt_image_path ? route('admin.reservations.payments.receipt', [$reservation, $transaction->payment]) : '' }}">Edit</button>
-                                        <form class="payment-delete-form" method="POST" action="{{ route('admin.reservations.payments.destroy', [$reservation, $transaction->payment]) }}" data-password-confirm data-password-message="Confirm your administrator password to delete this payment." data-submit-once data-confirm-message="Delete this {{ $peso($transaction->payment->amount) }} payment? The total paid and balance will be recalculated.">
-                                            @csrf @method('DELETE')
-                                            <label class="visually-hidden" for="delete-payment-reason-{{ $transaction->payment->id }}">Reason for deleting payment {{ $peso($transaction->payment->amount) }}</label>
-                                            <input class="form-control form-control-sm" id="delete-payment-reason-{{ $transaction->payment->id }}" name="reason" type="text" minlength="3" maxlength="500" placeholder="Deletion reason (required)" required>
-                                            <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
-                                        </form>
                                     </div>
                                 @else
                                     <span class="text-muted">—</span>
@@ -268,8 +262,6 @@
     .payment-history { min-width: 900px; }
     .payment-history tfoot th { border-top: 1px solid var(--line); background: #f7f9fa; font-size: .8rem; }
     body.dark-mode .payment-history tfoot th { background: #223641; }
-    .payment-delete-form { display: grid; justify-items: end; gap: .25rem; }
-    .payment-delete-form input { width: 11rem; max-width: 100%; }
     .payment-notes { max-width: 260px; overflow-wrap: anywhere; }
     .summary-item .status-badge { font-family: "DM Sans", sans-serif; }
     .refund-panel { border-color: rgba(185, 71, 71, .28); }

@@ -137,9 +137,7 @@ class AdminController extends Controller
             $query->whereIn('status', ['pending', 'confirmed']);
         }
 
-        if ($paymentStatus && in_array($paymentStatus, ['Unpaid', 'Downpayment', 'Partial Payment', 'Fully Paid'], true)) {
-            $query->where('payment_status', $paymentStatus);
-        }
+        $this->applyPaymentStatusFilter($query, $paymentStatus);
 
         if ($search !== null && trim($search) !== '') {
             $this->applyReservationSearch($query, $search);
@@ -214,6 +212,7 @@ class AdminController extends Controller
     public function showReservation(Reservation $reservation)
     {
         $reservation->load('client', 'package', 'payments', 'refunds');
+        $reservation->setAttribute('payment_status', $reservation->financials()['payment_status']);
         $packages = Package::orderBy('price')->get(['id', 'name', 'price']);
 
         $activity = ActivityLog::query()
@@ -245,9 +244,7 @@ class AdminController extends Controller
             $query->where('status', $status);
         }
 
-        if ($paymentStatus && in_array($paymentStatus, ['Unpaid', 'Downpayment', 'Partial Payment', 'Fully Paid'], true)) {
-            $query->where('payment_status', $paymentStatus);
-        }
+        $this->applyPaymentStatusFilter($query, $paymentStatus);
 
         if ($search !== '') {
             $this->applyReservationSearch($query, $search);
@@ -277,7 +274,7 @@ class AdminController extends Controller
                 $reservation->event_date ? Carbon::parse($reservation->event_date)->format('Y-m-d') : '',
                 $reservation->venue ?? '',
                 $reservation->status ?? '',
-                $reservation->payment_status ?? '',
+                $amounts['payment_status'],
                 (string) ($reservation->total_cost ?? 0),
                 number_format($amounts['gross_paid'], 2, '.', ''),
                 number_format($amounts['total_refunded'], 2, '.', ''),
@@ -448,13 +445,28 @@ class AdminController extends Controller
         ]);
 
         $cents = fn (string $key) => (int) $financials->sum($key);
+
+        $paidRecords = ReservationPayment::query()
+            ->when($rangeStart, fn ($query, Carbon $date) => $query->whereDate('payment_date', '>=', $date->toDateString()))
+            ->when($rangeEnd, fn ($query, Carbon $date) => $query->whereDate('payment_date', '<=', $date->toDateString()))
+            ->get();
+        $refundedRecords = ReservationRefund::query()
+            ->where('status', 'completed')
+            ->when($rangeStart, fn ($query, Carbon $date) => $query->whereDate('refund_date', '>=', $date->toDateString()))
+            ->when($rangeEnd, fn ($query, Carbon $date) => $query->whereDate('refund_date', '<=', $date->toDateString()))
+            ->get();
+
+        $paidAmountCents = $paidRecords->sum(fn (ReservationPayment $payment) => Reservation::toCents($payment->amount));
+        $refundedAmountCents = $refundedRecords->sum(fn (ReservationRefund $refund) => Reservation::toCents($refund->amount));
+        $rangeApplied = $rangeStart !== null || $rangeEnd !== null;
+
         $totals = [
             'reservations' => $reservations->count(),
-            'paid' => $cents('gross_paid_cents') / 100,
-            'refunded' => $cents('total_refunded_cents') / 100,
-            'net' => $cents('net_paid_cents') / 100,
+            'paid' => $rangeApplied ? ($paidAmountCents / 100) : ($cents('gross_paid_cents') / 100),
+            'refunded' => $rangeApplied ? ($refundedAmountCents / 100) : ($cents('total_refunded_cents') / 100),
+            'net' => $rangeApplied ? (($paidAmountCents - $refundedAmountCents) / 100) : ($cents('net_paid_cents') / 100),
             'outstanding' => (int) $financials->sum(fn (array $f) => $f['remaining_balance_cents'] ?? 0) / 100,
-            'refunded_reservations' => $financials->filter(fn (array $f) => $f['total_refunded_cents'] > 0)->count(),
+            'refunded_reservations' => $rangeApplied ? $refundedRecords->pluck('reservation_id')->unique()->count() : $financials->filter(fn (array $f) => $f['total_refunded_cents'] > 0)->count(),
         ];
 
         $statusCounts = collect(['pending', 'confirmed', 'completed', 'cancelled'])
@@ -489,7 +501,7 @@ class AdminController extends Controller
 
             return (object) [
                 'label' => $month->format('F Y'),
-                'reservations' => $reservations->filter(fn ($r) => $r->created_at->format('Y-m') === $key)->count(),
+                'reservations' => $reservations->filter(fn ($r) => Carbon::parse($r->event_date)->format('Y-m') === $key)->count(),
                 'paid' => $paid / 100,
                 'refunded' => $refunded / 100,
                 'net' => ($paid - $refunded) / 100,
@@ -667,7 +679,7 @@ class AdminController extends Controller
             $contractCents = Reservation::toCents($data['total_cost'] ?? $reservation->total_cost);
 
             if ($targetPaidCents < $paidCents) {
-                throw ValidationException::withMessages(['amount_paid' => 'To lower the amount paid, edit or delete entries in the payment history.']);
+                throw ValidationException::withMessages(['amount_paid' => 'To lower the amount paid, edit the relevant entries in the payment history.']);
             }
             if ($contractKnown && $targetPaidCents > $contractCents) {
                 throw ValidationException::withMessages([
@@ -1031,5 +1043,18 @@ class AdminController extends Controller
                 $matches->orWhere('status', 'confirmed');
             }
         });
+    }
+
+    private function applyPaymentStatusFilter(Builder $query, ?string $paymentStatus): void
+    {
+        if ($paymentStatus === 'Partially Paid' || in_array($paymentStatus, ['Downpayment', 'Partial Payment'], true)) {
+            $query->whereIn('payment_status', ['Partially Paid', 'Downpayment', 'Partial Payment']);
+
+            return;
+        }
+
+        if (in_array($paymentStatus, ['Unpaid', 'Fully Paid', 'Partially Refunded', 'Fully Refunded'], true)) {
+            $query->where('payment_status', $paymentStatus);
+        }
     }
 }

@@ -205,56 +205,6 @@ class ReservationPaymentController extends Controller
         return redirect()->route('admin.reservations.payments', $reservation)->with('success', 'Payment updated and balance recalculated.');
     }
 
-    public function destroy(Request $request, Reservation $reservation, ReservationPayment $payment): RedirectResponse
-    {
-        $data = $request->validate([
-            'reason' => ['required', 'string', 'min:3', 'max:500'],
-        ], [
-            'reason.required' => 'Enter a reason for deleting this payment.',
-            'reason.min' => 'The deletion reason must be at least 3 characters.',
-        ]);
-        $receiptPath = null;
-
-        DB::transaction(function () use ($request, $reservation, $payment, $data, &$receiptPath) {
-            $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
-            $payment = $reservation->payments()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
-            $reservation->ensurePaymentLedger();
-            $financials = $reservation->financials();
-
-            if ($financials['gross_paid_cents'] - Reservation::toCents($payment->amount) < $financials['total_refunded_cents']) {
-                throw ValidationException::withMessages([
-                    'payment' => 'This payment cannot be deleted because processed refunds depend on the total amount received.',
-                ]);
-            }
-
-            $receiptPath = $payment->receipt_image_path;
-            $this->recordFinancialActivity(
-                $request,
-                'Payment deleted',
-                $this->paymentSummary($payment)
-                    .' Reason: '.$data['reason']
-                    .'. Deleted by '.$request->session()->get('admin_name', 'Unknown administrator').'.',
-                $reservation,
-            );
-
-            if ($receiptPath !== null) {
-                $this->recordFinancialActivity(
-                    $request,
-                    'Official Receipt removed',
-                    'Official Receipt removed with the deleted '.$this->peso($payment->amount).' payment.',
-                    $reservation,
-                );
-            }
-
-            $payment->delete();
-            $reservation->recalculatePaymentTotals();
-        });
-
-        $this->deleteReceiptImage($receiptPath);
-
-        return redirect()->route('admin.reservations.payments', $reservation)->with('success', 'Payment of '.$this->peso($payment->amount).' deleted and balance recalculated.');
-    }
-
     public function receipt(Reservation $reservation, ReservationPayment $payment)
     {
         $payment = $reservation->payments()->whereKey($payment->id)->firstOrFail();

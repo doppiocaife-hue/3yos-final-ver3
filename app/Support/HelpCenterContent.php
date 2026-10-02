@@ -105,12 +105,13 @@ class HelpCenterContent
                     [
                         'id' => 'payment-status',
                         'question' => 'What do the payment statuses mean?',
-                        'keywords' => ['payment status', 'downpayment', 'partial payment', 'fully paid', 'unpaid'],
+                        'keywords' => ['payment status', 'downpayment', 'partial payment', 'fully paid', 'unpaid', 'partially refunded', 'fully refunded'],
                         'summary' => [
                             'No Payment — nothing has been recorded yet.',
-                            'Downpayment — an initial payment has been made.',
-                            'Partial Payment — more has been paid, but a balance remains.',
+                            'Partially Paid — net payments are above zero, but below the contract price.',
                             'Fully Paid — the full contract price has been paid.',
+                            'Partially Refunded — a refund reduced the net amount below the contract price.',
+                            'Fully Refunded — all recorded payments have been refunded; this is different from No Payment.',
                         ],
                         'manual' => ['chapter' => 'payments', 'label' => 'Read the Payments chapter'],
                     ],
@@ -630,7 +631,7 @@ class HelpCenterContent
                 'intro' => [],
                 'sections' => [
                     ['heading' => 'How payment is handled', 'body' => ['Payments are arranged directly with 3YOS and recorded manually on their end — there is no online checkout on this site.']],
-                    ['heading' => 'Payment status', 'body' => [], 'list' => ['No Payment', 'Downpayment', 'Partial Payment', 'Fully Paid']],
+                    ['heading' => 'Payment status', 'body' => [], 'list' => ['No Payment', 'Partially Paid', 'Fully Paid', 'Partially Refunded', 'Fully Refunded']],
                 ],
                 'related' => ['category' => 'payments'],
             ],
@@ -811,7 +812,7 @@ class HelpCenterContent
                 'intro' => [],
                 'sections' => [
                     ['heading' => 'Recording a payment', 'body' => [], 'list' => ['Open the reservation.', 'Go to Payments.', 'Add Payment: date, amount, method, type, and an optional receipt image.', 'Save.']],
-                    ['heading' => 'Balance and status', 'body' => ['Payment status (No Payment, Downpayment, Partial Payment, Fully Paid) and the remaining balance are calculated automatically from the payment and refund history — they\'re never edited directly.']],
+                    ['heading' => 'Balance and status', 'body' => ['Payment status (No Payment, Partially Paid, Fully Paid, Partially Refunded, Fully Refunded) and the remaining balance are calculated automatically from the payment and refund history — they\'re never edited directly.']],
                     ['heading' => 'Refunds', 'body' => ['Recorded the same way, against the same page. A refund can\'t exceed what was actually paid, and refunding a reservation never changes its status by itself.']],
                     ['heading' => 'Troubleshooting', 'body' => ['A payment can\'t be saved for more than the remaining balance, and the contract price can\'t be lowered below what\'s already been paid — both are deliberate guardrails, not bugs.']],
                 ],

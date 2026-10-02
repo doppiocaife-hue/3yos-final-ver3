@@ -136,7 +136,7 @@ class AdminDashboardInsightsTest extends TestCase
         $response = $this->withSession(self::ADMIN)->get(route('admin.dashboard'));
 
         $response->assertOk()->assertViewHas('needsAttention', function (array $counts): bool {
-            return $counts['unpaid_accepted'] === 3
+            return $counts['unpaid_accepted'] === 2
                 && $counts['missing_contracts'] === 3
                 && $counts['outstanding_balances'] === 1;
         });
@@ -153,7 +153,7 @@ class AdminDashboardInsightsTest extends TestCase
             'attention' => 'outstanding_balance',
         ]));
 
-        $this->assertSame('Unpaid', $fullyRefunded->fresh()->financials()['payment_status']);
+        $this->assertSame('Fully Refunded', $fullyRefunded->fresh()->financials()['payment_status']);
         $this->assertSame(0, $fullyRefunded->fresh()->financials()['net_paid_cents']);
         $this->assertNull($noContractPrice->fresh()->financials()['remaining_balance_cents']);
         $this->assertSame(0, $zeroContractPrice->fresh()->financials()['remaining_balance_cents']);

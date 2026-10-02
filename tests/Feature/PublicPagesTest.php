@@ -170,7 +170,7 @@ class PublicPagesTest extends TestCase
         $response = app(\App\Http\Controllers\AdminController::class)->updateReservationStatus($request, $reservation);
 
         $this->assertSame('completed', $reservation->fresh()->status);
-        $this->assertSame('Downpayment', $reservation->fresh()->payment_status);
+        $this->assertSame('Partially Paid', $reservation->fresh()->payment_status);
         $this->assertSame('Downpayment', $reservation->fresh()->payment_type);
         $this->assertSame(30000.0, (float) $reservation->fresh()->total_cost);
         $this->assertSame(8000.0, (float) $reservation->fresh()->amount_paid);

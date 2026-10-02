@@ -107,7 +107,11 @@ class Reservation extends Model
     /** Display label for the stored payment_status ("Unpaid" is kept in storage for existing filters and reports). */
     public static function paymentStatusLabel(?string $status): string
     {
-        return $status === null || $status === 'Unpaid' ? 'No Payment' : $status;
+        return match ($status) {
+            null, 'Unpaid' => 'No Payment',
+            'Downpayment', 'Partial Payment' => 'Partially Paid',
+            default => $status,
+        };
     }
 
     /** Maps a payment status onto the shared status-badge palette. */
@@ -115,8 +119,10 @@ class Reservation extends Model
     {
         return match ($status) {
             'Fully Paid' => 'confirmed',
-            'Partial Payment' => 'completed',
+            'Partially Paid', 'Partial Payment' => 'completed',
+            'Partially Refunded' => 'pending',
             'Downpayment' => 'pending',
+            'Fully Refunded' => 'neutral',
             default => 'neutral',
         };
     }

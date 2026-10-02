@@ -48,9 +48,10 @@
             <select name="payment_status" class="form-select">
                 <option value="">All payments</option>
                 <option value="Unpaid" @selected($paymentStatus === 'Unpaid')>No Payment</option>
-                <option value="Downpayment" @selected($paymentStatus === 'Downpayment')>Downpayment</option>
-                <option value="Partial Payment" @selected($paymentStatus === 'Partial Payment')>Partial Payment</option>
+                <option value="Partially Paid" @selected(in_array($paymentStatus, ['Partially Paid', 'Downpayment', 'Partial Payment'], true))>Partially Paid</option>
                 <option value="Fully Paid" @selected($paymentStatus === 'Fully Paid')>Fully Paid</option>
+                <option value="Partially Refunded" @selected($paymentStatus === 'Partially Refunded')>Partially Refunded</option>
+                <option value="Fully Refunded" @selected($paymentStatus === 'Fully Refunded')>Fully Refunded</option>
             </select>
         </div>
         <div class="filter-field">
@@ -114,7 +115,7 @@
                         <td>{{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}</td>
                         <td><strong>{{ $reservation->guest_count }}</strong></td>
                         <td><span class="status-badge status-badge--{{ $reservation->status }}">{{ $statusLabel }}</span></td>
-                        <td><span class="status-badge status-badge--{{ \App\Models\Reservation::paymentStatusBadge($reservation->payment_status) }}">{{ \App\Models\Reservation::paymentStatusLabel($reservation->payment_status) }}</span></td>
+                        <td><span class="status-badge status-badge--{{ \App\Models\Reservation::paymentStatusBadge($reservationFinancials['payment_status']) }}">{{ \App\Models\Reservation::paymentStatusLabel($reservationFinancials['payment_status']) }}</span></td>
                         <td>
                             <div class="reservation-row-actions">
                                 @if($reservation->status === 'pending')

@@ -110,19 +110,39 @@ class AnalyticsTest extends TestCase
             'max_guests' => 200,
         ]);
 
-        $inRangeReservation = $this->createReservation($package->id, [
-            'status' => 'confirmed',
+        $inRangeReservation = Reservation::create(array_merge([
+            'package_id' => $package->id,
+            'full_name' => 'Analytics Client',
+            'contact_number' => '09171234567',
+            'email' => 'analytics@example.com',
+            'address' => '123 Analytics Street',
+            'event_type' => 'Wedding',
             'event_date' => '2026-09-10',
+            'event_time' => '18:00',
+            'venue' => 'Analytics Hall',
+            'guest_count' => 100,
+            'estimated_budget' => 0,
+            'status' => 'confirmed',
             'total_cost' => 30000,
-        ]);
+        ], []));
         $inRangeReservation->payments()->create(['payment_date' => '2026-09-12', 'payment_type' => 'Downpayment', 'amount' => 12000, 'payment_method' => 'Cash']);
         $inRangeReservation->refunds()->create(['refund_date' => '2026-09-15', 'amount' => 3000, 'refund_method' => 'Cash', 'status' => 'completed', 'request_key' => (string) \Illuminate\Support\Str::uuid()]);
 
-        $outOfRangeReservation = $this->createReservation($package->id, [
-            'status' => 'confirmed',
+        $outOfRangeReservation = Reservation::create(array_merge([
+            'package_id' => $package->id,
+            'full_name' => 'Analytics Client',
+            'contact_number' => '09171234567',
+            'email' => 'analytics@example.com',
+            'address' => '123 Analytics Street',
+            'event_type' => 'Wedding',
             'event_date' => '2026-10-20',
+            'event_time' => '18:00',
+            'venue' => 'Analytics Hall',
+            'guest_count' => 100,
+            'estimated_budget' => 0,
+            'status' => 'confirmed',
             'total_cost' => 20000,
-        ]);
+        ], []));
         $outOfRangeReservation->payments()->create(['payment_date' => '2026-10-21', 'payment_type' => 'Downpayment', 'amount' => 5000, 'payment_method' => 'Cash']);
 
         $response = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])

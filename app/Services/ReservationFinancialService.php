@@ -17,7 +17,8 @@ class ReservationFinancialService
      *     remaining_balance_cents: int|null,
      *     payment_status: string,
      *     payment_type: string,
-     *     payments_count: int
+     *     payments_count: int,
+     *     has_payment_history: bool
      * }
      */
     public function calculate(Reservation $reservation, bool $includeLegacyTotal = true): array
@@ -30,6 +31,9 @@ class ReservationFinancialService
             : $reservation->refunds()->get();
 
         $grossPaidCents = (int) $payments->sum(fn (ReservationPayment $payment) => Reservation::toCents($payment->amount));
+        $hasPaymentHistory = $payments->contains(
+            fn (ReservationPayment $payment) => Reservation::toCents($payment->amount) > 0
+        );
         $totalRefundedCents = (int) $refunds
             ->where('status', 'completed')
             ->sum(fn (ReservationRefund $refund) => Reservation::toCents($refund->amount));
@@ -53,12 +57,12 @@ class ReservationFinancialService
         ])->first();
 
         $paymentStatus = match (true) {
-            $netPaidCents <= 0 => 'Unpaid',
+            $grossPaidCents <= 0 && ! $hasPaymentHistory => 'Unpaid',
+            $hasPaymentHistory && $netPaidCents <= 0 && $totalRefundedCents >= $grossPaidCents => 'Fully Refunded',
             $contractPriceCents !== null && $netPaidCents >= $contractPriceCents => 'Fully Paid',
-            $totalRefundedCents > 0 => 'Partial Payment',
+            $hasPaymentHistory && $totalRefundedCents > 0 => 'Partially Refunded',
             $contractPriceCents === null && in_array($latestPayment?->payment_type, ['Full Payment', 'Final Payment'], true) => 'Fully Paid',
-            $payments->count() === 1 => 'Downpayment',
-            default => 'Partial Payment',
+            default => 'Partially Paid',
         };
 
         return [
@@ -70,6 +74,7 @@ class ReservationFinancialService
             'payment_status' => $paymentStatus,
             'payment_type' => $latestPayment?->payment_type ?? 'Unpaid',
             'payments_count' => $payments->count(),
+            'has_payment_history' => $hasPaymentHistory,
         ];
     }
 
