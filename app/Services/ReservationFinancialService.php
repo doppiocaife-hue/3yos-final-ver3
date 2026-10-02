@@ -56,11 +56,12 @@ class ReservationFinancialService
             ['id', 'desc'],
         ])->first();
 
+        $isCancelled = $reservation->status === Reservation::STATUS_CANCELLED;
         $paymentStatus = match (true) {
-            $grossPaidCents <= 0 && ! $hasPaymentHistory => 'Unpaid',
-            $hasPaymentHistory && $netPaidCents <= 0 && $totalRefundedCents >= $grossPaidCents => 'Fully Refunded',
+            $isCancelled && $hasPaymentHistory && $grossPaidCents > 0 && $totalRefundedCents >= $grossPaidCents => 'Fully Refunded',
+            $isCancelled && $hasPaymentHistory && $totalRefundedCents > 0 => 'Partially Refunded',
+            $netPaidCents <= 0 => 'Unpaid',
             $contractPriceCents !== null && $netPaidCents >= $contractPriceCents => 'Fully Paid',
-            $hasPaymentHistory && $totalRefundedCents > 0 => 'Partially Refunded',
             $contractPriceCents === null && in_array($latestPayment?->payment_type, ['Full Payment', 'Final Payment'], true) => 'Fully Paid',
             default => 'Partially Paid',
         };

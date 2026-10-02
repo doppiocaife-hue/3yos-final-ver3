@@ -246,13 +246,24 @@ class ReservationPaymentController extends Controller
             'total_cost.min' => 'The contract price cannot be negative.',
         ]);
 
-        DB::transaction(function () use ($reservation, $data) {
+        DB::transaction(function () use ($request, $reservation, $data) {
             $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
             $reservation->ensurePaymentLedger();
             $reservation->recalculatePaymentTotals();
 
+            $oldContractPriceCents = $reservation->total_cost === null
+                ? null
+                : Reservation::toCents($reservation->getRawOriginal('total_cost'));
+            $newContractPriceCents = Reservation::toCents($data['total_cost']);
+            $oldDueDate = $reservation->payment_due_date?->toDateString();
+            $newDueDate = array_key_exists('payment_due_date', $data)
+                ? (($data['payment_due_date'] === null)
+                    ? null
+                    : \Carbon\Carbon::parse($data['payment_due_date'])->toDateString())
+                : $oldDueDate;
+
             $financials = $reservation->financials();
-            if (Reservation::toCents($data['total_cost']) < $financials['net_paid_cents']) {
+            if ($newContractPriceCents < $financials['net_paid_cents']) {
                 throw ValidationException::withMessages([
                     'total_cost' => 'The contract price cannot be lower than the '.$this->peso($financials['net_paid_cents'] / 100).' net amount paid.',
                 ]);
@@ -260,6 +271,31 @@ class ReservationPaymentController extends Controller
 
             $reservation->update($data);
             $reservation->recalculatePaymentTotals();
+
+            $contractPriceChanged = $oldContractPriceCents !== $newContractPriceCents;
+            $paymentDueDateChanged = $oldDueDate !== $newDueDate;
+            if ($contractPriceChanged || $paymentDueDateChanged) {
+                $changes = [];
+
+                if ($contractPriceChanged) {
+                    $oldPrice = $oldContractPriceCents === null ? 'Not set' : $this->peso($oldContractPriceCents / 100);
+                    $changes[] = 'Contract price: '.$oldPrice.' → '.$this->peso($newContractPriceCents / 100);
+                }
+
+                if ($paymentDueDateChanged) {
+                    $oldDate = $oldDueDate === null ? 'Not set' : \Carbon\Carbon::parse($oldDueDate)->format('F j, Y');
+                    $newDate = $newDueDate === null ? 'Not set' : \Carbon\Carbon::parse($newDueDate)->format('F j, Y');
+                    $changes[] = 'Payment due date: '.$oldDate.' → '.$newDate;
+                }
+
+                $action = match (true) {
+                    $contractPriceChanged && $paymentDueDateChanged => 'Updated contract and due date',
+                    $contractPriceChanged => 'Updated contract price',
+                    default => 'Updated payment due date',
+                };
+
+                $this->recordFinancialActivity($request, $action, implode("\n", $changes), $reservation);
+            }
         });
 
         return redirect()->route('admin.reservations.payments', $reservation)->with('success', 'Contract price and payment due date saved.');

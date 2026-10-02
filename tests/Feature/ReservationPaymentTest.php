@@ -397,6 +397,104 @@ class ReservationPaymentTest extends TestCase
         $this->assertTotals($reservation, 600.0, 0.0, 'Fully Paid');
     }
 
+    public function test_setting_a_contract_price_logs_not_set_to_the_new_price(): void
+    {
+        $reservation = $this->reservation(['total_cost' => null]);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.payments.details', $reservation), ['total_cost' => '10000.00'])
+            ->assertSessionHas('success');
+
+        $activity = ActivityLog::where('action', 'Updated contract price')->firstOrFail();
+        $this->assertStringContainsString('Contract price: Not set → ₱10,000.00', $activity->description);
+        $this->assertStringContainsString('Reservation: '.$reservation->reservation_code, $activity->description);
+        $this->assertSame('Payment Tester', $activity->actor_name);
+        $this->assertSame('PATCH', $activity->method);
+        $this->assertSame(1, ActivityLog::count());
+    }
+
+    public function test_contract_price_changes_record_each_actual_old_and_new_value(): void
+    {
+        $reservation = $this->reservation([
+            'total_cost' => 10000,
+            'payment_due_date' => '2026-10-10',
+        ]);
+
+        foreach ([
+            ['new' => '8000.00', 'description' => 'Contract price: ₱10,000.00 → ₱8,000.00'],
+            ['new' => '15000.00', 'description' => 'Contract price: ₱8,000.00 → ₱15,000.00'],
+            ['new' => '500.00', 'description' => 'Contract price: ₱15,000.00 → ₱500.00'],
+        ] as $change) {
+            $this->withSession(self::ADMIN)
+                ->patch(route('admin.reservations.payments.details', $reservation), ['total_cost' => $change['new']])
+                ->assertSessionHas('success');
+
+            $this->assertStringContainsString(
+                $change['description'],
+                ActivityLog::where('action', 'Updated contract price')->latest('id')->firstOrFail()->description,
+            );
+            $this->assertSame('2026-10-10', $reservation->fresh()->payment_due_date->toDateString());
+        }
+
+        $this->assertSame(3, ActivityLog::where('action', 'Updated contract price')->count());
+        $this->assertSame(0, ActivityLog::where('action', 'Updated contract and due date')->count());
+        $this->assertSame(500.0, (float) $reservation->fresh()->total_cost);
+    }
+
+    public function test_unchanged_contract_price_and_due_date_do_not_create_an_activity(): void
+    {
+        $reservation = $this->reservation([
+            'total_cost' => 10000,
+            'payment_due_date' => '2026-10-10',
+        ]);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.payments.details', $reservation), [
+                'total_cost' => '10000.00',
+                'payment_due_date' => '2026-10-10',
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertSame(0, ActivityLog::count());
+    }
+
+    public function test_due_date_only_and_combined_contract_changes_are_logged_accurately(): void
+    {
+        $reservation = $this->reservation([
+            'total_cost' => 10000,
+            'payment_due_date' => '2026-10-10',
+        ]);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.payments.details', $reservation), [
+                'total_cost' => '10000.00',
+                'payment_due_date' => '2026-10-15',
+            ])
+            ->assertSessionHas('success');
+
+        $dueDateActivity = ActivityLog::firstOrFail();
+        $this->assertSame('Updated payment due date', $dueDateActivity->action);
+        $this->assertSame('Payment due date: October 10, 2026 → October 15, 2026'."\nReservation: ".$reservation->reservation_code.'.', $dueDateActivity->description);
+        $this->assertStringNotContainsString('Contract price:', $dueDateActivity->description);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.payments.details', $reservation), [
+                'total_cost' => '500.00',
+                'payment_due_date' => '2026-10-20',
+            ])
+            ->assertSessionHas('success');
+
+        $combinedActivity = ActivityLog::latest('id')->firstOrFail();
+        $this->assertSame('Updated contract and due date', $combinedActivity->action);
+        $this->assertSame(
+            'Contract price: ₱10,000.00 → ₱500.00'."\n".
+            'Payment due date: October 15, 2026 → October 20, 2026'."\n".
+            'Reservation: '.$reservation->reservation_code.'.',
+            $combinedActivity->description,
+        );
+        $this->assertSame(2, ActivityLog::count());
+    }
+
     public function test_a_double_submitted_payment_is_only_recorded_once(): void
     {
         $reservation = $this->reservation();
@@ -463,7 +561,7 @@ class ReservationPaymentTest extends TestCase
         $this->assertSame('Payment Tester', $refund->recorded_by_name);
         $this->assertSame(1, $reservation->payments()->count());
         $this->assertSame('confirmed', $reservation->fresh()->status);
-        $this->assertTotals($reservation, 600.0, 400.0, 'Partially Refunded');
+        $this->assertTotals($reservation, 600.0, 400.0, 'Partially Paid');
         $refundActivity = ActivityLog::where('action', 'Refund recorded')->firstOrFail();
         $this->assertStringContainsString('Amount: ₱200.00', $refundActivity->description);
         $this->assertStringContainsString('Refund method: Cash', $refundActivity->description);
@@ -475,6 +573,8 @@ class ReservationPaymentTest extends TestCase
 
         $this->withSession(self::ADMIN)->get(route('admin.reservations.payments', $reservation))
             ->assertOk()
+            ->assertSee('Partially Paid')
+            ->assertDontSee('Partially Refunded')
             ->assertSee('Gross paid')
             ->assertSee('Total refunded')
             ->assertSee('Net paid')
@@ -501,42 +601,50 @@ class ReservationPaymentTest extends TestCase
             ->assertSessionHas('success', 'That refund submission was already processed.');
         $this->assertSame(1, $reservation->refunds()->count());
         $this->assertSame(1, ActivityLog::where('action', 'Refund recorded')->count());
-        $this->assertTotals($reservation, 600.0, 400.0, 'Partially Refunded');
+        $this->assertTotals($reservation, 600.0, 400.0, 'Partially Paid');
     }
 
-    public function test_full_refund_resets_net_paid_without_changing_reservation_status(): void
+    public function test_full_refund_on_active_reservation_uses_unpaid_status_without_changing_reservation_status(): void
     {
         $reservation = $this->reservation();
         $this->pay($reservation, 1000, ['payment_type' => 'Full Payment']);
 
         $this->refund($reservation, 400)->assertSessionHas('success', 'Refund of ₱400.00 processed.');
-        $this->assertTotals($reservation, 600.0, 400.0, 'Partially Refunded');
+        $this->assertTotals($reservation, 600.0, 400.0, 'Partially Paid');
         $this->refund($reservation, 600)->assertSessionHas('success', 'Refund of ₱600.00 processed.');
 
-        $this->assertTotals($reservation, 0.0, 1000.0, 'Fully Refunded');
+        $this->assertTotals($reservation, 0.0, 1000.0, 'Unpaid');
         $this->assertSame('confirmed', $reservation->fresh()->status);
         $this->assertSame(1000.0, (float) $reservation->payments()->firstOrFail()->amount);
         $this->assertSame(2, $reservation->refunds()->count());
         $this->assertEquals(1000.0, $reservation->refunds()->sum('amount'));
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.reservations.payments', $reservation))
+            ->assertOk()
+            ->assertSee('No Payment')
+            ->assertDontSee('Fully Refunded');
     }
 
     public function test_payment_status_matches_contract_balance_for_all_refund_scenarios(): void
     {
         $cases = [
-            ['contract' => 10000, 'payments' => [], 'refunds' => [], 'status' => 'Unpaid'],
-            ['contract' => 10000, 'payments' => [5000], 'refunds' => [], 'status' => 'Partially Paid'],
-            ['contract' => 10000, 'payments' => [10000], 'refunds' => [1000], 'status' => 'Partially Refunded'],
-            ['contract' => 10000, 'payments' => [5000, 6000], 'refunds' => [1000], 'status' => 'Fully Paid'],
-            ['contract' => 10000, 'payments' => [10000], 'refunds' => [10000], 'status' => 'Fully Refunded'],
-            ['contract' => 50000, 'payments' => [60000], 'refunds' => [10000], 'status' => 'Fully Paid'],
-            ['contract' => 50000, 'payments' => [50000], 'refunds' => [5000], 'status' => 'Partially Refunded'],
-            ['contract' => 50000, 'payments' => [50000], 'refunds' => [50000], 'status' => 'Fully Refunded'],
+            ['contract' => 10000, 'payments' => [], 'refunds' => [], 'reservation_status' => 'confirmed', 'status' => 'Unpaid'],
+            ['contract' => 10000, 'payments' => [5000], 'refunds' => [], 'reservation_status' => 'confirmed', 'status' => 'Partially Paid'],
+            ['contract' => 10000, 'payments' => [10000], 'refunds' => [1000], 'reservation_status' => 'confirmed', 'status' => 'Partially Paid'],
+            ['contract' => 10000, 'payments' => [5000, 6000], 'refunds' => [1000], 'reservation_status' => 'confirmed', 'status' => 'Fully Paid'],
+            ['contract' => 10000, 'payments' => [10000], 'refunds' => [10000], 'reservation_status' => 'confirmed', 'status' => 'Unpaid'],
+            ['contract' => 50000, 'payments' => [60000], 'refunds' => [10000], 'reservation_status' => 'confirmed', 'status' => 'Fully Paid'],
+            ['contract' => 50000, 'payments' => [50000], 'refunds' => [5000], 'reservation_status' => 'confirmed', 'status' => 'Partially Paid'],
+            ['contract' => 50000, 'payments' => [50000], 'refunds' => [50000], 'reservation_status' => 'cancelled', 'status' => 'Fully Refunded'],
+            ['contract' => 10000, 'payments' => [10000], 'refunds' => [5000], 'reservation_status' => 'cancelled', 'status' => 'Partially Refunded'],
+            ['contract' => 10000, 'payments' => [5000], 'refunds' => [], 'reservation_status' => 'cancelled', 'status' => 'Partially Paid'],
+            ['contract' => 10000, 'payments' => [], 'refunds' => [], 'reservation_status' => 'cancelled', 'status' => 'Unpaid'],
         ];
 
-        foreach ($cases as $index => $case) {
+        foreach ($cases as $case) {
             $reservation = $this->reservation([
                 'total_cost' => $case['contract'],
-                'status' => $index === 7 ? 'cancelled' : 'confirmed',
+                'status' => $case['reservation_status'],
             ]);
 
             foreach ($case['payments'] as $amount) {
@@ -568,8 +676,44 @@ class ReservationPaymentTest extends TestCase
             $this->assertSame($case['status'], $financials['payment_status']);
             $this->assertSame(count($case['payments']), $reservation->payments()->count());
             $this->assertSame(count($case['refunds']), $reservation->refunds()->count());
-            $this->assertSame($index === 7 ? 'cancelled' : 'confirmed', $reservation->status);
+            $this->assertSame($case['reservation_status'], $reservation->status);
         }
+    }
+
+    public function test_decimal_net_paid_status_depends_on_whether_reservation_is_cancelled(): void
+    {
+        $reservation = $this->reservation([
+            'total_cost' => '500.03',
+            'status' => 'confirmed',
+        ]);
+        $reservation->payments()->create([
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Full Payment',
+            'amount' => '1000.00',
+            'payment_method' => 'Cash',
+        ]);
+        $reservation->refunds()->create([
+            'refund_date' => now()->toDateString(),
+            'amount' => '500.00',
+            'refund_method' => 'Cash',
+            'status' => 'completed',
+            'request_key' => (string) Str::uuid(),
+        ]);
+
+        $financials = $reservation->financials();
+        $this->assertSame(100000, $financials['gross_paid_cents']);
+        $this->assertSame(50000, $financials['total_refunded_cents']);
+        $this->assertSame(50000, $financials['net_paid_cents']);
+        $this->assertSame(3, $financials['remaining_balance_cents']);
+        $this->assertSame('Partially Paid', $financials['payment_status']);
+
+        $reservation->update(['status' => 'cancelled']);
+        $cancelledFinancials = $reservation->fresh()->financials();
+        $this->assertSame(100000, $cancelledFinancials['gross_paid_cents']);
+        $this->assertSame(50000, $cancelledFinancials['total_refunded_cents']);
+        $this->assertSame(50000, $cancelledFinancials['net_paid_cents']);
+        $this->assertSame(3, $cancelledFinancials['remaining_balance_cents']);
+        $this->assertSame('Partially Refunded', $cancelledFinancials['payment_status']);
     }
 
     public function test_overpayment_refund_keeps_fully_paid_status_and_payment_history(): void
@@ -734,7 +878,7 @@ class ReservationPaymentTest extends TestCase
         $this->assertModelExists($payment);
         $this->assertSame(1, $reservation->refunds()->count());
         $this->assertSame(300.0, (float) $reservation->refunds()->firstOrFail()->amount);
-        $this->assertTotals($reservation, 500.0, 500.0, 'Partially Refunded');
+        $this->assertTotals($reservation, 500.0, 500.0, 'Partially Paid');
 
         $this->withSession(self::ADMIN)->patch(route('admin.reservations.payments.details', $reservation), ['total_cost' => 500])
             ->assertSessionHas('success');

@@ -164,12 +164,10 @@ class ReportController extends Controller
             ['Completed', $summary['completed_events']],
             ['Cancelled', $summary['cancelled_reservations']],
             ['Inquiries', $summary['inquiry_count']],
-            ['Estimated Revenue', $summary['estimated_revenue']],
         ];
         $financialMetrics = [
             ['Contract Value (Bookings Created in Period)', $summary['contract_value']],
             ['Gross Paid (Bookings Created in Period)', $summary['gross_paid']],
-            ['Refunded (Bookings Created in Period)', $summary['total_refunded']],
             ['Net Paid (Bookings Created in Period)', $summary['net_paid']],
             ['Outstanding Balance (Current Bookings)', $summary['outstanding_balance']],
             ['Gross Payments (Transactions in Period)', $summary['gross_payments_in_period']],
@@ -178,11 +176,10 @@ class ReportController extends Controller
         ];
 
         foreach ($summaryMetrics as [$label, $value]) {
-            $metricValueStyle = $label === 'Estimated Revenue' ? $financialValueStyle : $valueStyle;
             $writer->addRow(Row::fromValuesWithStyles(
                 [$label, $value],
                 null,
-                [$labelStyle, $metricValueStyle],
+                [$labelStyle, $valueStyle],
             )->setHeight(21));
         }
 
@@ -210,10 +207,8 @@ class ReportController extends Controller
             ['Completed Events', $summary['completed_events']],
             ['Cancelled Reservations', $summary['cancelled_reservations']],
             ['Inquiries', $summary['inquiry_count']],
-            ['Estimated Revenue', $summary['estimated_revenue']],
             ['Contract Value (Bookings Created in Period)', $summary['contract_value']],
             ['Gross Paid (Bookings Created in Period)', $summary['gross_paid']],
-            ['Refunded (Bookings Created in Period)', $summary['total_refunded']],
             ['Net Paid (Bookings Created in Period)', $summary['net_paid']],
             ['Outstanding Balance (Current Bookings)', $summary['outstanding_balance']],
             ['Gross Payments (Transactions in Period)', $summary['gross_payments_in_period']],

@@ -12,7 +12,10 @@ class CaptureActivity
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
-        $isExplicitlyAuditedReservationUpdate = $request->routeIs('admin.reservations.status');
+        $isExplicitlyAuditedReservationUpdate = $request->routeIs(
+            'admin.reservations.status',
+            'admin.reservations.payments.details',
+        );
         $isBackupAction = $request->routeIs('admin.backups*');
         $isExplicitlyAuditedAdminManagement = $request->routeIs('admin.users.store', 'admin.users.update-name', 'admin.users.status');
 
@@ -37,7 +40,6 @@ class CaptureActivity
     private function actionLabel(Request $request): string
     {
         return match ($request->route()?->getName()) {
-            'admin.reservations.payments.details' => 'Updated contract and due date',
             'admin.inquiries.reply' => 'Replied to inquiry',
             'admin.inquiries.destroy' => 'Deleted inquiry',
             'admin.backups.upload' => 'Uploaded backup',
@@ -58,7 +60,6 @@ class CaptureActivity
         $routeName = $request->route()?->getName();
 
         return match ($routeName) {
-            'admin.reservations.payments.details' => 'Set the contract price and payment due date for reservation ' . $this->reservationLabel($request) . '.',
             'admin.inquiries.reply' => 'Sent an email reply for inquiry #' . $request->route('inquiry')?->id . ' and marked it Responded.',
             'admin.inquiries.destroy' => 'Deleted inquiry #' . $request->route('inquiry')?->id . '.',
             'admin.backups.upload' => 'Uploaded backup file “' . basename((string) $request->file('backup_file')?->getClientOriginalName()) . '”.',
@@ -72,13 +73,6 @@ class CaptureActivity
             'admin.gallery.destroy' => 'Deleted gallery item “' . $request->route('gallery')?->title . '”.',
             default => $request->method() . ' ' . $request->path(),
         };
-    }
-
-    private function reservationLabel(Request $request): string
-    {
-        $reservation = $request->route('reservation');
-
-        return $reservation?->reservation_code ?: '#' . $reservation?->id;
     }
 
     private function changedFields(Request $request, array $fields): string

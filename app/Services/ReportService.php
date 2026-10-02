@@ -50,7 +50,6 @@ class ReportService
             'completed_events' => (clone $reservations)->where('status', 'completed')->count(),
             'cancelled_reservations' => (clone $reservations)->where('status', 'cancelled')->count(),
             'inquiry_count' => Inquiry::whereBetween('created_at', [$start, $end])->count(),
-            'estimated_revenue' => (float) (clone $reservations)->whereIn('status', ['confirmed', 'completed'])->sum('estimated_budget'),
             'contract_value' => $contractValueCents / 100,
             'gross_paid' => $grossPaidCents / 100,
             'total_refunded' => $totalRefundedCents / 100,

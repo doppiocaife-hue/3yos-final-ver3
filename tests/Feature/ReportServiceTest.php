@@ -51,7 +51,7 @@ class ReportServiceTest extends TestCase
         $this->assertSame(2, $service->getSummary('weekly')['reservation_count']);
         $this->assertSame(3, $service->getSummary('monthly')['reservation_count']);
         $this->assertSame(5, $service->getSummary('yearly')['reservation_count']);
-        $this->assertSame(20134.0, $service->getSummary('daily')['estimated_revenue']);
+        $this->assertArrayNotHasKey('estimated_revenue', $service->getSummary('daily'));
         $this->assertSame(2, $service->getSummary('weekly')['inquiry_count']);
     }
 
@@ -71,14 +71,24 @@ class ReportServiceTest extends TestCase
         $page->assertSee('Today · Sep 29, 2026');
         $page->assertSee('Download Excel');
         $page->assertSee('Download CSV');
-        $page->assertSee('₱20,134.00');
+        $page->assertSee('Contract value');
+        $page->assertDontSee('Estimated Revenue');
+        $page->assertDontSee('estimated revenue');
         $page->assertSee('This Week · Sep 28 – Oct 4, 2026');
+        $page->assertSee('Bookings created in period');
+        $page->assertSee('Transactions in period');
+        $page->assertDontSee('(bookings created in period)');
+        $page->assertDontSee('(transactions in period)');
+        $this->assertSame(4, substr_count($page->getContent(), '>Bookings created in period</h3>'));
+        $this->assertSame(4, substr_count($page->getContent(), '>Transactions in period</h3>'));
+        $page->assertDontSee('<dt>Refunded</dt>', false);
+        $page->assertSee('<dt>Refunds</dt><dd class="report-refunded">₱0.00</dd>', false);
 
         $periods = [
-            'daily' => ['count' => 1, 'revenue' => 20134, 'filename' => '2026-09-29'],
-            'weekly' => ['count' => 2, 'revenue' => 25134, 'filename' => '2026-09-29'],
-            'monthly' => ['count' => 3, 'revenue' => 25134, 'filename' => '2026-09'],
-            'yearly' => ['count' => 5, 'revenue' => 32134, 'filename' => '2026'],
+            'daily' => ['count' => 1, 'filename' => '2026-09-29'],
+            'weekly' => ['count' => 2, 'filename' => '2026-09-29'],
+            'monthly' => ['count' => 3, 'filename' => '2026-09'],
+            'yearly' => ['count' => 5, 'filename' => '2026'],
         ];
 
         foreach ($periods as $period => $expected) {
@@ -87,6 +97,8 @@ class ReportServiceTest extends TestCase
             $csv->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
             $csv->assertHeader('Content-Disposition', 'attachment; filename="3YOS-Catering-'.ucfirst($period).'-Report-'.$expected['filename'].'.csv"');
             $csv->assertSee('Reservations,'.$expected['count']);
+            $csv->assertDontSee('Estimated Revenue');
+            $csv->assertDontSee('Refunded (Bookings Created in Period)');
 
             $excel = $this->withSession($session)->get(route('admin.reports.export.excel', ['period' => $period]));
             $excel->assertDownload('3YOS-Catering-'.ucfirst($period).'-Report-'.$expected['filename'].'.xlsx');
@@ -99,9 +111,9 @@ class ReportServiceTest extends TestCase
             $this->assertNotFalse($sheet);
             $this->assertNotFalse($styles);
             $this->assertNotFalse($workbook);
-            $this->assertStringContainsString('Estimated Revenue', $sheet);
+            $this->assertStringNotContainsString('Estimated Revenue', $sheet);
+            $this->assertStringNotContainsString('Refunded (Bookings Created in Period)', $sheet);
             $this->assertStringContainsString('3YOS CATERING', $sheet);
-            $this->assertStringContainsString((string) $expected['revenue'], $sheet);
             $this->assertStringContainsString('pane', $sheet);
             $this->assertStringContainsString('Catering Management System', $sheet);
             $this->assertStringContainsString('REPORT SUMMARY', $sheet);
@@ -114,7 +126,7 @@ class ReportServiceTest extends TestCase
             if ($period === 'daily') {
                 $this->assertSame('1', $this->excelCellValue($sheet, 'B9'));
                 $this->assertSame('1', $this->excelCellValue($sheet, 'B10'));
-                $this->assertSame((string) $expected['revenue'], $this->excelCellValue($sheet, 'B14'));
+                $this->assertSame('0', $this->excelCellValue($sheet, 'B13'));
             }
         }
     }
@@ -148,13 +160,13 @@ class ReportServiceTest extends TestCase
         $this->assertStringContainsString('October 3, 2026', $sheet);
         $this->assertStringContainsString('October 3, 2026 3:45 PM PST', $sheet);
         $this->assertStringContainsString('Reservations', $sheet);
+        $this->assertStringNotContainsString('Estimated Revenue', $sheet);
         $this->assertStringContainsString('FINANCIAL SUMMARY', $sheet);
         $this->assertSame('0', $this->excelCellValue($sheet, 'B9'));
         $this->assertSame('0', $this->excelCellValue($sheet, 'B10'));
         $this->assertSame('0', $this->excelCellValue($sheet, 'B11'));
         $this->assertSame('0', $this->excelCellValue($sheet, 'B12'));
         $this->assertSame('1', $this->excelCellValue($sheet, 'B13'));
-        $this->assertSame('0', $this->excelCellValue($sheet, 'B14'));
         $this->assertStringContainsString('pageMargins', $sheet);
         $this->assertStringContainsString('pageSetup', $sheet);
         $archive->close();
@@ -200,13 +212,15 @@ class ReportServiceTest extends TestCase
         $page->assertOk()
             ->assertSee('Payments, refunds & balances')
             ->assertSee('Gross paid')
+            ->assertDontSee('<dt>Refunded</dt>', false)
+            ->assertSee('<dt>Refunds</dt>', false)
             ->assertSee('−₱300.00')
             ->assertSee('₱500.00');
 
         $csv = $this->withSession($session)->get(route('admin.reports.export', ['period' => 'daily']));
         $csv->assertOk()
             ->assertSee('"Gross Paid (Bookings Created in Period)",800', false)
-            ->assertSee('"Refunded (Bookings Created in Period)",300', false)
+            ->assertDontSee('"Refunded (Bookings Created in Period)"', false)
             ->assertSee('"Net Collected (Transactions in Period)",500', false);
 
         $excel = $this->withSession($session)->get(route('admin.reports.export.excel', ['period' => 'daily']));
@@ -217,15 +231,15 @@ class ReportServiceTest extends TestCase
         $this->assertNotFalse($sheet);
         $this->assertStringContainsString('Gross Paid (Bookings Created in Period)', $sheet);
         $this->assertStringContainsString('Refunds (Transactions in Period)', $sheet);
+        $this->assertStringNotContainsString('Refunded (Bookings Created in Period)', $sheet);
         $this->assertStringContainsString('500', $sheet);
-        $this->assertSame('1000', $this->excelCellValue($sheet, 'B18'));
-        $this->assertSame('800', $this->excelCellValue($sheet, 'B19'));
-        $this->assertSame('300', $this->excelCellValue($sheet, 'B20'));
-        $this->assertSame('500', $this->excelCellValue($sheet, 'B21'));
-        $this->assertSame('500', $this->excelCellValue($sheet, 'B22'));
-        $this->assertSame('800', $this->excelCellValue($sheet, 'B23'));
-        $this->assertSame('300', $this->excelCellValue($sheet, 'B24'));
-        $this->assertSame('500', $this->excelCellValue($sheet, 'B25'));
+        $this->assertSame('1000', $this->excelCellValue($sheet, 'B17'));
+        $this->assertSame('800', $this->excelCellValue($sheet, 'B18'));
+        $this->assertSame('500', $this->excelCellValue($sheet, 'B19'));
+        $this->assertSame('500', $this->excelCellValue($sheet, 'B20'));
+        $this->assertSame('800', $this->excelCellValue($sheet, 'B21'));
+        $this->assertSame('300', $this->excelCellValue($sheet, 'B22'));
+        $this->assertSame('500', $this->excelCellValue($sheet, 'B23'));
         $archive->close();
     }
 
@@ -258,9 +272,8 @@ class ReportServiceTest extends TestCase
             $this->assertSame(true, $archive->open($excel->baseResponse->getFile()->getPathname()));
             $sheet = $archive->getFromName('xl/worksheets/sheet1.xml');
             $this->assertNotFalse($sheet);
-            $this->assertSame('731011.01', $this->excelCellValue($sheet, 'B19'));
-            $this->assertSame('54001', $this->excelCellValue($sheet, 'B20'));
-            $this->assertSame('677010.01', $this->excelCellValue($sheet, 'B21'));
+            $this->assertSame('731011.01', $this->excelCellValue($sheet, 'B18'));
+            $this->assertSame('677010.01', $this->excelCellValue($sheet, 'B19'));
             $archive->close();
         }
 
@@ -296,6 +309,7 @@ class ReportServiceTest extends TestCase
         $this->assertSame(21000, (int) round($summary['contract_value'] * 100));
         $this->assertSame(10001, (int) round($summary['gross_paid'] * 100));
         $this->assertSame(10001, (int) round($summary['total_refunded'] * 100));
+        $this->assertSame(0, (int) round($summary['gross_paid'] * 100) - (int) round($summary['total_refunded'] * 100) - (int) round($summary['net_paid'] * 100));
         $this->assertSame(0, (int) round($summary['net_paid'] * 100));
         $this->assertSame(21000, (int) round($summary['outstanding_balance'] * 100));
         $this->assertSame(5000, (int) round($summary['gross_payments_in_period'] * 100));
@@ -308,9 +322,13 @@ class ReportServiceTest extends TestCase
 
         $page = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])->get(route('admin.reports'));
         $page->assertOk()
+            ->assertSee('Bookings created in period')
+            ->assertSee('Transactions in period')
             ->assertSee('₱100.01')
-            ->assertSee('−₱100.01')
+            ->assertSee('−₱20.00')
             ->assertSee('₱0.00');
+        $this->assertSame(4, substr_count($page->getContent(), '>Bookings created in period</h3>'));
+        $this->assertSame(4, substr_count($page->getContent(), '>Transactions in period</h3>'));
 
         $excel = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])
             ->get(route('admin.reports.export.excel', ['period' => 'weekly']));
@@ -320,14 +338,13 @@ class ReportServiceTest extends TestCase
         $sheet = $archive->getFromName('xl/worksheets/sheet1.xml');
         $this->assertNotFalse($sheet);
         foreach ([
-            'B18' => '210',
-            'B19' => '100.01',
-            'B20' => '100.01',
-            'B21' => '0',
-            'B22' => '210',
-            'B23' => '50',
-            'B24' => '20',
-            'B25' => '30',
+            'B17' => '210',
+            'B18' => '100.01',
+            'B19' => '0',
+            'B20' => '210',
+            'B21' => '50',
+            'B22' => '20',
+            'B23' => '30',
         ] as $cell => $expectedValue) {
             $this->assertSame($expectedValue, $this->excelCellValue($sheet, $cell), $cell);
         }
