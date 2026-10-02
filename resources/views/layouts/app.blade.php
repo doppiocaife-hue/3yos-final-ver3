@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>@yield('title', '3YOS Catering | Exceptional celebrations')</title>
-    <link rel="icon" type="image/png" href="{{ request()->getBaseUrl() }}/images/logo-transparent.png">
+    <link rel="icon" type="image/png" href="{{ request()->getBaseUrl() }}/images/logo-transparent.png?v={{ filemtime(public_path('images/logo-transparent.png')) }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -90,7 +90,7 @@
     <nav class="navbar navbar-expand-lg sticky-top py-2" data-scroll-header>
         <div class="container">
             <a class="navbar-brand" href="{{ route('home') }}">
-                <img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png" alt="3YOS Catering Services" style="height:48px;width:auto;object-fit:contain;border-radius:50%;background:transparent">
+                <img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png?v={{ filemtime(public_path('images/logo-transparent.png')) }}" alt="3YOS Catering Services" style="height:48px;width:auto;object-fit:contain;border-radius:50%;background:transparent">
                 <span class="navbar-brand-text">
                     <span>3YOS</span>
                     <small>Catering</small>

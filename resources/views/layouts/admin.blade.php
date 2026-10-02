@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3YOS Operations</title>
-    <link rel="icon" type="image/png" href="{{ request()->getBaseUrl() }}/images/logo-transparent.png">
+    <link rel="icon" type="image/png" href="{{ request()->getBaseUrl() }}/images/logo-transparent.png?v={{ filemtime(public_path('images/logo-transparent.png')) }}">
     <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -35,7 +35,7 @@
 <div class="container-fluid"><div class="admin-layout">
     <aside class="sidebar text-white p-0" id="adminSidebar" aria-label="Primary navigation">
         <div class="brand">
-            <img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png" alt="3YOS Catering Services">
+            <img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png?v={{ filemtime(public_path('images/logo-transparent.png')) }}" alt="3YOS Catering Services">
             <div><h4>3YOS</h4><div class="brand-subtitle">Catering operations</div></div>
         </div>
         <nav aria-label="Admin sections">

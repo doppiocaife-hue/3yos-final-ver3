@@ -246,7 +246,10 @@
                                 </div>
                             </div>
                             <div class="mt-3">
-                                <div class="g-recaptcha" data-sitekey="{{ config('services.recaptcha.site_key') }}"></div>
+                                <div data-recaptcha-container>
+                                    <div class="g-recaptcha" data-sitekey="{{ config('services.recaptcha.site_key') }}"></div>
+                                    <p class="form-text mt-2 mb-0" data-recaptcha-status role="status" aria-live="polite" hidden></p>
+                                </div>
                                 @error('g-recaptcha-response')
                                     <div class="alert alert-danger mt-2">{{ $message }}</div>
                                 @enderror
@@ -382,7 +385,6 @@
     }
 </style>
 
-<script src="https://www.google.com/recaptcha/api.js" async defer></script>
 <script>
 const reservationDraftKey = '3yos-reservation-draft';
 const reservationDraftForm = document.getElementById('reservation-form');
@@ -807,4 +809,5 @@ if (reservationForm) {
     showStep(initialStep);
 }
 </script>
+<script src="{{ asset('js/recaptcha-lazy.js') }}?v={{ filemtime(public_path('js/recaptcha-lazy.js')) }}" defer></script>
 @endsection

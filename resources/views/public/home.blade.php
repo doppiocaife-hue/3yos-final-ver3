@@ -16,17 +16,53 @@
                 </div>
             </div>
             <div class="col-lg-5">
-                @php($availableGalleryImages = $galleryImages->filter(fn ($image) => \Illuminate\Support\Facades\Storage::disk('public')->exists($image->image_path))->values())
+                @php
+                    $availableGalleryImages = $galleryImages
+                        ->filter(fn ($image) => \Illuminate\Support\Facades\Storage::disk('public')->exists($image->image_path))
+                        ->values();
+                @endphp
                 @if($availableGalleryImages->isNotEmpty())
                     <div class="hero-art hero-art--slideshow" data-gallery-slideshow>
                         @foreach($availableGalleryImages as $index => $galleryImage)
+                            @php
+                                $galleryFilename = basename($galleryImage->image_path);
+                                $smallImagePath = public_path("images/home-gallery/640/{$galleryFilename}");
+                                $largeImagePath = public_path("images/home-gallery/960/{$galleryFilename}");
+                                $hasOptimizedImages = is_file($smallImagePath) && is_file($largeImagePath);
+                                $smallGalleryImageUrl = $hasOptimizedImages
+                                    ? asset("images/home-gallery/640/{$galleryFilename}") . '?v=' . filemtime($smallImagePath)
+                                    : null;
+                                $largeGalleryImageUrl = $hasOptimizedImages
+                                    ? asset("images/home-gallery/960/{$galleryFilename}") . '?v=' . filemtime($largeImagePath)
+                                    : null;
+                                $galleryImageUrl = $smallGalleryImageUrl
+                                    ?? route('gallery.image', ['path' => $galleryImage->image_path]);
+                                $galleryFallbackUrl = $hasOptimizedImages
+                                    ? route('gallery.image', ['path' => $galleryImage->image_path])
+                                    : null;
+                            @endphp
                             <img
-                                src="{{ route('gallery.image', ['path' => $galleryImage->image_path]) }}"
+                                @if($hasOptimizedImages)
+                                    src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+                                    data-fallback-src="{{ $galleryFallbackUrl }}"
+                                    @if($index === 0)
+                                        srcset="{{ $smallGalleryImageUrl }} 640w, {{ $largeGalleryImageUrl }} 960w"
+                                        sizes="(max-width: 575.98px) calc(100vw - 5.9rem), (max-width: 991.98px) calc(100vw - 3rem), 478px"
+                                    @else
+                                        data-srcset="{{ $smallGalleryImageUrl }} 640w, {{ $largeGalleryImageUrl }} 960w"
+                                        data-sizes="(max-width: 575.98px) calc(100vw - 5.9rem), (max-width: 991.98px) calc(100vw - 3rem), 478px"
+                                    @endif
+                                @elseif($index === 0)
+                                    src="{{ $galleryImageUrl }}"
+                                @else
+                                    data-src="{{ $galleryImageUrl }}"
+                                @endif
                                 alt="{{ $galleryImage->title ?: 'Gallery image' }}"
                                 class="hero-art__slide {{ $index === 0 ? 'is-active' : '' }}"
                                 loading="{{ $index === 0 ? 'eager' : 'lazy' }}"
+                                @if($index === 0) fetchpriority="high" @endif
                                 data-index="{{ $index }}"
-                                onerror="this.style.display='none';"
+                                data-loaded="{{ $index === 0 ? 'true' : 'false' }}"
                             >
                         @endforeach
                         <div class="hero-art__overlay"></div>
@@ -270,6 +306,19 @@
         if (!slideshow) return;
 
         const slides = Array.from(slideshow.querySelectorAll('.hero-art__slide'));
+        if (slides.length === 0) return;
+
+        slides[0].addEventListener('load', () => { slides[0].dataset.loaded = 'true'; });
+        slides[0].addEventListener('error', () => {
+            const slide = slides[0];
+            if (slide.dataset.fallbackSrc && slide.dataset.fallbackAttempted !== 'true') {
+                slide.dataset.fallbackAttempted = 'true';
+                slide.removeAttribute('srcset');
+                slide.src = slide.dataset.fallbackSrc;
+            } else {
+                slide.style.display = 'none';
+            }
+        });
         if (slides.length < 2) return;
 
         let currentIndex = 0;
@@ -279,10 +328,56 @@
             });
         };
 
-        setInterval(() => {
-            currentIndex = (currentIndex + 1) % slides.length;
-            showSlide(currentIndex);
-        }, 4500);
+        const loadSlide = (slide) => {
+            if (slide.dataset.loaded === 'true') return Promise.resolve(true);
+
+            return new Promise((resolve) => {
+                let completed = false;
+                let usingFallback = false;
+                const finish = (loaded) => {
+                    if (completed) return;
+                    completed = true;
+                    slide.dataset.loaded = String(loaded);
+                    if (!loaded) slide.style.display = 'none';
+                    slide.removeEventListener('load', handleLoad);
+                    slide.removeEventListener('error', handleError);
+                    resolve(loaded);
+                };
+                const handleLoad = () => finish(true);
+                const handleError = () => {
+                    if (!usingFallback && slide.dataset.fallbackSrc) {
+                        usingFallback = true;
+                        slide.removeAttribute('srcset');
+                        slide.src = slide.dataset.fallbackSrc;
+                        return;
+                    }
+                    finish(false);
+                };
+
+                slide.addEventListener('load', handleLoad, { once: true });
+                slide.addEventListener('error', handleError);
+
+                if (slide.dataset.srcset) slide.srcset = slide.dataset.srcset;
+                if (slide.dataset.sizes) slide.sizes = slide.dataset.sizes;
+                if (slide.dataset.src) slide.src = slide.dataset.src;
+                delete slide.dataset.src;
+                delete slide.dataset.srcset;
+                delete slide.dataset.sizes;
+
+                if (slide.complete && slide.naturalWidth > 0) finish(true);
+            });
+        };
+
+        const advanceSlideshow = async () => {
+            const nextIndex = (currentIndex + 1) % slides.length;
+            if (await loadSlide(slides[nextIndex])) {
+                currentIndex = nextIndex;
+                showSlide(currentIndex);
+            }
+            window.setTimeout(advanceSlideshow, 4500);
+        };
+
+        window.setTimeout(advanceSlideshow, 4500);
     })();
 </script>
 @endif

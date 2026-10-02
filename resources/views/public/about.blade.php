@@ -15,7 +15,7 @@
             <div class="col-lg-5">
                 <div class="about-mark-panel">
                     <div class="about-mark-orbit"></div>
-                    <img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png" alt="3YOS Catering Services" class="about-logo">
+                    <img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png?v={{ filemtime(public_path('images/logo-transparent.png')) }}" alt="3YOS Catering Services" class="about-logo">
                     <span class="about-panel-label">Catering &amp; party needs</span>
                     <strong>Made for the way you celebrate.</strong>
                 </div>

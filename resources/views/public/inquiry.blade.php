@@ -57,7 +57,10 @@
                         <textarea id="inquiry_message" name="message" class="form-control inquiry-message" rows="4" required>{{ old('message') }}</textarea>
                     </div>
                     <div class="col-12">
-                        <div class="g-recaptcha" data-sitekey="{{ config('services.recaptcha.site_key') }}"></div>
+                        <div data-recaptcha-container>
+                            <div class="g-recaptcha" data-sitekey="{{ config('services.recaptcha.site_key') }}"></div>
+                            <p class="form-text mt-2 mb-0" data-recaptcha-status role="status" aria-live="polite" hidden></p>
+                        </div>
                         @error('g-recaptcha-response')
                             <div class="alert alert-danger mt-2">{{ $message }}</div>
                         @enderror
@@ -89,5 +92,5 @@
     @media (max-width:575px){.inquiry-header{padding-top:.5rem}.inquiry-form-card{padding:1.25rem!important;margin-top:1.5rem}}
 </style>
 
-<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+<script src="{{ asset('js/recaptcha-lazy.js') }}?v={{ filemtime(public_path('js/recaptcha-lazy.js')) }}" defer></script>
 @endsection

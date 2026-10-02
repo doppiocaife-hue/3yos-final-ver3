@@ -37,6 +37,55 @@ class PublicPagesTest extends TestCase
         $response->assertSee('pattern="(?:\\+63[0-9]{10}|09[0-9]{9})"', false);
     }
 
+    public function test_inquiry_submission_requires_a_captcha_token(): void
+    {
+        $response = $this->from('/inquiry')->post(route('inquiry.store'), [
+            'full_name' => 'Test Guest',
+            'contact_number' => '09171234567',
+            'email' => 'guest@example.com',
+            'subject' => 'Catering question',
+            'category' => 'Packages',
+            'message' => 'Please share package details.',
+            'website' => '',
+            'form_started' => now()->timestamp,
+        ]);
+
+        $response->assertRedirect('/inquiry');
+        $response->assertSessionHasErrors('g-recaptcha-response');
+        $this->assertDatabaseCount('inquiries', 0);
+    }
+
+    public function test_reservation_submission_requires_a_captcha_token(): void
+    {
+        $package = Package::create([
+            'name' => 'Classic Package',
+            'slug' => 'classic-package',
+            'price' => 500,
+            'min_guests' => 20,
+            'max_guests' => 200,
+            'event_type' => 'Wedding',
+        ]);
+
+        $response = $this->from('/reservation')->post(route('reservation.store'), [
+            'full_name' => 'Test Guest',
+            'contact_number' => '09171234567',
+            'email' => 'guest@example.com',
+            'address' => '123 Example Street',
+            'event_type' => 'Wedding',
+            'event_date' => now()->addDays(3)->toDateString(),
+            'event_time' => '18:00',
+            'venue' => 'Community Hall',
+            'guest_count' => 50,
+            'package_id' => $package->id,
+            'website' => '',
+            'form_started' => now()->timestamp,
+        ]);
+
+        $response->assertRedirect('/reservation');
+        $response->assertSessionHasErrors('g-recaptcha-response');
+        $this->assertDatabaseCount('reservations', 0);
+    }
+
     public function test_reservation_requires_two_day_lead_time(): void
     {
         Package::create([

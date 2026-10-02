@@ -10,7 +10,7 @@
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment record · {{ $reservation->reservation_code ?? '#' . $reservation->id }}</title>
-    <link rel="icon" type="image/png" href="{{ request()->getBaseUrl() }}/images/logo-transparent.png">
+    <link rel="icon" type="image/png" href="{{ request()->getBaseUrl() }}/images/logo-transparent.png?v={{ filemtime(public_path('images/logo-transparent.png')) }}">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
     <style>
         :root { --ink: #202c36; --muted: #71808b; --line: #dfe7eb; --teal-dark: #087168; --navy: #172633; }
@@ -53,7 +53,7 @@
                 <h1>3YOS Catering Services &amp; Party Needs</h1>
                 <div>Reservation {{ $reservation->reservation_code ?? '#' . $reservation->id }}</div>
             </div>
-            <img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png" alt="">
+            <img src="{{ request()->getBaseUrl() }}/images/logo-transparent.png?v={{ filemtime(public_path('images/logo-transparent.png')) }}" alt="">
         </header>
 
         <section class="meta">
