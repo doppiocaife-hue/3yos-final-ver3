@@ -65,7 +65,7 @@ The public and admin layouts load Bootstrap and their custom styles from `public
 4. An administrator reviews the request and can update its status. Stored statuses are `pending`, `confirmed`, `completed`, and `cancelled`; the guest-facing progress view labels a pending request as “Under Review” and a confirmed request as “Accepted.”
 5. Configured email delivery sends reservation confirmation and applicable status notifications.
 
-Reservation dates must be at least two days in advance. A date can hold up to four active reservations: both `pending` and `confirmed` reservations consume capacity, while `cancelled` and terminal `completed` reservations do not. Guest submissions, administrator-created reservations, status changes, and confirmed-reservation date edits use the same capacity rule. These are application rules, not a statement of general business availability.
+Reservation dates must be at least two days in advance. The maximum is 4 active reservations/events per date: both `pending` and `confirmed` reservations consume capacity, while `cancelled` and terminal `completed` reservations do not. Guest submissions, administrator-created reservations, status changes, and confirmed-reservation date edits use the same capacity rule. These are application rules, not a statement of general business availability.
 
 ### Inquiries
 

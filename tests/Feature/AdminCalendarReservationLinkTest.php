@@ -59,7 +59,11 @@ class AdminCalendarReservationLinkTest extends TestCase
         $response->assertOk();
         $response->assertSee('"2030-10-08":4', false);
         $response->assertSee('const capacityByDate =', false);
-        $response->assertSee('`${occupied}/4 · FULL`', false);
+        $response->assertSee('const maximumCapacity = 4;', false);
+        $response->assertSee('Math.max(0, maximumCapacity - occupied)', false);
+        $response->assertSee('`${occupied}/${maximumCapacity} · FULL`', false);
+        $response->assertSee('`${occupied}/${maximumCapacity} · ${remaining} slot${remaining === 1 ? \'\' : \'s\'} open`', false);
+        $response->assertSee('`${date}: ${occupied} of ${maximumCapacity} active reservations, ${remaining} slots available.`', false);
     }
 
     public function test_two_reservations_sharing_date_and_event_type_keep_distinct_ids(): void

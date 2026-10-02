@@ -39,6 +39,7 @@ class ReservationCapacityService
 
         return [
             'bookings' => $occupied,
+            'capacity' => Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE,
             'remaining' => max(0, Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE - $occupied),
             'available' => $occupied < Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE,
         ];

@@ -172,7 +172,7 @@ class HelpCenterContent
                         'id' => 'faq-multiple-events',
                         'question' => 'Can two events happen on the same date?',
                         'keywords' => ['same date', 'fully booked', 'availability'],
-                        'summary' => ['Yes. Up to 4 active reservations can share an event date. Pending and Accepted reservations use capacity; Cancelled and Completed reservations do not. The reservation form will tell you if a date is fully booked.'],
+                        'summary' => ['Yes. A maximum of 4 active reservations/events is allowed per date. Pending and Accepted reservations use capacity; Cancelled and Completed reservations do not. The reservation form will tell you if a date is fully booked.'],
                     ],
                     [
                         'id' => 'faq-cancel',
@@ -275,7 +275,7 @@ class HelpCenterContent
                         'question' => 'How many bookings can be accepted on the same date?',
                         'keywords' => ['capacity', 'fully booked', 'four', 'same date'],
                         'summary' => [
-                            'Up to 4 active reservations are allowed on the same event date. Pending and Accepted reservations use capacity; Cancelled and Completed reservations do not. This limit is enforced on the public reservation form, the admin "Add reservation" form, and status changes — so it can\'t be bypassed from any entry point.',
+                            'A maximum of 4 active reservations/events is allowed per date. Pending and Accepted reservations use capacity; Cancelled and Completed reservations do not. This limit is enforced on the public reservation form, the admin "Add reservation" form, status changes, and confirmed-reservation date edits — so it can\'t be bypassed from any entry point.',
                         ],
                     ],
                 ],
@@ -575,7 +575,7 @@ class HelpCenterContent
                     ['heading' => 'Event type', 'body' => ['Pick the kind of event you\'re planning — this helps 3YOS tailor the recommendation.']],
                     ['heading' => 'Package', 'body' => ['Select the package that fits your guest count and budget.']],
                     ['heading' => 'Services', 'body' => ['Add any extra services and note special requests.']],
-                    ['heading' => 'Date, time, and venue', 'body' => ['The form checks availability as you choose a date. Pending and Accepted reservations both use the daily limit of 4; a date at capacity is shown as fully booked and can\'t be selected. Cancelled and Completed reservations do not use capacity.']],
+                    ['heading' => 'Date, time, and venue', 'body' => ['The form checks availability as you choose a date. The maximum is 4 active reservations/events per date. Pending and Accepted reservations both use capacity; a date at capacity is shown as fully booked and can\'t be selected. Cancelled and Completed reservations do not use capacity.']],
                     ['heading' => 'Your details', 'body' => ['Enter your name, contact number, email, address, and guest count.']],
                 ],
                 'related' => ['category' => 'reservations'],

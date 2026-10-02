@@ -673,7 +673,7 @@ class AdminController extends Controller
                 if ($occupiedCount >= Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE) {
                     $message = $originalStatus === 'confirmed'
                         ? 'Unable to save this schedule because the selected date already has '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations.'
-                        : 'Maximum active reservations for this date has been reached. Only '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations are allowed per day.';
+                        : 'Maximum active reservations for this date has been reached. Only '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations are allowed per date.';
                     throw ValidationException::withMessages([
                         ($originalStatus === 'confirmed' ? 'event_date' : 'status') => $message,
                     ]);

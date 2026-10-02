@@ -55,6 +55,7 @@ class ReservationAvailabilityTest extends TestCase
 
         $this->assertSame($expectedAvailable, $response['available']);
         $this->assertSame($acceptedCount + $pendingCount, $response['bookings']);
+        $this->assertSame(Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE, $response['capacity']);
         $this->assertSame($expectedRemaining, $response['remaining']);
     }
 
@@ -63,6 +64,7 @@ class ReservationAvailabilityTest extends TestCase
         return [
             'no active reservations' => [0, 0, true, 4],
             'one accepted' => [1, 0, true, 3],
+            'two accepted' => [2, 0, true, 2],
             'three accepted' => [3, 0, true, 1],
             'three accepted and one pending' => [3, 1, false, 0],
             'one accepted and three pending' => [1, 3, false, 0],

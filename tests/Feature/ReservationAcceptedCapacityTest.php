@@ -76,7 +76,7 @@ class ReservationAcceptedCapacityTest extends TestCase
 
         $this->withSession(self::ADMIN)
             ->patch(route('admin.reservations.status', $fifth), ['status' => 'confirmed'])
-            ->assertSessionHasErrors(['status' => 'Maximum active reservations for this date has been reached. Only 4 active reservations are allowed per day.']);
+            ->assertSessionHasErrors(['status' => 'Maximum active reservations for this date has been reached. Only 4 active reservations are allowed per date.']);
 
         // Previous status must remain unchanged.
         $this->assertSame('pending', $fifth->fresh()->status);
@@ -120,7 +120,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         $this->assertSame('confirmed', $pending->fresh()->status);
         $this->get(route('reservation.availability', ['date' => self::DATE]))
             ->assertOk()
-            ->assertExactJson(['bookings' => 4, 'remaining' => 0, 'available' => false]);
+            ->assertExactJson(['bookings' => 4, 'capacity' => 4, 'remaining' => 0, 'available' => false]);
     }
 
     public function test_cancelling_a_pending_booking_releases_capacity_immediately(): void
@@ -132,7 +132,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         $pending = $this->reservation(['status' => 'pending']);
 
         $this->get(route('reservation.availability', ['date' => self::DATE]))
-            ->assertExactJson(['bookings' => 4, 'remaining' => 0, 'available' => false]);
+            ->assertExactJson(['bookings' => 4, 'capacity' => 4, 'remaining' => 0, 'available' => false]);
 
         $this->withSession(self::ADMIN)
             ->patch(route('admin.reservations.status', $pending), ['status' => 'cancelled'])
@@ -141,7 +141,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         $this->assertSame('cancelled', $pending->fresh()->status);
         $this->assertSame(4, Reservation::whereDate('event_date', self::DATE)->count());
         $this->get(route('reservation.availability', ['date' => self::DATE]))
-            ->assertExactJson(['bookings' => 3, 'remaining' => 1, 'available' => true]);
+            ->assertExactJson(['bookings' => 3, 'capacity' => 4, 'remaining' => 1, 'available' => true]);
     }
 
     public function test_cancelling_an_accepted_booking_releases_capacity_immediately(): void
@@ -158,7 +158,7 @@ class ReservationAcceptedCapacityTest extends TestCase
 
         $this->assertSame('cancelled', $accepted->fresh()->status);
         $this->get(route('reservation.availability', ['date' => self::DATE]))
-            ->assertExactJson(['bookings' => 3, 'remaining' => 1, 'available' => true]);
+            ->assertExactJson(['bookings' => 3, 'capacity' => 4, 'remaining' => 1, 'available' => true]);
     }
 
     public function test_admin_cannot_accept_a_booking_when_four_pending_bookings_already_occupy_capacity(): void

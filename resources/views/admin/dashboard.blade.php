@@ -154,6 +154,7 @@ body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{backgroun
 (() => {
     const reservations = @json($calendarEvents);
     const capacityByDate = @json($calendarCapacityByDate);
+    const maximumCapacity = @json(\App\Models\Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE);
     // Reuses the existing reservation detail route — '__ID__' is swapped for each event's real
     // reservation id so every calendar event/list card opens that exact reservation.
     const reservationUrlTemplate = @json(route('admin.reservations.show', ['reservation' => '__ID__']));
@@ -209,13 +210,13 @@ body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{backgroun
 
             if (dayEvents.length) {
                 const occupied = Number(capacityByDate[date] ?? 0);
-                const remaining = Math.max(0, 4 - occupied);
+                const remaining = Math.max(0, maximumCapacity - occupied);
                 const capacityLabel = document.createElement('small');
                 capacityLabel.className = `calendar-capacity${remaining === 0 ? ' calendar-capacity--full' : ''}`;
                 capacityLabel.textContent = remaining === 0
-                    ? `${occupied}/4 · FULL`
-                    : `${occupied}/4 · ${remaining} slot${remaining === 1 ? '' : 's'} open`;
-                dayElement.setAttribute('aria-label', `${date}: ${occupied} of 4 active reservations, ${remaining} slots available.`);
+                    ? `${occupied}/${maximumCapacity} · FULL`
+                    : `${occupied}/${maximumCapacity} · ${remaining} slot${remaining === 1 ? '' : 's'} open`;
+                dayElement.setAttribute('aria-label', `${date}: ${occupied} of ${maximumCapacity} active reservations, ${remaining} slots available.`);
                 dayElement.append(capacityLabel);
             }
 

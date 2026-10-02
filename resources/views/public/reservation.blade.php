@@ -7,7 +7,7 @@
     <div class="page-heading">
         <div class="eyebrow">Reservation request</div>
         <h1 class="fw-bold mt-2 mb-2">Plan your perfect event.</h1>
-        <p class="text-muted mb-0">We accept up to four events each day so every celebration gets the attention it deserves.</p>
+        <p class="text-muted mb-0">A maximum of 4 active reservations/events is allowed per date. Pending and Accepted reservations use capacity.</p>
         <p class="small mt-2 mb-0"><a href="{{ route('support') }}#category-reservations">Need help? Learn how reservations work &rarr;</a></p>
     </div>
 
@@ -453,10 +453,10 @@ if (dateInput && availability && submitButton) {
             const data = await response.json();
             if (requestId !== availabilityRequestId || dateInput.value !== selectedDate) return;
 
-            if (data.available === true) {
-                setDateAvailability('available', selectedDate, `Available — ${data.remaining} event slot${data.remaining === 1 ? '' : 's'} remaining.`, 'date-availability text-success');
-            } else if (data.available === false) {
-                setDateAvailability('full', selectedDate, 'This date is fully booked. Please choose another date.', 'date-availability text-danger');
+            if (data.available === true && Number.isInteger(data.bookings) && Number.isInteger(data.capacity) && Number.isInteger(data.remaining)) {
+                setDateAvailability('available', selectedDate, `Available — ${data.bookings}/${data.capacity} occupied; ${data.remaining} event slot${data.remaining === 1 ? '' : 's'} remaining.`, 'date-availability text-success');
+            } else if (data.available === false && Number.isInteger(data.bookings) && Number.isInteger(data.capacity) && Number.isInteger(data.remaining)) {
+                setDateAvailability('full', selectedDate, `${data.bookings}/${data.capacity} occupied — this date is fully booked. Please choose another date.`, 'date-availability text-danger');
             } else {
                 throw new Error('Availability response was invalid.');
             }
