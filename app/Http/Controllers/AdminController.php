@@ -652,6 +652,8 @@ class AdminController extends Controller
         DB::transaction(function () use ($request, $reservation, $data, $requestedPaid, $reason, $detailFields, $hasDetailUpdate, $capacity, &$statusTransition, &$reservationChanges, &$detailsChanged): void {
             $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
             $originalStatus = $reservation->status;
+            $originalNotes = $reservation->admin_notes;
+            $originalTotalCost = $reservation->total_cost;
             $oldPackage = $reservation->package;
             $oldPackageName = $oldPackage?->name ?? 'Custom package';
 
@@ -732,8 +734,25 @@ class AdminController extends Controller
 
             $reservation->update($data);
 
-            if (array_key_exists('status', $data) && $data['status'] !== $originalStatus && in_array($data['status'], ['confirmed', 'cancelled'], true)) {
-                $statusTransition = $data['status'];
+            if (array_key_exists('status', $data) && $data['status'] !== $originalStatus) {
+                $this->logReservationActivity(
+                    $request,
+                    'Reservation status changed',
+                    'Changed reservation #'.$reservation->id.' status from '.Reservation::statusLabel($originalStatus).' to '.Reservation::statusLabel($data['status']).'.',
+                );
+                if (in_array($data['status'], [Reservation::STATUS_CONFIRMED, Reservation::STATUS_CANCELLED], true)) {
+                    $statusTransition = $data['status'];
+                }
+            }
+
+            if (array_key_exists('admin_notes', $data)
+                && $this->normalizeReservationDetail('admin_notes', $originalNotes) !== $this->normalizeReservationDetail('admin_notes', $data['admin_notes'])) {
+                $noteAdded = trim((string) $originalNotes) === '' && trim((string) ($data['admin_notes'] ?? '')) !== '';
+                $action = $noteAdded ? 'Internal note added' : 'Internal note updated';
+                $description = $noteAdded
+                    ? 'Added an internal note to reservation #'.$reservation->id.'.'
+                    : 'Updated the internal note for reservation #'.$reservation->id.'.';
+                $this->logReservationActivity($request, $action, $description);
             }
 
             if ($normalizedChanges !== []) {
@@ -773,18 +792,7 @@ class AdminController extends Controller
                     $description .= "\nReason: ".$reason;
                 }
 
-                ActivityLog::create([
-                    'user_id' => $request->hasSession() ? $request->session()->get('admin_user_id') : null,
-                    'actor_name' => $request->hasSession() ? $request->session()->get('admin_name', 'Unknown administrator') : 'Unknown administrator',
-                    'actor_email' => $request->hasSession() ? $request->session()->get('admin_email') : null,
-                    'actor_role' => $request->hasSession() ? $request->session()->get('admin_role', 'limited') : 'limited',
-                    'action' => $activityTitle,
-                    'method' => $request->method(),
-                    'ip_address' => $request->ip(),
-                    'activity_date' => now()->toDateString(),
-                    'activity_time' => now()->toTimeString(),
-                    'description' => $description,
-                ]);
+                $this->logReservationActivity($request, $activityTitle, $description);
                 $detailsChanged = true;
             }
 
@@ -801,6 +809,20 @@ class AdminController extends Controller
                     'recorded_by_user_id' => $request->hasSession() ? $request->session()->get('admin_user_id') : null,
                     'recorded_by_name' => $request->hasSession() ? $request->session()->get('admin_name', 'Administrator') : 'Administrator',
                 ]);
+                $this->logReservationActivity(
+                    $request,
+                    'Payment recorded',
+                    'Recorded a payment of ₱'.number_format(($targetPaidCents - $paidCents) / 100, 2).' for reservation #'.$reservation->id.'.',
+                );
+            }
+
+            if (array_key_exists('total_cost', $data)
+                && Reservation::toCents($originalTotalCost) !== Reservation::toCents($data['total_cost'])) {
+                $this->logReservationActivity(
+                    $request,
+                    'Contract amount updated',
+                    'Updated the contract amount for reservation #'.$reservation->id.' from '.($originalTotalCost === null ? 'not set' : '₱'.number_format((float) $originalTotalCost, 2)).' to ₱'.number_format((float) $data['total_cost'], 2).'.',
+                );
             }
 
             $reservation->recalculatePaymentTotals();
@@ -815,6 +837,24 @@ class AdminController extends Controller
         }
 
         return back()->with('success', 'Reservation saved successfully.');
+    }
+
+    private function logReservationActivity(Request $request, string $action, string $description): void
+    {
+        $timestamp = now();
+
+        ActivityLog::create([
+            'user_id' => $request->hasSession() ? $request->session()->get('admin_user_id') : null,
+            'actor_name' => $request->hasSession() ? $request->session()->get('admin_name', 'Unknown administrator') : 'Unknown administrator',
+            'actor_email' => $request->hasSession() ? $request->session()->get('admin_email') : null,
+            'actor_role' => $request->hasSession() ? $request->session()->get('admin_role', 'limited') : 'limited',
+            'action' => $action,
+            'method' => $request->method(),
+            'ip_address' => $request->ip(),
+            'activity_date' => $timestamp->toDateString(),
+            'activity_time' => $timestamp->toTimeString(),
+            'description' => $description,
+        ]);
     }
 
     private function normalizeReservationDetail(string $field, mixed $value): mixed

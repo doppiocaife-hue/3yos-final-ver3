@@ -9,6 +9,8 @@ class Reservation extends Model
 {
     public const STATUS_PENDING = 'pending';
     public const STATUS_CONFIRMED = 'confirmed';
+    public const STATUS_COMPLETED = 'completed';
+    public const STATUS_CANCELLED = 'cancelled';
     public const CAPACITY_OCCUPYING_STATUSES = [self::STATUS_PENDING, self::STATUS_CONFIRMED];
 
     public const MAX_ACTIVE_RESERVATIONS_PER_DATE = 4;
@@ -75,6 +77,18 @@ class Reservation extends Model
     public function scopeOpenAccepted(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_CONFIRMED);
+    }
+
+    public static function statusLabel(?string $status): string
+    {
+        return match ($status) {
+            self::STATUS_PENDING => 'Under Review',
+            self::STATUS_CONFIRMED => 'Accepted',
+            self::STATUS_COMPLETED => 'Completed',
+            self::STATUS_CANCELLED => 'Cancelled',
+            null, '' => 'Unknown',
+            default => str($status)->replace('_', ' ')->title()->toString(),
+        };
     }
 
     public function client()
@@ -179,24 +193,24 @@ class Reservation extends Model
      */
     public function timelineSteps(): array
     {
-        if ($this->status === 'cancelled') {
+        if ($this->status === self::STATUS_CANCELLED) {
             return [
                 ['key' => 'submitted', 'label' => 'Submitted', 'description' => 'Your reservation request has been received.', 'state' => 'complete'],
                 ['key' => 'under_review', 'label' => 'Under Review', 'description' => 'Our team is reviewing your reservation details.', 'state' => 'complete'],
-                ['key' => 'cancelled', 'label' => 'Cancelled', 'description' => 'Your reservation has been cancelled.', 'state' => 'cancelled'],
+                ['key' => 'cancelled', 'label' => self::statusLabel(self::STATUS_CANCELLED), 'description' => 'Your reservation has been cancelled.', 'state' => 'cancelled'],
             ];
         }
 
         // "Under Review" is the customer-facing label for the stored "pending" status.
-        $order = ['pending', 'confirmed', 'completed'];
+        $order = [self::STATUS_PENDING, self::STATUS_CONFIRMED, self::STATUS_COMPLETED];
         $foundIndex = array_search($this->status, $order, true);
         $currentIndex = $foundIndex === false ? 0 : $foundIndex;
 
         $steps = [
             ['key' => 'submitted', 'label' => 'Submitted', 'description' => 'Your reservation request has been received.'],
-            ['key' => 'under_review', 'label' => 'Under Review', 'description' => 'Our team is reviewing your reservation details.'],
-            ['key' => 'accepted', 'label' => 'Accepted', 'description' => 'Your reservation has been accepted.'],
-            ['key' => 'completed', 'label' => 'Completed', 'description' => 'Your event has been completed. Thank you for choosing 3YOS Catering.'],
+            ['key' => 'under_review', 'label' => self::statusLabel(self::STATUS_PENDING), 'description' => 'Our team is reviewing your reservation details.'],
+            ['key' => 'accepted', 'label' => self::statusLabel(self::STATUS_CONFIRMED), 'description' => 'Your reservation has been accepted.'],
+            ['key' => 'completed', 'label' => self::statusLabel(self::STATUS_COMPLETED), 'description' => 'Your event has been completed. Thank you for choosing 3YOS Catering.'],
         ];
 
         foreach ($steps as $i => &$step) {

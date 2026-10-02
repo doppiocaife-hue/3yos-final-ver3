@@ -7,8 +7,10 @@ use App\Models\ActivityLog;
 use App\Models\Reservation;
 use App\Models\ReservationPayment;
 use App\Models\ReservationStatusNotification;
+use App\Models\User;
 use App\Mail\ReservationUpdatedMail;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -81,6 +83,54 @@ class AdminReservationDetailTest extends TestCase
         $response->assertSee('Under Review');
         $response->assertSee('Accepted');
         $response->assertSee('Completed');
+    }
+
+    public function test_reservation_detail_compacts_and_collapses_secondary_sections_by_default(): void
+    {
+        $reservation = $this->reservation(['status' => 'confirmed']);
+
+        $response = $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation));
+        $response->assertOk();
+        $response->assertSee('id="reservation-information"', false);
+        $response->assertSee('id="reservation-payment"', false);
+        $response->assertSee('id="reservation-status"', false);
+        $response->assertSee('id="reservation-editor" data-reservation-editor', false);
+        $response->assertSee('id="reservation-notes-editor"', false);
+        $response->assertSee('id="reservation-activity"', false);
+        $response->assertSee('Edit confirmed reservation');
+        $response->assertSee('View payment history');
+        $response->assertSee('id="contract-preview-dialog"', false);
+        $response->assertSee('No internal notes yet.');
+        $response->assertSee('Reservation history and administrative changes');
+
+        $content = $response->getContent();
+        $informationPosition = strpos($content, 'id="reservation-information"');
+        $contractPosition = strpos($content, 'id="reservation-contract-heading"');
+        $statusPosition = strpos($content, 'id="reservation-status"');
+        $paymentPosition = strpos($content, 'id="reservation-payment"');
+        $editorPosition = strpos($content, 'id="reservation-editor"');
+        $notesPosition = strpos($content, 'id="reservation-notes-heading"');
+        $activityPosition = strpos($content, 'id="reservation-activity"');
+
+        $this->assertNotFalse($informationPosition);
+        $this->assertNotFalse($contractPosition);
+        $this->assertNotFalse($statusPosition);
+        $this->assertNotFalse($paymentPosition);
+        $this->assertNotFalse($editorPosition);
+        $this->assertNotFalse($notesPosition);
+        $this->assertNotFalse($activityPosition);
+        $this->assertTrue($informationPosition < $contractPosition);
+        $this->assertTrue($contractPosition < $statusPosition);
+        $this->assertTrue($statusPosition < $paymentPosition);
+        $this->assertTrue($paymentPosition < $editorPosition);
+        $this->assertTrue($editorPosition < $notesPosition);
+        $this->assertTrue($notesPosition < $activityPosition);
+        foreach (['schedule-event-type', 'schedule-package', 'schedule-date', 'schedule-time', 'schedule-venue', 'schedule-guests', 'schedule-services', 'schedule-special-requests', 'schedule-additional-notes', 'schedule-reason'] as $fieldId) {
+            $this->assertStringContainsString('id="'.$fieldId.'"', $content);
+        }
+        $this->assertStringNotContainsString('id="reservation-editor" data-reservation-editor open', $content);
+        $this->assertStringNotContainsString('id="reservation-notes-editor" open', $content);
+        $this->assertStringNotContainsString('<details id="reservation-activity" open>', $content);
     }
 
     public function test_admin_can_preview_download_and_delete_multiple_contract_images(): void
@@ -197,12 +247,89 @@ class AdminReservationDetailTest extends TestCase
         Mail::fake();
         $reservation = $this->reservation();
 
+        $timestamp = Carbon::create(2026, 10, 2, 23, 15, 0, config('app.timezone'));
+        Carbon::setTestNow($timestamp);
         $this->withSession(self::ADMIN)
             ->patch(route('admin.reservations.status', $reservation), ['admin_notes' => 'Client requested vegan menu.'])
             ->assertSessionHasNoErrors();
 
         $this->assertSame('Client requested vegan menu.', $reservation->fresh()->admin_notes);
         $this->assertSame('pending', $reservation->fresh()->status);
+        $activity = ActivityLog::where('action', 'Internal note added')->firstOrFail();
+        $admin = User::where('email', 'detail@3yos.com')->firstOrFail();
+        $this->assertSame($admin->id, $activity->user_id);
+        $this->assertSame('Detail Tester', $activity->actor_name);
+        $this->assertSame('detail@3yos.com', $activity->actor_email);
+        $this->assertSame('Added an internal note to reservation #'.$reservation->id.'.', $activity->description);
+        $this->assertSame('2026-10-02', $activity->activity_date);
+        $this->assertSame('23:15:00', $activity->activity_time);
+        $this->assertSame($timestamp->toDateTimeString(), $activity->created_at->toDateTimeString());
+        $this->assertSame(1, ActivityLog::where('action', 'Internal note added')->count());
+        $this->assertSame(0, ActivityLog::where('description', 'like', 'Changed reservation #'.$reservation->id.' status to .')->count());
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.reservations.show', $reservation))
+            ->assertOk()
+            ->assertSee('Added an internal note to reservation #'.$reservation->id.'.');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_updating_an_internal_note_creates_one_activity_entry_per_change(): void
+    {
+        $reservation = $this->reservation(['admin_notes' => 'Original internal note.']);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), ['admin_notes' => 'Revised internal note.'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('Revised internal note.', $reservation->fresh()->admin_notes);
+        $activity = ActivityLog::where('action', 'Internal note updated')->firstOrFail();
+        $this->assertSame('Updated the internal note for reservation #'.$reservation->id.'.', $activity->description);
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.reservations.show', $reservation))
+            ->assertOk()
+            ->assertSee($activity->description);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), ['admin_notes' => 'Revised internal note.'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(1, ActivityLog::where('action', 'Internal note updated')->count());
+        $this->assertSame(0, ActivityLog::where('action', 'Internal note added')->count());
+    }
+
+    public function test_status_changes_log_canonical_old_and_new_labels_once_per_change(): void
+    {
+        Mail::fake();
+        $reservation = $this->reservation(['status' => 'pending']);
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), ['status' => 'confirmed'])
+            ->assertSessionHasNoErrors();
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), ['status' => 'completed'])
+            ->assertSessionHasNoErrors();
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), ['status' => 'pending'])
+            ->assertSessionHasNoErrors();
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $reservation), ['status' => 'cancelled'])
+            ->assertSessionHasNoErrors();
+
+        $activities = ActivityLog::where('action', 'Reservation status changed')->orderBy('id')->get();
+        $this->assertCount(4, $activities);
+        $this->assertSame([
+            'Changed reservation #'.$reservation->id.' status from Under Review to Accepted.',
+            'Changed reservation #'.$reservation->id.' status from Accepted to Completed.',
+            'Changed reservation #'.$reservation->id.' status from Completed to Under Review.',
+            'Changed reservation #'.$reservation->id.' status from Under Review to Cancelled.',
+        ], $activities->pluck('description')->all());
+        $this->assertSame(0, ActivityLog::where('description', 'like', 'Changed reservation #'.$reservation->id.' status to .')->count());
+        $admin = User::where('email', 'detail@3yos.com')->firstOrFail();
+        $this->assertSame($admin->id, $activities->first()->user_id);
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.reservations.show', $reservation))
+            ->assertOk()
+            ->assertSee('Changed reservation #'.$reservation->id.' status from Under Review to Accepted.');
     }
 
     public function test_admin_created_booking_is_blocked_once_four_active_reservations_exist_for_the_date(): void

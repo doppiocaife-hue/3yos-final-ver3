@@ -12,17 +12,11 @@ class CaptureActivity
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
-        $reservationDetailFields = [
-            'event_type', 'event_date', 'event_time', 'package_id', 'venue',
-            'guest_count', 'additional_services', 'special_requests', 'additional_notes',
-        ];
-        $isReservationDetailUpdate = $request->routeIs('admin.reservations.status')
-            && $request->hasAny($reservationDetailFields)
-            && ! $request->hasAny(['payment_status', 'payment_type', 'amount_paid', 'total_cost', 'admin_notes']);
+        $isExplicitlyAuditedReservationUpdate = $request->routeIs('admin.reservations.status');
         $isBackupAction = $request->routeIs('admin.backups*');
         $isExplicitlyAuditedAdminManagement = $request->routeIs('admin.users.store', 'admin.users.update-name', 'admin.users.status');
 
-        if (($request->is('admin/*') || $request->is('admin')) && $request->session()->get('is_admin') && ! $request->isMethod('GET') && ! $isReservationDetailUpdate && ! $isBackupAction && ! $isExplicitlyAuditedAdminManagement) {
+        if (($request->is('admin/*') || $request->is('admin')) && $request->session()->get('is_admin') && ! $request->isMethod('GET') && ! $isExplicitlyAuditedReservationUpdate && ! $isBackupAction && ! $isExplicitlyAuditedAdminManagement) {
             ActivityLog::create([
                 'user_id' => $request->session()->get('admin_user_id'),
                 'actor_name' => $request->session()->get('admin_name', 'Unknown administrator'),
@@ -43,7 +37,6 @@ class CaptureActivity
     private function actionLabel(Request $request): string
     {
         return match ($request->route()?->getName()) {
-            'admin.reservations.status' => 'Updated reservation status',
             'admin.reservations.payments.details' => 'Updated contract and due date',
             'admin.inquiries.reply' => 'Replied to inquiry',
             'admin.inquiries.destroy' => 'Deleted inquiry',
@@ -65,7 +58,6 @@ class CaptureActivity
         $routeName = $request->route()?->getName();
 
         return match ($routeName) {
-            'admin.reservations.status' => 'Changed reservation #' . $request->route('reservation')?->id . ' status to ' . str($request->input('status'))->replace('_', ' ')->title() . '.',
             'admin.reservations.payments.details' => 'Set the contract price and payment due date for reservation ' . $this->reservationLabel($request) . '.',
             'admin.inquiries.reply' => 'Sent an email reply for inquiry #' . $request->route('inquiry')?->id . ' and marked it Responded.',
             'admin.inquiries.destroy' => 'Deleted inquiry #' . $request->route('inquiry')?->id . '.',

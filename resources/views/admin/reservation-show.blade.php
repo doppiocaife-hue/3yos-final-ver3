@@ -8,13 +8,13 @@
 @endphp
 
 @section('content')
-<div class="content-card p-4">
-    <div class="page-header">
+<div class="content-card p-4 reservation-detail-page">
+    <div class="page-header reservation-detail-header">
         <div>
             <a class="back-link" href="{{ route('admin.reservations') }}">&larr; Back to reservations</a>
             <h1 class="fw-bold mb-1">{{ $reservation->full_name }}</h1>
-            <p class="text-muted mb-0">{{ $reservation->reservation_code ?? 'No reservation code' }} &middot; {{ $reservation->event_type }} on {{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}</p>
-            <p class="text-muted small mt-2 mb-0"><span class="fw-semibold">Booked on</span> {{ $reservation->created_at?->timezone(config('app.timezone'))->format('F j, Y \a\t g:i A') ?? '—' }}</p>
+            <p class="text-muted mb-0">{{ $reservation->reservation_code ?? 'No reservation code' }} &middot; {{ $reservation->event_type }} &middot; {{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}</p>
+            <p class="text-muted small mt-1 mb-0"><span class="fw-semibold">Booked on</span> {{ $reservation->created_at?->timezone(config('app.timezone'))->format('F j, Y \a\t g:i A') ?? '—' }}</p>
         </div>
         <span class="status-badge status-badge--{{ $reservation->status }} reservation-show-status">{{ $statusLabel }}</span>
     </div>
@@ -26,46 +26,90 @@
         <div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
 
-    <div class="row g-3">
-        <div class="col-lg-6">
-            <section class="card h-100">
-                <h2 class="h6 fw-bold mb-3">Customer</h2>
-                <dl class="detail-list">
-                    <div><dt>Name</dt><dd>{{ $reservation->full_name }}</dd></div>
-                    <div><dt>Phone</dt><dd><a href="tel:{{ $reservation->contact_number }}">{{ $reservation->contact_number }}</a></dd></div>
-                    <div><dt>Email</dt><dd><a href="mailto:{{ $reservation->email }}">{{ $reservation->email }}</a></dd></div>
-                    <div><dt>Address</dt><dd>{{ $reservation->address }}</dd></div>
-                </dl>
+    <div class="row g-3 align-items-start reservation-detail-layout">
+        <div class="col-lg-7">
+            <section class="card reservation-information-card" id="reservation-information" aria-labelledby="reservation-information-heading">
+                <h2 class="h6 fw-bold mb-3" id="reservation-information-heading">Reservation Information</h2>
+                <section class="reservation-info-section" aria-labelledby="reservation-customer-heading">
+                    <h3 class="reservation-subheading" id="reservation-customer-heading">Customer</h3>
+                    <dl class="detail-list">
+                        <div><dt>Name</dt><dd>{{ $reservation->full_name }}</dd></div>
+                        <div><dt>Phone</dt><dd><a href="tel:{{ $reservation->contact_number }}">{{ $reservation->contact_number }}</a></dd></div>
+                        <div><dt>Email</dt><dd><a href="mailto:{{ $reservation->email }}">{{ $reservation->email }}</a></dd></div>
+                        <div><dt>Address</dt><dd>{{ $reservation->address }}</dd></div>
+                    </dl>
+                </section>
+                <section class="reservation-info-section" aria-labelledby="reservation-event-heading">
+                    <h3 class="reservation-subheading" id="reservation-event-heading">Event</h3>
+                    <dl class="detail-list">
+                        <div><dt>Event type</dt><dd>{{ $reservation->event_type }}</dd></div>
+                        <div><dt>Date</dt><dd>{{ \Carbon\Carbon::parse($reservation->event_date)->format('F j, Y') }}</dd></div>
+                        <div><dt>Time</dt><dd>{{ $reservation->event_time }}</dd></div>
+                        <div><dt>Venue</dt><dd>{{ $reservation->venue }}</dd></div>
+                        <div><dt>Guests</dt><dd>{{ number_format($reservation->guest_count) }}</dd></div>
+                    </dl>
+                </section>
+                <section class="reservation-info-section" aria-labelledby="reservation-package-heading">
+                    <h3 class="reservation-subheading" id="reservation-package-heading">Package</h3>
+                    <dl class="detail-list">
+                        <div><dt>Package</dt><dd>{{ $reservation->package?->name ?? 'Custom package' }}</dd></div>
+                        <div><dt>Additional services</dt><dd>{{ $reservation->additional_services ?: '—' }}</dd></div>
+                        <div><dt>Special requests</dt><dd>{{ $reservation->special_requests ?: '—' }}</dd></div>
+                        <div><dt>Additional notes (from guest)</dt><dd>{{ $reservation->additional_notes ?: '—' }}</dd></div>
+                        <div><dt>Estimated total</dt><dd>{!! $peso($reservation->estimated_budget) !!}</dd></div>
+                    </dl>
+                </section>
+                <section class="reservation-info-section reservation-contract-section" aria-labelledby="reservation-contract-heading">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                        <h3 class="reservation-subheading mb-0" id="reservation-contract-heading">Contract</h3>
+                        <a class="small" href="{{ route('admin.support') }}#category-admin-contracts">How do contracts work?</a>
+                    </div>
+                    <div class="contract-detail-list">
+                        @forelse($reservation->contractFiles() as $contractIndex => $contractPath)
+                            @php($contractExists = \Illuminate\Support\Facades\Storage::disk('local')->exists($contractPath))
+                            @php($contractMimeType = $contractExists ? \Illuminate\Support\Facades\Storage::disk('local')->mimeType($contractPath) : null)
+                            @php($contractPreviewable = in_array($contractMimeType, ['image/jpeg', 'image/png', 'image/webp'], true))
+                            <div class="contract-detail-item">
+                                <div class="contract-detail-meta">
+                                    <strong>Contract {{ $contractIndex + 1 }}</strong>
+                                    <span>{{ basename($contractPath) }}</span>
+                                    @unless($contractExists)<small class="text-danger">File is no longer available.</small>@endunless
+                                </div>
+                                <div class="contract-detail-actions">
+                                    @if($contractExists && $contractPreviewable)
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" data-contract-preview
+                                            data-preview-url="{{ route('admin.reservations.contract.preview', [$reservation, $contractIndex]) }}"
+                                            data-download-url="{{ route('admin.reservations.contract.download', [$reservation, $contractIndex]) }}"
+                                            data-filename="{{ basename($contractPath) }}"
+                                            aria-label="View Contract {{ $contractIndex + 1 }}">View</button>
+                                    @elseif($contractExists)
+                                        <span class="text-muted small">Preview unavailable</span>
+                                    @endif
+                                    @if($contractExists)
+                                        <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.reservations.contract.download', [$reservation, $contractIndex]) }}">Download</a>
+                                    @endif
+                                    <form method="POST" action="{{ route('admin.reservations.contract.delete', [$reservation, $contractIndex]) }}" data-confirm-message="Delete this contract image?">
+                                        @csrf @method('DELETE')
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                    </form>
+                                </div>
+                            </div>
+                        @empty
+                            <p class="text-muted small mb-0">No contract files uploaded yet.</p>
+                        @endforelse
+                    </div>
+                    <form method="POST" action="{{ route('admin.reservations.contract', $reservation) }}" enctype="multipart/form-data" class="mt-3">
+                        @csrf
+                        <label class="form-label" for="contract-upload">Upload contract image(s)</label>
+                        <input id="contract-upload" class="form-control form-control-sm mb-2" type="file" name="service_contract[]" accept="image/jpeg,image/png,image/webp" multiple required>
+                        <button class="btn btn-sm luxury-btn" type="submit">Upload</button>
+                    </form>
+                </section>
             </section>
         </div>
-        <div class="col-lg-6">
-            <section class="card h-100">
-                <h2 class="h6 fw-bold mb-3">Event</h2>
-                <dl class="detail-list">
-                    <div><dt>Event type</dt><dd>{{ $reservation->event_type }}</dd></div>
-                    <div><dt>Date</dt><dd>{{ \Carbon\Carbon::parse($reservation->event_date)->format('F j, Y') }}</dd></div>
-                    <div><dt>Time</dt><dd>{{ $reservation->event_time }}</dd></div>
-                    <div><dt>Venue</dt><dd>{{ $reservation->venue }}</dd></div>
-                    <div><dt>Guests</dt><dd>{{ number_format($reservation->guest_count) }}</dd></div>
-                </dl>
-            </section>
-        </div>
-
-        <div class="col-lg-6">
-            <section class="card h-100">
-                <h2 class="h6 fw-bold mb-3">Package</h2>
-                <dl class="detail-list">
-                    <div><dt>Package</dt><dd>{{ $reservation->package?->name ?? 'Custom package' }}</dd></div>
-                    <div><dt>Additional services</dt><dd>{{ $reservation->additional_services ?: '—' }}</dd></div>
-                    <div><dt>Special requests</dt><dd>{{ $reservation->special_requests ?: '—' }}</dd></div>
-                    <div><dt>Additional notes (from guest)</dt><dd>{{ $reservation->additional_notes ?: '—' }}</dd></div>
-                    <div><dt>Estimated total</dt><dd>{!! $peso($reservation->estimated_budget) !!}</dd></div>
-                </dl>
-            </section>
-        </div>
-        <div class="col-lg-6">
-            <section class="card h-100">
-                <h2 class="h6 fw-bold mb-3">Status</h2>
+        <div class="col-lg-5 d-flex flex-column gap-3">
+            <section class="card reservation-status-card" id="reservation-status" aria-labelledby="reservation-status-heading">
+                <h2 class="h6 fw-bold mb-3" id="reservation-status-heading">Status</h2>
                 <div class="reservation-timeline reservation-timeline--admin {{ $reservation->status === 'cancelled' ? 'reservation-timeline--cancelled' : '' }}">
                     @foreach($reservation->timelineSteps() as $step)
                         <div class="timeline-step timeline-step--{{ $step['state'] }}">
@@ -106,8 +150,34 @@
                     </form>
                 </details>
 
-                <div class="reservation-schedule-group">
-                    <h3 class="reservation-subheading">Edit confirmed reservation</h3>
+            </section>
+            <section class="card reservation-payment-card" id="reservation-payment" aria-labelledby="reservation-payment-heading">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                    <h2 class="h6 fw-bold mb-0" id="reservation-payment-heading">Payment</h2>
+                    <a class="small" href="{{ route('admin.support') }}#category-admin-payments">How do payments work?</a>
+                </div>
+                <div class="summary-grid summary-grid--compact">
+                    <div class="summary-item summary-item--accent"><span>Contract amount</span><strong>{!! $reservation->total_cost !== null ? $peso($reservation->total_cost) : 'Not set' !!}</strong></div>
+                    <div class="summary-item"><span>Paid</span><strong>{!! $peso($financials['gross_paid_cents'] / 100) !!}</strong></div>
+                    <div class="summary-item"><span>Refunded</span><strong>{!! $peso($financials['total_refunded_cents'] / 100) !!}</strong></div>
+                    <div class="summary-item {{ ($outstandingBalance ?? 0) > 0 ? 'summary-item--warn' : '' }}"><span>Balance</span><strong>{!! $outstandingBalance !== null ? $peso($outstandingBalance) : '—' !!}</strong></div>
+                    <div class="summary-item"><span>Payment status</span><strong><span class="status-badge status-badge--{{ \App\Models\Reservation::paymentStatusBadge($reservation->payment_status) }}">{{ \App\Models\Reservation::paymentStatusLabel($reservation->payment_status) }}</span></strong></div>
+                </div>
+                <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ route('admin.reservations.payments', $reservation) }}">View payment history</a>
+            </section>
+        </div>
+    </div>
+    <div class="row g-3 mt-0">
+        <div class="col-12">
+            <section class="card reservation-edit-card">
+                <details class="reservation-schedule-group" id="reservation-editor" data-reservation-editor @if($errors->any()) open @endif>
+                    <summary class="reservation-disclosure-heading">
+                        <span>
+                            <strong>Edit confirmed reservation</strong>
+                            <small>Update event details agreed during the client meeting.</small>
+                        </span>
+                        <span class="reservation-disclosure-action" aria-hidden="true"><span class="disclosure-label-closed">Edit</span><span class="disclosure-label-open">Close</span><span class="reservation-disclosure-chevron"></span></span>
+                    </summary>
                     @if($reservation->status === 'confirmed')
                         <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Save changes to this confirmed reservation?">
                             @csrf @method('PATCH')
@@ -167,111 +237,68 @@
                     @else
                         <p class="text-muted small mb-0">Event details can be edited once this reservation is accepted.</p>
                     @endif
-                </div>
+                </details>
             </section>
         </div>
-
-        <div class="col-lg-6">
-            <section class="card h-100">
-                <div class="d-flex align-items-center justify-content-between mb-3">
-                    <h2 class="h6 fw-bold mb-0">Contract</h2>
-                    <a class="small" href="{{ route('admin.support') }}#category-admin-contracts">How do contracts work?</a>
-                </div>
-                <div class="contract-detail-list">
-                    @forelse($reservation->contractFiles() as $contractIndex => $contractPath)
-                        @php($contractExists = \Illuminate\Support\Facades\Storage::disk('local')->exists($contractPath))
-                        @php($contractMimeType = $contractExists ? \Illuminate\Support\Facades\Storage::disk('local')->mimeType($contractPath) : null)
-                        @php($contractPreviewable = in_array($contractMimeType, ['image/jpeg', 'image/png', 'image/webp'], true))
-                        <div class="contract-detail-item">
-                            <div class="contract-detail-meta">
-                                <strong>Contract {{ $contractIndex + 1 }}</strong>
-                                <span>{{ basename($contractPath) }}</span>
-                                @unless($contractExists)<small class="text-danger">File is no longer available.</small>@endunless
-                            </div>
-                            <div class="contract-detail-actions">
-                                @if($contractExists && $contractPreviewable)
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-contract-preview
-                                        data-preview-url="{{ route('admin.reservations.contract.preview', [$reservation, $contractIndex]) }}"
-                                        data-download-url="{{ route('admin.reservations.contract.download', [$reservation, $contractIndex]) }}"
-                                        data-filename="{{ basename($contractPath) }}"
-                                        aria-label="View Contract {{ $contractIndex + 1 }}">View</button>
-                                @elseif($contractExists)
-                                    <span class="text-muted small">Preview unavailable</span>
-                                @endif
-                                @if($contractExists)
-                                    <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.reservations.contract.download', [$reservation, $contractIndex]) }}">Download</a>
-                                @endif
-                            <form method="POST" action="{{ route('admin.reservations.contract.delete', [$reservation, $contractIndex]) }}" data-confirm-message="Delete this contract image?">
-                                @csrf @method('DELETE')
-                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
-                            </form>
-                            </div>
-                        </div>
-                    @empty
-                        <p class="text-muted small mb-0">No contract files uploaded yet.</p>
-                    @endforelse
-                </div>
-                <form method="POST" action="{{ route('admin.reservations.contract', $reservation) }}" enctype="multipart/form-data" class="mt-3">
-                    @csrf
-                    <label class="form-label" for="contract-upload">Upload contract image(s)</label>
-                    <input id="contract-upload" class="form-control form-control-sm mb-2" type="file" name="service_contract[]" accept="image/jpeg,image/png,image/webp" multiple required>
-                    <button class="btn btn-sm luxury-btn" type="submit">Upload</button>
-                </form>
-            </section>
-        </div>
-        <div class="col-lg-6">
-            <section class="card h-100">
-                <div class="d-flex align-items-center justify-content-between mb-3">
-                    <h2 class="h6 fw-bold mb-0">Payment</h2>
-                    <a class="small" href="{{ route('admin.support') }}#category-admin-payments">How do payments work?</a>
-                </div>
-                <div class="summary-grid summary-grid--compact">
-                    <div class="summary-item summary-item--accent"><span>Contract amount</span><strong>{!! $reservation->total_cost !== null ? $peso($reservation->total_cost) : 'Not set' !!}</strong></div>
-                    <div class="summary-item"><span>Paid</span><strong>{!! $peso($financials['gross_paid_cents'] / 100) !!}</strong></div>
-                    <div class="summary-item"><span>Refunded</span><strong>{!! $peso($financials['total_refunded_cents'] / 100) !!}</strong></div>
-                    <div class="summary-item {{ ($outstandingBalance ?? 0) > 0 ? 'summary-item--warn' : '' }}"><span>Balance</span><strong>{!! $outstandingBalance !== null ? $peso($outstandingBalance) : '—' !!}</strong></div>
-                    <div class="summary-item"><span>Payment status</span><strong><span class="status-badge status-badge--{{ \App\Models\Reservation::paymentStatusBadge($reservation->payment_status) }}">{{ \App\Models\Reservation::paymentStatusLabel($reservation->payment_status) }}</span></strong></div>
-                </div>
-                <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ route('admin.reservations.payments', $reservation) }}">View payment history</a>
-            </section>
-        </div>
-
         <div class="col-12">
-            <section class="card">
-                <h2 class="h6 fw-bold mb-3">Notes</h2>
-                <p class="text-muted small mb-2">Internal notes are only visible to admins.</p>
-                <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}">
-                    @csrf @method('PATCH')
-                    <textarea name="admin_notes" class="form-control mb-2" rows="3" placeholder="Add an internal note...">{{ old('admin_notes', $reservation->admin_notes) }}</textarea>
-                    <button class="btn btn-sm luxury-btn" type="submit">Save note</button>
-                </form>
-            </section>
-        </div>
-
-        <div class="col-12">
-            <section class="card">
-                <h2 class="h6 fw-bold mb-3">Activity</h2>
-                @forelse($activity as $entry)
-                    <div class="activity-entry">
-                        @if(in_array($entry->action, [
-                            'Reservation schedule changed',
-                            'Reservation details updated',
-                            'Payment recorded',
-                            'Payment updated',
-                            'Payment deleted',
-                            'Refund recorded',
-                            'Official Receipt uploaded',
-                            'Official Receipt replaced',
-                            'Official Receipt removed',
-                        ], true))
-                            <div class="activity-entry-title">{{ $entry->action }}</div>
-                        @endif
-                        <div class="activity-entry-meta"><strong>{{ $entry->actor_name ?? 'Unknown administrator' }}</strong> &middot; {{ \Carbon\Carbon::parse($entry->activity_date.' '.$entry->activity_time)->format('M j, Y g:i A') }}</div>
-                        <p class="mb-0 activity-entry-description">{{ $entry->description }}</p>
+            <section class="card reservation-notes-card" aria-labelledby="reservation-notes-heading">
+                <div class="reservation-secondary-heading">
+                    <div>
+                        <h2 class="h6 fw-bold mb-1" id="reservation-notes-heading">Notes</h2>
+                        <p class="text-muted small mb-0">Internal notes are only visible to admins.</p>
                     </div>
-                @empty
-                    <p class="text-muted small mb-0">No recorded activity for this reservation yet.</p>
-                @endforelse
+                    <details class="reservation-notes-editor" id="reservation-notes-editor" @if($errors->any()) open @endif>
+                        <summary class="btn btn-sm btn-outline-secondary">Edit</summary>
+                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="reservation-notes-form">
+                            @csrf @method('PATCH')
+                            <label class="form-label" for="admin-reservation-notes">Internal note</label>
+                            <textarea id="admin-reservation-notes" name="admin_notes" class="form-control form-control-sm mb-2" rows="3" placeholder="Add an internal note...">{{ old('admin_notes', $reservation->admin_notes) }}</textarea>
+                            <button class="btn btn-sm luxury-btn" type="submit">Save note</button>
+                        </form>
+                    </details>
+                </div>
+                <p class="reservation-notes-content mb-0">{{ $reservation->admin_notes ?: 'No internal notes yet.' }}</p>
+            </section>
+        </div>
+
+        <div class="col-12">
+            <section class="card reservation-activity-card">
+                <details id="reservation-activity">
+                    <summary class="reservation-disclosure-heading reservation-activity-heading">
+                        <span>
+                            <strong>Activity</strong>
+                            <small>Reservation history and administrative changes</small>
+                        </span>
+                        <span class="reservation-disclosure-action" aria-hidden="true"><span class="disclosure-label-closed">Show</span><span class="disclosure-label-open">Hide</span><span class="reservation-disclosure-chevron"></span></span>
+                    </summary>
+                    <div class="reservation-activity-content">
+                        @forelse($activity as $entry)
+                            <div class="activity-entry">
+                                @if(in_array($entry->action, [
+                                    'Reservation schedule changed',
+                                    'Reservation details updated',
+                                    'Reservation status changed',
+                                    'Internal note added',
+                                    'Internal note updated',
+                                    'Payment recorded',
+                                    'Contract amount updated',
+                                    'Payment updated',
+                                    'Payment deleted',
+                                    'Refund recorded',
+                                    'Official Receipt uploaded',
+                                    'Official Receipt replaced',
+                                    'Official Receipt removed',
+                                ], true))
+                                    <div class="activity-entry-title">{{ $entry->action }}</div>
+                                @endif
+                                <div class="activity-entry-meta"><strong>{{ $entry->actor_name ?? 'Unknown administrator' }}</strong> &middot; {{ \Carbon\Carbon::parse($entry->activity_date.' '.$entry->activity_time)->format('M j, Y g:i A') }}</div>
+                                <p class="mb-0 activity-entry-description">{{ $entry->description }}</p>
+                            </div>
+                        @empty
+                            <p class="text-muted small mb-0">No recorded activity for this reservation yet.</p>
+                        @endforelse
+                    </div>
+                </details>
             </section>
         </div>
     </div>
@@ -295,31 +322,65 @@
 </dialog>
 
 <style>
-    .detail-list { display: grid; gap: .65rem; margin: 0; }
-    .detail-list > div { display: flex; flex-wrap: wrap; gap: .35rem .75rem; }
-    .detail-list dt { flex: 0 0 150px; color: var(--muted); font-size: .72rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
-    .detail-list dd { flex: 1 1 200px; margin: 0; overflow-wrap: anywhere; }
+    .reservation-detail-page { padding: 1rem !important; }
+    .reservation-detail-layout .card, .reservation-edit-card, .reservation-notes-card, .reservation-activity-card { padding: .9rem !important; }
+    .reservation-detail-header { margin-bottom: .8rem; }
+    .reservation-detail-header h1 { font-size: 1.35rem !important; }
+    .reservation-detail-layout { --bs-gutter-y: .75rem; }
+    .reservation-information-card { display: grid; gap: .7rem; }
+    .reservation-information-card > h2 { margin-bottom: 0 !important; }
+    .reservation-info-section { min-width: 0; }
+    .reservation-info-section + .reservation-info-section { padding-top: .65rem; border-top: 1px solid var(--line); }
+    .detail-list { display: grid; gap: .35rem; margin: 0; }
+    .detail-list > div { display: flex; flex-wrap: wrap; gap: .2rem .65rem; }
+    .detail-list dt { flex: 0 0 125px; color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .detail-list dd { flex: 1 1 170px; min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: .84rem; }
     .detail-list dd a { color: var(--teal); text-decoration: none; }
     .reservation-show-status { font-size: .8rem; padding: 0 1rem; height: 30px; }
     .back-link { display: inline-block; margin-bottom: .4rem; color: var(--teal-dark); font-size: .8rem; font-weight: 700; text-decoration: none; }
 
-    .reservation-timeline { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 0 0 1.1rem; }
-    .reservation-timeline .timeline-step { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 .3rem; }
-    .reservation-timeline .timeline-step-marker { position: relative; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 auto; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); color: #b7b0a4; font-weight: 800; font-size: .82rem; line-height: 1; }
-    .reservation-timeline .timeline-step:not(:last-child):before { content: ''; position: absolute; top: 13px; left: calc(50% + 14px); width: calc(100% - 28px); height: 2px; background: var(--line); z-index: 0; }
+    .reservation-timeline { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 0 0 .8rem; }
+    .reservation-timeline .timeline-step { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 .15rem; }
+    .reservation-timeline .timeline-step-marker { position: relative; z-index: 1; display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); color: #b7b0a4; font-weight: 800; font-size: .75rem; line-height: 1; }
+    .reservation-timeline .timeline-step:not(:last-child):before { content: ''; position: absolute; top: 11px; left: calc(50% + 12px); width: calc(100% - 24px); height: 2px; background: var(--line); z-index: 0; }
     .reservation-timeline .timeline-step--complete .timeline-step-marker { background: var(--teal-dark); border-color: var(--teal-dark); color: #fff; }
     .reservation-timeline .timeline-step--complete:not(:last-child):before { background: var(--teal-dark); }
     .reservation-timeline .timeline-step--current .timeline-step-marker { border-color: var(--teal-dark); color: var(--teal-dark); background: var(--surface); box-shadow: 0 0 0 4px rgba(13, 139, 131, .14); }
     .reservation-timeline .timeline-step--cancelled .timeline-step-marker { background: #a73838; border-color: #a73838; color: #fff; }
-    .reservation-timeline .timeline-step-label { margin-top: .4rem; font-size: .68rem; font-weight: 800; color: var(--ink); }
+    .reservation-timeline .timeline-step-label { margin-top: .3rem; font-size: .62rem; font-weight: 800; line-height: 1.2; color: var(--ink); }
     .reservation-timeline .timeline-step--upcoming .timeline-step-label { color: var(--muted); }
     .reservation-timeline .timeline-step--current .timeline-step-label { color: var(--teal-dark); }
 
     .reservation-actions-group { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
     .reservation-actions-group form { margin: 0; }
-    .reservation-status-override { margin-bottom: 1.1rem; padding-bottom: 1.1rem; border-bottom: 1px solid var(--line); }
+    .reservation-status-override { margin-bottom: .75rem; padding-bottom: .75rem; border-bottom: 1px solid var(--line); }
     .reservation-status-override summary { color: var(--teal-dark); font-size: .78rem; font-weight: 700; cursor: pointer; }
-    .reservation-subheading { margin: 0 0 .6rem; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .reservation-subheading { margin: 0 0 .4rem; font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+
+    .reservation-schedule-group { padding-top: .1rem; }
+    .reservation-disclosure-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; cursor: pointer; list-style: none; }
+    .reservation-disclosure-heading::-webkit-details-marker, .reservation-notes-editor summary::-webkit-details-marker { display: none; }
+    .reservation-disclosure-heading > span:first-child { display: grid; gap: .15rem; min-width: 0; }
+    .reservation-disclosure-heading strong { color: var(--ink); font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .045em; }
+    .reservation-disclosure-heading small { color: var(--muted); font-size: .75rem; font-weight: 400; }
+    .reservation-disclosure-action { display: inline-flex; align-items: center; gap: .45rem; flex: 0 0 auto; color: var(--teal-dark); font-size: .75rem; font-weight: 800; }
+    .disclosure-label-open, details[open] .disclosure-label-closed { display: none; }
+    details[open] .disclosure-label-open { display: inline; }
+    .reservation-disclosure-chevron { width: .45rem; height: .45rem; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .15s ease; }
+    details[open] > .reservation-disclosure-heading .reservation-disclosure-chevron { transform: rotate(225deg) translate(-2px, -1px); }
+    .reservation-schedule-group[open] > form, .reservation-schedule-group[open] > p { margin-top: .8rem; }
+    .reservation-schedule-group[open] .reservation-subheading { margin-bottom: .65rem; }
+    .reservation-secondary-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .7rem; }
+    .reservation-notes-card { display: grid; gap: .5rem; }
+    .reservation-notes-content { color: var(--ink); font-size: .84rem; white-space: pre-line; overflow-wrap: anywhere; }
+    .reservation-notes-editor { position: relative; }
+    .reservation-notes-editor summary { list-style: none; }
+    .reservation-notes-editor[open] { width: 100%; }
+    .reservation-notes-editor[open] summary { display: inline-flex; }
+    .reservation-notes-form { margin-top: .75rem; }
+    .reservation-notes-form .form-label { font-size: .75rem; }
+    .reservation-activity-heading { padding: 0; }
+    .reservation-activity-content { margin-top: .75rem; }
 
     .contract-detail-list { display: grid; gap: .5rem; }
     .contract-detail-item { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 8px; }
@@ -344,7 +405,10 @@
         .contract-preview-body img { max-height: calc(100dvh - 10rem); }
     }
 
-    .summary-grid--compact { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); margin-bottom: 0; }
+    .summary-grid--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; margin-bottom: 0; }
+    .summary-grid--compact .summary-item { padding: .55rem .65rem; box-shadow: none; }
+    .summary-grid--compact .summary-item > span { margin-bottom: .2rem; font-size: .6rem; }
+    .summary-grid--compact .summary-item > strong { font-size: .9rem; }
     .summary-item--warn { border-left: 4px solid #d49b28; }
 
     .activity-entry { padding: .65rem 0; border-top: 1px solid var(--line); font-size: .82rem; }
@@ -352,6 +416,24 @@
     .activity-entry-title { margin-bottom: .15rem; font-weight: 700; }
     .activity-entry-meta { margin-bottom: .2rem; color: var(--muted); font-size: .7rem; }
     .activity-entry-description { white-space: pre-line; overflow-wrap: anywhere; }
+
+    @media(max-width: 991.98px) {
+        .reservation-detail-layout > .col-lg-5 { gap: .75rem !important; }
+    }
+    @media(max-width: 575px) {
+        .reservation-detail-page { padding: .75rem !important; }
+        .reservation-detail-header h1 { font-size: 1.2rem !important; }
+        .detail-list dt { flex-basis: 120px; }
+        .detail-list dd { flex-basis: 145px; }
+        .summary-grid--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .reservation-timeline .timeline-step-label { font-size: .56rem; }
+        .reservation-secondary-heading { align-items: flex-start; }
+        .reservation-notes-editor { margin-left: auto; }
+    }
+    body.dark-mode .detail-list dd a,
+    body.dark-mode .reservation-status-override summary,
+    body.dark-mode .reservation-disclosure-action,
+    body.dark-mode .reservation-timeline .timeline-step--current .timeline-step-label { color: #76c8bf; }
 </style>
 <script>
 (() => {
