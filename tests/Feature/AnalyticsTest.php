@@ -98,6 +98,57 @@ class AnalyticsTest extends TestCase
         $this->assertEquals($summary['net_paid'], $totals['net']);
     }
 
+    public function test_analytics_custom_range_filters_reservation_event_dates_and_transaction_dates(): void
+    {
+        Carbon::setTestNow('2026-09-23 12:00:00');
+
+        $package = Package::create([
+            'name' => 'Celebration Package',
+            'slug' => 'celebration-package',
+            'price' => 500,
+            'min_guests' => 20,
+            'max_guests' => 200,
+        ]);
+
+        $inRangeReservation = $this->createReservation($package->id, [
+            'status' => 'confirmed',
+            'event_date' => '2026-09-10',
+            'total_cost' => 30000,
+        ]);
+        $inRangeReservation->payments()->create(['payment_date' => '2026-09-12', 'payment_type' => 'Downpayment', 'amount' => 12000, 'payment_method' => 'Cash']);
+        $inRangeReservation->refunds()->create(['refund_date' => '2026-09-15', 'amount' => 3000, 'refund_method' => 'Cash', 'status' => 'completed', 'request_key' => (string) \Illuminate\Support\Str::uuid()]);
+
+        $outOfRangeReservation = $this->createReservation($package->id, [
+            'status' => 'confirmed',
+            'event_date' => '2026-10-20',
+            'total_cost' => 20000,
+        ]);
+        $outOfRangeReservation->payments()->create(['payment_date' => '2026-10-21', 'payment_type' => 'Downpayment', 'amount' => 5000, 'payment_method' => 'Cash']);
+
+        $response = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])
+            ->get(route('admin.analytics', ['range' => 'custom', 'from' => '2026-09-01', 'to' => '2026-09-30']));
+
+        $response->assertOk();
+        $this->assertSame('custom', $response->viewData('selectedRange'));
+        $totals = $response->viewData('totals');
+        $this->assertSame(1, $totals['reservations']);
+        $this->assertEquals(12000.0, $totals['paid']);
+        $this->assertEquals(3000.0, $totals['refunded']);
+        $this->assertEquals(9000.0, $totals['net']);
+        $this->assertEquals(21000.0, $totals['outstanding']);
+        $this->assertSame(1, $totals['refunded_reservations']);
+    }
+
+    public function test_analytics_rejects_invalid_custom_range_dates(): void
+    {
+        $response = $this->withSession(['is_admin' => true, 'admin_role' => 'full'])
+            ->from(route('admin.analytics'))
+            ->get(route('admin.analytics', ['range' => 'custom', 'from' => '2026-09-30', 'to' => '2026-09-01']));
+
+        $response->assertRedirect(route('admin.analytics'));
+        $response->assertSessionHasErrors(['to']);
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      */

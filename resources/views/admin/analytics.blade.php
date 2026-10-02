@@ -6,10 +6,52 @@ $peso = fn ($amount) => '&#8369;' . number_format($amount, 2);
 $chartValues = [$totals['paid'], $totals['refunded'], $totals['net'], $totals['outstanding']];
 @endphp
 <div class="content-card p-4">
-    <div class="page-header"><div>
-        <h1 class="fw-bold mb-1">Analytics</h1>
-        <p class="text-muted mb-0">Understand reservations, payments, refunds, and revenue at a glance.</p>
-    </div></div>
+    <div class="page-header d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3">
+        <div>
+            <h1 class="fw-bold mb-1">Analytics</h1>
+            <p class="text-muted mb-0">Understand reservations, payments, refunds, and revenue at a glance.</p>
+        </div>
+
+        <form method="GET" action="{{ route('admin.analytics') }}" class="ms-md-auto">
+            <div class="d-flex flex-column flex-sm-row align-items-sm-end gap-2">
+                <div>
+                    <label for="analytics-range" class="form-label small text-uppercase text-muted mb-1">Date Range</label>
+                    <select id="analytics-range" name="range" class="form-select form-select-sm">
+                        <option value="all_time" {{ $selectedRange === 'all_time' ? 'selected' : '' }}>All Time</option>
+                        <option value="today" {{ $selectedRange === 'today' ? 'selected' : '' }}>Today</option>
+                        <option value="this_week" {{ $selectedRange === 'this_week' ? 'selected' : '' }}>This Week</option>
+                        <option value="this_month" {{ $selectedRange === 'this_month' ? 'selected' : '' }}>This Month</option>
+                        <option value="last_month" {{ $selectedRange === 'last_month' ? 'selected' : '' }}>Last Month</option>
+                        <option value="this_year" {{ $selectedRange === 'this_year' ? 'selected' : '' }}>This Year</option>
+                        <option value="custom" {{ $selectedRange === 'custom' ? 'selected' : '' }}>Custom Range</option>
+                    </select>
+                </div>
+
+                <div id="analytics-custom-range" @if($selectedRange !== 'custom') style="display:none;" @endif>
+                    <div class="d-flex flex-column flex-sm-row gap-2">
+                        <div>
+                            <label for="analytics-from" class="form-label small text-uppercase text-muted mb-1">From</label>
+                            <input id="analytics-from" name="from" type="date" class="form-control form-control-sm" value="{{ $dateFrom ?? '' }}">
+                        </div>
+                        <div>
+                            <label for="analytics-to" class="form-label small text-uppercase text-muted mb-1">To</label>
+                            <input id="analytics-to" name="to" type="date" class="form-control form-control-sm" value="{{ $dateTo ?? '' }}">
+                        </div>
+                    </div>
+                </div>
+
+                <button id="analytics-apply" type="submit" class="btn btn-sm btn-primary" @disabled($selectedRange === 'custom' && ! $isCustomRangeValid)>Apply</button>
+            </div>
+        </form>
+    </div>
+
+    @if($errors->any())
+        <div class="alert alert-warning mt-3 mb-4" role="alert">
+            @foreach($errors->all() as $error)
+                <div>{{ $error }}</div>
+            @endforeach
+        </div>
+    @endif
 
     <div class="row g-3 mb-4">
         @foreach([
@@ -136,6 +178,32 @@ $chartValues = [$totals['paid'], $totals['refunded'], $totals['net'], $totals['o
     </div>
 </div>
 
+<script>
+const rangeSelect = document.getElementById('analytics-range');
+const customRange = document.getElementById('analytics-custom-range');
+const applyButton = document.getElementById('analytics-apply');
+const fromInput = document.getElementById('analytics-from');
+const toInput = document.getElementById('analytics-to');
+
+function updateCustomRangeState() {
+    const isCustom = rangeSelect.value === 'custom';
+    customRange.style.display = isCustom ? 'block' : 'none';
+
+    if (!isCustom) {
+        applyButton.disabled = false;
+        return;
+    }
+
+    const hasFrom = !!fromInput.value;
+    const hasTo = !!toInput.value;
+    const validRange = hasFrom && hasTo && new Date(fromInput.value + 'T00:00:00') <= new Date(toInput.value + 'T00:00:00');
+    applyButton.disabled = !validRange;
+}
+
+rangeSelect.addEventListener('change', updateCustomRangeState);
+[fromInput, toInput].forEach((field) => field.addEventListener('input', updateCustomRangeState));
+updateCustomRangeState();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 const chartText=getComputedStyle(document.body).color;

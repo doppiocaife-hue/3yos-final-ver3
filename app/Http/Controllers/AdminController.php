@@ -423,9 +423,26 @@ class AdminController extends Controller
         return redirect()->route('admin.inquiries')->with('success', 'Inquiry deleted.');
     }
 
-    public function analytics(ReservationFinancialService $financialService)
+    public function analytics(Request $request, ReservationFinancialService $financialService)
     {
-        $reservations = Reservation::with('payments', 'refunds', 'package:id,name')->get();
+        $selectedRange = $request->input('range', 'all_time');
+        $dateFrom = $request->input('from');
+        $dateTo = $request->input('to');
+
+        $validated = $request->validate([
+            'range' => ['nullable', 'in:all_time,today,this_week,this_month,last_month,this_year,custom'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date', 'after_or_equal:from'],
+        ]);
+
+        $selectedRange = $validated['range'] ?? $selectedRange;
+        [$rangeStart, $rangeEnd, $rangeLabel] = $this->resolveAnalyticsRange($selectedRange, $dateFrom, $dateTo);
+
+        $reservations = Reservation::with('payments', 'refunds', 'package:id,name')
+            ->when($rangeStart, fn ($query, Carbon $date) => $query->whereDate('event_date', '>=', $date->toDateString()))
+            ->when($rangeEnd, fn ($query, Carbon $date) => $query->whereDate('event_date', '<=', $date->toDateString()))
+            ->get();
+
         $financials = $reservations->mapWithKeys(fn (Reservation $reservation) => [
             $reservation->id => $financialService->calculate($reservation),
         ]);
@@ -454,10 +471,17 @@ class AdminController extends Controller
             ->take(5)
             ->values();
 
-        $months = collect(range(5, 0))->map(fn ($ago) => now()->startOfMonth()->subMonths($ago));
-        $start = $months->first()->toDateString();
-        $payments = ReservationPayment::with('reservation:id,full_name')->whereDate('payment_date', '>=', $start)->get();
-        $refunds = ReservationRefund::with('reservation:id,full_name')->where('status', 'completed')->whereDate('refund_date', '>=', $start)->get();
+        $months = $this->buildAnalyticsMonthBuckets($rangeStart, $rangeEnd, $selectedRange);
+        $payments = ReservationPayment::with('reservation:id,full_name')
+            ->when($rangeStart, fn ($query, Carbon $date) => $query->whereDate('payment_date', '>=', $date->toDateString()))
+            ->when($rangeEnd, fn ($query, Carbon $date) => $query->whereDate('payment_date', '<=', $date->toDateString()))
+            ->get();
+        $refunds = ReservationRefund::with('reservation:id,full_name')
+            ->where('status', 'completed')
+            ->when($rangeStart, fn ($query, Carbon $date) => $query->whereDate('refund_date', '>=', $date->toDateString()))
+            ->when($rangeEnd, fn ($query, Carbon $date) => $query->whereDate('refund_date', '<=', $date->toDateString()))
+            ->get();
+
         $monthly = $months->map(function ($month) use ($reservations, $payments, $refunds) {
             $key = $month->format('Y-m');
             $paid = $payments->filter(fn ($p) => $p->payment_date->format('Y-m') === $key)->sum(fn ($p) => Reservation::toCents($p->amount));
@@ -473,10 +497,90 @@ class AdminController extends Controller
         });
 
         $recentReservations = $reservations->sortByDesc('created_at')->take(5)->values();
-        $recentPayments = ReservationPayment::with('reservation:id,full_name')->latest('payment_date')->latest('id')->take(5)->get();
-        $recentRefunds = ReservationRefund::with('reservation:id,full_name')->where('status', 'completed')->latest('refund_date')->latest('id')->take(5)->get();
+        $recentPayments = ReservationPayment::with('reservation:id,full_name')
+            ->when($rangeStart, fn ($query, Carbon $date) => $query->whereDate('payment_date', '>=', $date->toDateString()))
+            ->when($rangeEnd, fn ($query, Carbon $date) => $query->whereDate('payment_date', '<=', $date->toDateString()))
+            ->latest('payment_date')->latest('id')->take(5)->get();
+        $recentRefunds = ReservationRefund::with('reservation:id,full_name')
+            ->where('status', 'completed')
+            ->when($rangeStart, fn ($query, Carbon $date) => $query->whereDate('refund_date', '>=', $date->toDateString()))
+            ->when($rangeEnd, fn ($query, Carbon $date) => $query->whereDate('refund_date', '<=', $date->toDateString()))
+            ->latest('refund_date')->latest('id')->take(5)->get();
 
-        return view('admin.analytics', compact('totals', 'statusCounts', 'topPackages', 'monthly', 'recentReservations', 'recentPayments', 'recentRefunds'));
+        $isCustomRangeValid = $selectedRange !== 'custom' || ($dateFrom !== null && $dateTo !== null && Carbon::parse($dateFrom, config('app.timezone'))->lte(Carbon::parse($dateTo, config('app.timezone'))));
+
+        return view('admin.analytics', compact(
+            'totals',
+            'statusCounts',
+            'topPackages',
+            'monthly',
+            'recentReservations',
+            'recentPayments',
+            'recentRefunds',
+            'selectedRange',
+            'rangeLabel',
+            'dateFrom',
+            'dateTo',
+            'isCustomRangeValid',
+        ));
+    }
+
+    private function resolveAnalyticsRange(string $range, ?string $from, ?string $to): array
+    {
+        $timezone = config('app.timezone', 'UTC');
+        $today = now($timezone);
+
+        return match ($range) {
+            'today' => [$today->copy()->startOfDay(), $today->copy()->endOfDay(), 'Today'],
+            'this_week' => [$today->copy()->startOfWeek(), $today->copy()->endOfWeek(), 'This Week'],
+            'this_month' => [$today->copy()->startOfMonth(), $today->copy()->endOfMonth(), 'This Month'],
+            'last_month' => [$today->copy()->subMonthNoOverflow()->startOfMonth(), $today->copy()->subMonthNoOverflow()->endOfMonth(), 'Last Month'],
+            'this_year' => [$today->copy()->startOfYear(), $today->copy()->endOfYear(), 'This Year'],
+            'custom' => $this->resolveCustomAnalyticsRange($from, $to),
+            default => [null, null, 'All Time'],
+        };
+    }
+
+    private function resolveCustomAnalyticsRange(?string $from, ?string $to): array
+    {
+        if ($from === null || $to === null) {
+            throw ValidationException::withMessages([
+                'from' => 'Please choose a start date for the custom range.',
+                'to' => 'Please choose an end date for the custom range.',
+            ]);
+        }
+
+        $timezone = config('app.timezone', 'UTC');
+        $fromDate = Carbon::parse($from, $timezone)->startOfDay();
+        $toDate = Carbon::parse($to, $timezone)->endOfDay();
+
+        if ($fromDate->gt($toDate)) {
+            throw ValidationException::withMessages([
+                'to' => 'The end date must be on or after the start date.',
+            ]);
+        }
+
+        return [$fromDate, $toDate, 'Custom Range'];
+    }
+
+    private function buildAnalyticsMonthBuckets(?Carbon $rangeStart, ?Carbon $rangeEnd, string $range): \Illuminate\Support\Collection
+    {
+        if ($rangeStart === null || $rangeEnd === null) {
+            $months = collect(range(5, 0))->map(fn ($ago) => now()->startOfMonth()->subMonths($ago));
+
+            return $months;
+        }
+
+        $cursor = $rangeStart->copy()->startOfMonth();
+        $endMonth = $rangeEnd->copy()->startOfMonth();
+        $months = collect();
+
+        while ($cursor->lte($endMonth)) {
+            $months->push($cursor->copy());
+            $cursor->addMonth();
+        }
+
+        return $months;
     }
 
     public function updateReservationStatus(Request $request, Reservation $reservation)
