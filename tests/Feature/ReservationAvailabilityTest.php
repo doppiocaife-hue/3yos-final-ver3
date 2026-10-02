@@ -41,31 +41,39 @@ class ReservationAvailabilityTest extends TestCase
         return $this->get(route('reservation.availability', ['date' => self::DATE]))->json();
     }
 
-    #[DataProvider('acceptedCountProvider')]
-    public function test_availability_by_accepted_count(int $acceptedCount, bool $expectedAvailable): void
+    #[DataProvider('activeCapacityProvider')]
+    public function test_availability_counts_pending_and_confirmed_reservations(int $acceptedCount, int $pendingCount, bool $expectedAvailable, int $expectedRemaining): void
     {
         for ($i = 0; $i < $acceptedCount; $i++) {
             $this->reservation(['status' => 'confirmed']);
+        }
+        for ($i = 0; $i < $pendingCount; $i++) {
+            $this->reservation(['status' => 'pending']);
         }
 
         $response = $this->checkAvailability();
 
         $this->assertSame($expectedAvailable, $response['available']);
-        $this->assertSame($acceptedCount, $response['bookings']);
+        $this->assertSame($acceptedCount + $pendingCount, $response['bookings']);
+        $this->assertSame($expectedRemaining, $response['remaining']);
     }
 
-    public static function acceptedCountProvider(): array
+    public static function activeCapacityProvider(): array
     {
         return [
-            'case 1: 0 accepted -> available' => [0, true],
-            'case 2: 1 accepted -> available' => [1, true],
-            'case 3: 2 accepted -> available' => [2, true],
-            'case 4: 3 accepted -> available' => [3, true],
-            'case 5: 4 accepted -> fully booked' => [4, false],
+            'no active reservations' => [0, 0, true, 4],
+            'one accepted' => [1, 0, true, 3],
+            'three accepted' => [3, 0, true, 1],
+            'three accepted and one pending' => [3, 1, false, 0],
+            'one accepted and three pending' => [1, 3, false, 0],
+            'two accepted and two pending' => [2, 2, false, 0],
+            'four accepted' => [4, 0, false, 0],
+            'four pending' => [0, 4, false, 0],
+            'one accepted and two pending' => [1, 2, true, 1],
         ];
     }
 
-    public function test_case_6_three_accepted_plus_one_pending_is_available(): void
+    public function test_three_accepted_plus_one_pending_is_full(): void
     {
         $this->reservation(['status' => 'confirmed']);
         $this->reservation(['status' => 'confirmed']);
@@ -74,9 +82,9 @@ class ReservationAvailabilityTest extends TestCase
 
         $response = $this->checkAvailability();
 
-        $this->assertTrue($response['available']);
-        $this->assertSame(3, $response['bookings']);
-        $this->assertSame(1, $response['remaining']);
+        $this->assertFalse($response['available']);
+        $this->assertSame(4, $response['bookings']);
+        $this->assertSame(0, $response['remaining']);
     }
 
     public function test_case_7_three_accepted_plus_one_cancelled_is_available(): void
@@ -105,7 +113,7 @@ class ReservationAvailabilityTest extends TestCase
         $response = $this->checkAvailability();
 
         $this->assertFalse($response['available']);
-        $this->assertSame(4, $response['bookings']);
+        $this->assertSame(6, $response['bookings']);
         $this->assertSame(0, $response['remaining']);
     }
 
@@ -122,11 +130,25 @@ class ReservationAvailabilityTest extends TestCase
         $this->assertSame(0, $response['bookings']);
     }
 
-    public function test_availability_uses_the_shared_reservation_model_constant(): void
+    public function test_cancelled_and_rejected_bookings_do_not_count_toward_availability(): void
     {
-        $this->assertSame(4, Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE);
+        $this->reservation(['status' => 'cancelled']);
+        $this->reservation(['status' => 'rejected']);
+        $this->reservation(['status' => 'completed']);
+        $this->reservation(['status' => 'confirmed']);
 
-        for ($i = 0; $i < Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE; $i++) {
+        $response = $this->checkAvailability();
+
+        $this->assertTrue($response['available']);
+        $this->assertSame(1, $response['bookings']);
+        $this->assertSame(3, $response['remaining']);
+    }
+
+    public function test_availability_uses_the_shared_active_reservation_limit(): void
+    {
+        $this->assertSame(4, Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE);
+
+        for ($i = 0; $i < Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE; $i++) {
             $this->reservation(['status' => 'confirmed']);
         }
 
@@ -146,12 +168,16 @@ class ReservationAvailabilityTest extends TestCase
             'max_guests' => 200,
         ]);
 
-        for ($i = 0; $i < Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE; $i++) {
+        for ($i = 0; $i < Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE - 1; $i++) {
             $this->reservation([
                 'event_date' => $eventDate,
                 'status' => Reservation::STATUS_CONFIRMED,
             ]);
         }
+        $this->reservation([
+            'event_date' => $eventDate,
+            'status' => Reservation::STATUS_PENDING,
+        ]);
 
         $response = $this->from('/reservation')->post(route('reservation.store'), [
             'full_name' => 'Test Client',
@@ -173,5 +199,18 @@ class ReservationAvailabilityTest extends TestCase
             'event_date' => 'This date is fully booked. Please choose another date.',
         ]);
         $this->assertSame(4, Reservation::whereDate('event_date', $eventDate)->count());
+    }
+
+    public function test_capacity_date_lock_is_idempotent_inside_a_transaction(): void
+    {
+        $capacity = app(\App\Services\ReservationCapacityService::class);
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($capacity): void {
+            $capacity->lockDates([self::DATE, self::DATE]);
+            $this->assertDatabaseHas('reservation_capacity_locks', ['event_date' => self::DATE]);
+            $this->assertSame(1, \Illuminate\Support\Facades\DB::table('reservation_capacity_locks')
+                ->where('event_date', self::DATE)
+                ->count());
+        });
     }
 }

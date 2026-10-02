@@ -58,12 +58,18 @@ class AdminReservationDetailTest extends TestCase
     public function test_admin_can_view_the_reservation_detail_page(): void
     {
         $reservation = $this->reservation(['status' => 'confirmed']);
+        $bookedAt = \Illuminate\Support\Carbon::create(2026, 10, 1, 9, 42, 0, config('app.timezone'));
+        $reservation->forceFill(['created_at' => $bookedAt])->save();
 
         $response = $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation));
 
         $response->assertOk();
         $response->assertSee($reservation->full_name);
         $response->assertSee($reservation->reservation_code);
+        $response->assertSee('Booked on');
+        $response->assertSee($bookedAt->timezone(config('app.timezone'))->format('F j, Y \a\t g:i A'));
+        $response->assertSee(\Illuminate\Support\Carbon::parse($reservation->event_date)->format('F j, Y'));
+        $response->assertSee($reservation->event_time);
         $response->assertSee('Customer');
         $response->assertSee('Event');
         $response->assertSee('Package');
@@ -199,7 +205,7 @@ class AdminReservationDetailTest extends TestCase
         $this->assertSame('pending', $reservation->fresh()->status);
     }
 
-    public function test_admin_created_booking_is_blocked_once_four_accepted_bookings_exist_for_the_date(): void
+    public function test_admin_created_booking_is_blocked_once_four_active_reservations_exist_for_the_date(): void
     {
         Mail::fake();
         $date = now()->addMonths(2)->toDateString();
@@ -238,6 +244,8 @@ class AdminReservationDetailTest extends TestCase
             'total_cost' => 48000,
             'service_contract' => 'service-contracts/existing-contract.png',
         ]);
+        $bookedAt = \Illuminate\Support\Carbon::create(2026, 10, 1, 9, 42, 0, config('app.timezone'));
+        $reservation->forceFill(['created_at' => $bookedAt])->save();
         $payment = $reservation->payments()->create([
             'payment_date' => now()->toDateString(),
             'payment_type' => 'Downpayment',
@@ -267,6 +275,7 @@ class AdminReservationDetailTest extends TestCase
 
         $updated = $reservation->fresh();
         $this->assertSame($originalId, $updated->id);
+        $this->assertSame($bookedAt->toDateTimeString(), $updated->created_at->toDateTimeString());
         $this->assertSame('confirmed', $updated->status);
         $this->assertSame($newDate, $updated->event_date);
         $this->assertSame('19:30', $updated->event_time);
@@ -295,6 +304,12 @@ class AdminReservationDetailTest extends TestCase
         $this->assertStringNotContainsString('Special requests:', $activity->description);
         $this->assertStringNotContainsString('Additional notes:', $activity->description);
         $this->assertSame(1, ActivityLog::where('action', 'Reservation details updated')->count());
+
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.reservations.show', $updated))
+            ->assertOk()
+            ->assertSee('Booked on')
+            ->assertSee($bookedAt->timezone(config('app.timezone'))->format('F j, Y \a\t g:i A'));
 
         Mail::assertSent(ReservationUpdatedMail::class, fn (ReservationUpdatedMail $mail) => $mail->hasTo($updated->email)
             && str_contains($mail->render(), 'Your reservation has been updated.')
@@ -369,14 +384,15 @@ class AdminReservationDetailTest extends TestCase
         $this->assertSame('confirmed', $reservation->fresh()->status);
     }
 
-    public function test_confirmed_reservation_date_change_respects_four_confirmed_per_day_capacity(): void
+    public function test_confirmed_reservation_date_change_respects_pending_and_confirmed_capacity(): void
     {
         Mail::fake();
         $reservation = $this->reservation(['status' => 'confirmed']);
         $targetDate = now()->addMonths(3)->toDateString();
-        foreach (range(1, Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) as $number) {
+        foreach (range(1, Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE - 1) as $number) {
             $this->reservation(['status' => 'confirmed', 'event_date' => $targetDate]);
         }
+        $this->reservation(['status' => 'pending', 'event_date' => $targetDate]);
 
         $this->withSession(self::ADMIN)
             ->patch(route('admin.reservations.status', $reservation), [
@@ -385,7 +401,7 @@ class AdminReservationDetailTest extends TestCase
                 'event_time' => '19:30',
             ])
             ->assertSessionHasErrors([
-                'event_date' => 'Unable to save this schedule because the selected date already has 4 accepted reservations.',
+                'event_date' => 'Unable to save this schedule because the selected date already has 4 active reservations.',
             ]);
 
         $this->assertSame('confirmed', $reservation->fresh()->status);

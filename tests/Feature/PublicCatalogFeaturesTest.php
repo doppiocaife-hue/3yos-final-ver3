@@ -23,6 +23,24 @@ class PublicCatalogFeaturesTest extends TestCase
         $response->assertSee('id="clock-time-picker" hidden', false);
     }
 
+    public function test_reservation_review_cards_keep_readable_text_colors_in_both_themes(): void
+    {
+        $response = $this->get(route('reservation'));
+
+        $response->assertOk();
+        $response->assertSee('.review-block{padding:1.1rem 1.25rem;border:1px solid #e7ddd0;border-radius:16px;background:#fff;color:#20201d}', false);
+        $response->assertSee('.review-block-head h3{margin:0;font-family:\'Playfair Display\',Georgia,serif;font-size:1.05rem;color:#6d3024}', false);
+        $response->assertSee('.review-edit{border:0;background:transparent;color:#6d3024;font-size:.76rem;font-weight:700;text-decoration:underline;cursor:pointer;padding:0}', false);
+        $response->assertSee('.review-list dt{font-size:.68rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#6f6d66}', false);
+        $response->assertSee('.review-list dd{margin:.15rem 0 0;overflow-wrap:anywhere;color:#20201d}', false);
+        $response->assertSee('id="review-event_type"', false);
+        $response->assertSee('id="review-package"', false);
+        $response->assertSee('id="review-full_name"', false);
+        $response->assertSee('class="review-edit" data-edit-step="1"', false);
+        $response->assertSee('class="review-edit" data-edit-step="2"', false);
+        $response->assertSee('class="review-edit" data-edit-step="3"', false);
+    }
+
     public function test_homepage_replaces_unverified_metrics_with_service_and_package_sections(): void
     {
         $response = $this->get(route('home'));
@@ -251,7 +269,14 @@ class PublicCatalogFeaturesTest extends TestCase
         $response->assertSee('id="selected-package-card"', false);
         $response->assertSee('Preview package');
         $response->assertSee('&#8369;700.00 / person', false);
-        $response->assertSee('Change package');
+        $response->assertSee('Choose a different package');
+        $response->assertSee('<button id="change-package" class="btn btn-outline-primary" type="button" aria-controls="package_id" aria-expanded="false">Choose a different package</button>', false);
+        $response->assertDontSee('id="change-package" class="package-selection-link" href=', false);
+        $response->assertSee('id="package_id"', false);
+        $response->assertSee('isChangingPackage = true;', false);
+        $response->assertSee('packageInput?.scrollIntoView({ block: \'nearest\' });', false);
+        $response->assertSee('packageInput?.focus();', false);
+        $response->assertSee('packagePriceFormatter.format(Number(option.dataset.price))', false);
         $response->assertSee('View package details');
         $response->assertDontSee('data-package-option', false);
         $response->assertDontSee('Three mains, pasta, dessert, and refreshments.');

@@ -121,6 +121,8 @@ body.dark-mode .today-tile strong{color:#f1f6f8}
 .calendar-event-detail--pending{border-left-color:#d49b28}.calendar-event-detail--completed{border-left-color:#4d77b8}.calendar-event-detail--cancelled{border-left-color:#c54545}
 .calendar-event-detail strong{font-size:.78rem}.calendar-event-detail small{color:var(--muted);line-height:1.35}
 .calendar-day:focus-within{outline:2px solid #71c9c0;outline-offset:1px}
+.calendar-capacity{display:block;margin-top:.2rem;color:var(--teal-dark);font-size:.56rem;font-weight:800;line-height:1.1}
+.calendar-capacity--full{color:var(--danger)}
 .calendar-grid > .calendar-day:nth-child(7n+4) .calendar-hover-card,.calendar-grid > .calendar-day:nth-child(7n+5) .calendar-hover-card,.calendar-grid > .calendar-day:nth-child(7n+6) .calendar-hover-card,.calendar-grid > .calendar-day:nth-child(7n) .calendar-hover-card{right:0;left:auto}
 .calendar-hover-card{max-width:min(240px,calc(100vw - 2rem))}
 body.dark-mode .calendar-event--cancelled{background:#f9e0e1;border-color:#a73838;color:#4d1316;box-shadow:inset 0 0 0 1px rgba(167,56,56,.2)}
@@ -151,6 +153,7 @@ body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{backgroun
 <script>
 (() => {
     const reservations = @json($calendarEvents);
+    const capacityByDate = @json($calendarCapacityByDate);
     // Reuses the existing reservation detail route — '__ID__' is swapped for each event's real
     // reservation id so every calendar event/list card opens that exact reservation.
     const reservationUrlTemplate = @json(route('admin.reservations.show', ['reservation' => '__ID__']));
@@ -203,6 +206,18 @@ body.dark-mode .calendar-day{background:#12202e}.calendar-event-detail{backgroun
             dayNumber.className = 'calendar-day-number';
             dayNumber.textContent = String(day);
             dayElement.append(dayNumber);
+
+            if (dayEvents.length) {
+                const occupied = Number(capacityByDate[date] ?? 0);
+                const remaining = Math.max(0, 4 - occupied);
+                const capacityLabel = document.createElement('small');
+                capacityLabel.className = `calendar-capacity${remaining === 0 ? ' calendar-capacity--full' : ''}`;
+                capacityLabel.textContent = remaining === 0
+                    ? `${occupied}/4 · FULL`
+                    : `${occupied}/4 · ${remaining} slot${remaining === 1 ? '' : 's'} open`;
+                dayElement.setAttribute('aria-label', `${date}: ${occupied} of 4 active reservations, ${remaining} slots available.`);
+                dayElement.append(capacityLabel);
+            }
 
             dayEvents.forEach((event) => {
                 const eventLink = document.createElement('a');

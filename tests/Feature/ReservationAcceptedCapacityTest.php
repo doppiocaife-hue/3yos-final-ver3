@@ -76,7 +76,7 @@ class ReservationAcceptedCapacityTest extends TestCase
 
         $this->withSession(self::ADMIN)
             ->patch(route('admin.reservations.status', $fifth), ['status' => 'confirmed'])
-            ->assertSessionHasErrors(['status' => 'Maximum accepted bookings for this date has been reached. Only 4 accepted bookings are allowed per day.']);
+            ->assertSessionHasErrors(['status' => 'Maximum active reservations for this date has been reached. Only 4 active reservations are allowed per day.']);
 
         // Previous status must remain unchanged.
         $this->assertSame('pending', $fifth->fresh()->status);
@@ -118,12 +118,69 @@ class ReservationAcceptedCapacityTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $this->assertSame('confirmed', $pending->fresh()->status);
+        $this->get(route('reservation.availability', ['date' => self::DATE]))
+            ->assertOk()
+            ->assertExactJson(['bookings' => 4, 'remaining' => 0, 'available' => false]);
+    }
+
+    public function test_cancelling_a_pending_booking_releases_capacity_immediately(): void
+    {
+        Mail::fake();
+        $this->reservation(['status' => 'confirmed']);
+        $this->reservation(['status' => 'pending']);
+        $this->reservation(['status' => 'pending']);
+        $pending = $this->reservation(['status' => 'pending']);
+
+        $this->get(route('reservation.availability', ['date' => self::DATE]))
+            ->assertExactJson(['bookings' => 4, 'remaining' => 0, 'available' => false]);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $pending), ['status' => 'cancelled'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('cancelled', $pending->fresh()->status);
+        $this->assertSame(4, Reservation::whereDate('event_date', self::DATE)->count());
+        $this->get(route('reservation.availability', ['date' => self::DATE]))
+            ->assertExactJson(['bookings' => 3, 'remaining' => 1, 'available' => true]);
+    }
+
+    public function test_cancelling_an_accepted_booking_releases_capacity_immediately(): void
+    {
+        Mail::fake();
+        $this->reservation(['status' => 'confirmed']);
+        $this->reservation(['status' => 'confirmed']);
+        $this->reservation(['status' => 'confirmed']);
+        $accepted = $this->reservation(['status' => 'confirmed']);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $accepted), ['status' => 'cancelled'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('cancelled', $accepted->fresh()->status);
+        $this->get(route('reservation.availability', ['date' => self::DATE]))
+            ->assertExactJson(['bookings' => 3, 'remaining' => 1, 'available' => true]);
+    }
+
+    public function test_admin_cannot_accept_a_booking_when_four_pending_bookings_already_occupy_capacity(): void
+    {
+        Mail::fake();
+        $this->reservation(['status' => 'pending']);
+        $this->reservation(['status' => 'pending']);
+        $this->reservation(['status' => 'pending']);
+        $this->reservation(['status' => 'pending']);
+        $candidate = $this->reservation(['status' => 'cancelled']);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $candidate), ['status' => 'confirmed'])
+            ->assertSessionHasErrors('status');
+
+        $this->assertSame('cancelled', $candidate->fresh()->status);
+        $this->assertSame(4, $this->get(route('reservation.availability', ['date' => self::DATE]))->json('bookings'));
     }
 
     public function test_cancelled_bookings_do_not_count_toward_the_limit(): void
     {
         Mail::fake();
-        $this->reservation(['status' => 'confirmed']);
         $this->reservation(['status' => 'confirmed']);
         $this->reservation(['status' => 'confirmed']);
         $this->reservation(['status' => 'confirmed']);
@@ -133,9 +190,26 @@ class ReservationAcceptedCapacityTest extends TestCase
 
         $this->withSession(self::ADMIN)
             ->patch(route('admin.reservations.status', $candidate), ['status' => 'confirmed'])
-            ->assertSessionHasErrors('status');
+            ->assertSessionHasNoErrors();
 
-        $this->assertSame('pending', $candidate->fresh()->status);
+        $this->assertSame('confirmed', $candidate->fresh()->status);
+        $this->assertSame(4, Reservation::query()->occupyingCapacity()->whereDate('event_date', self::DATE)->count());
+    }
+
+    public function test_cancelled_booking_can_be_reactivated_when_capacity_is_available(): void
+    {
+        Mail::fake();
+        $this->reservation(['status' => 'confirmed']);
+        $this->reservation(['status' => 'pending']);
+        $this->reservation(['status' => 'pending']);
+        $cancelled = $this->reservation(['status' => 'cancelled']);
+
+        $this->withSession(self::ADMIN)
+            ->patch(route('admin.reservations.status', $cancelled), ['status' => 'confirmed'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('confirmed', $cancelled->fresh()->status);
+        $this->assertSame(4, Reservation::query()->occupyingCapacity()->whereDate('event_date', self::DATE)->count());
     }
 
     public function test_completed_bookings_do_not_count_toward_the_limit(): void

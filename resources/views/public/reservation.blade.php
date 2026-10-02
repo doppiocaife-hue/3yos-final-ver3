@@ -185,7 +185,7 @@
                                         </div>
                                         <div class="selected-package-actions">
                                             <a id="view-package-details" class="package-selection-link" href="{{ $selectedPackage ? route('packages.show', $selectedPackage->slug) : '#' }}" @if(! $selectedPackage) hidden @endif>View package details</a>
-                                            <a id="change-package" class="btn btn-outline-primary package-selection-link" href="{{ route('packages') }}">Change package</a>
+                                            <button id="change-package" class="btn btn-outline-primary" type="button" aria-controls="package_id" aria-expanded="false">Choose a different package</button>
                                         </div>
                                     </div>
                                     @if(! $preselectedPackageId || $selectedPackage)
@@ -294,13 +294,13 @@
     .wizard-step[data-step="1"] .wizard-next:disabled:focus{background-color:color-mix(in srgb,var(--wine) 55%,var(--muted));border-color:color-mix(in srgb,var(--wine) 55%,var(--muted));color:var(--paper);opacity:.72;box-shadow:none;transform:none;cursor:not-allowed}
 
     .review-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.25rem}
-    .review-block{padding:1.1rem 1.25rem;border:1px solid #e7ddd0;border-radius:16px;background:#fff}
+    .review-block{padding:1.1rem 1.25rem;border:1px solid #e7ddd0;border-radius:16px;background:#fff;color:#20201d}
     .review-block-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem}
-    .review-block-head h3{margin:0;font-family:'Playfair Display',Georgia,serif;font-size:1.05rem;color:var(--wine)}
-    .review-edit{border:0;background:transparent;color:var(--terracotta);font-size:.76rem;font-weight:700;text-decoration:underline;cursor:pointer;padding:0}
+    .review-block-head h3{margin:0;font-family:'Playfair Display',Georgia,serif;font-size:1.05rem;color:#6d3024}
+    .review-edit{border:0;background:transparent;color:#6d3024;font-size:.76rem;font-weight:700;text-decoration:underline;cursor:pointer;padding:0}
     .review-list{display:grid;gap:.55rem;margin:0}
-    .review-list dt{font-size:.68rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
-    .review-list dd{margin:.15rem 0 0;overflow-wrap:anywhere}
+    .review-list dt{font-size:.68rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#6f6d66}
+    .review-list dd{margin:.15rem 0 0;overflow-wrap:anywhere;color:#20201d}
 
     .confirmation-card{max-width:820px;margin:0 auto}
     .confirmation-header{text-align:center;padding-bottom:1.5rem;border-bottom:1px solid rgba(109,48,36,.1)}
@@ -481,16 +481,18 @@ const packageDetailsLink = document.getElementById('view-package-details');
 const packageSelectionError = document.getElementById('package-selection-error');
 const packageSelectionHelp = document.getElementById('package-selection-help');
 const packagePriceFormatter = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const changePackageLink = document.getElementById('change-package');
+const changePackageButton = document.getElementById('change-package');
+let isChangingPackage = false;
 
 const updateSelectedPackage = () => {
     const option = packageInput?.selectedOptions[0];
     const selected = Boolean(option?.value);
 
-    if (packageInput) packageInput.hidden = selected;
+    if (packageInput) packageInput.hidden = selected && !isChangingPackage;
     if (selectedPackageCard) selectedPackageCard.hidden = !selected;
     if (packageSelectionHelp) packageSelectionHelp.hidden = selected;
     if (packageSelectionError) packageSelectionError.hidden = selected;
+    if (changePackageButton) changePackageButton.setAttribute('aria-expanded', String(isChangingPackage));
     if (!selected) return;
 
     selectedPackageName.textContent = option.dataset.name;
@@ -502,8 +504,16 @@ const updateSelectedPackage = () => {
 };
 
 packageInput?.addEventListener('change', () => {
+    isChangingPackage = false;
     updateSelectedPackage();
-    changePackageLink?.focus();
+    changePackageButton?.focus();
+});
+changePackageButton?.addEventListener('click', () => {
+    isChangingPackage = true;
+    updateSelectedPackage();
+
+    packageInput?.scrollIntoView({ block: 'nearest' });
+    packageInput?.focus();
 });
 updateSelectedPackage();
 

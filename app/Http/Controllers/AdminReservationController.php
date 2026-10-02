@@ -7,6 +7,7 @@ use App\Mail\ReservationConfirmationMail;
 use App\Models\Client;
 use App\Models\Package;
 use App\Models\Reservation;
+use App\Services\ReservationCapacityService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -21,34 +22,29 @@ class AdminReservationController extends Controller
         return view('admin.reservation-form', compact('packages'));
     }
 
-    public function store(StoreAdminReservationRequest $request)
+    public function store(StoreAdminReservationRequest $request, ReservationCapacityService $capacity)
     {
         $data = $request->validated();
-        $client = Client::firstOrCreate(
-            ['email' => $data['email']],
-            [
-                'name' => $data['full_name'],
-                'phone' => $data['contact_number'],
-                'address' => $data['address'],
-            ],
-        );
         $package = Package::findOrFail($data['package_id']);
         $reservationCode = $this->generateReservationCode();
 
-        // An admin-created booking still starts as "pending" below, so it never itself consumes an
-        // accepted slot — but if the date is already at the cap, saving it here would just be a dead
-        // end, so the same guard used for the public form and the accept action applies here too.
-        $reservation = DB::transaction(function () use ($data, $client, $package, $reservationCode) {
-            $acceptedCount = Reservation::whereDate('event_date', $data['event_date'])
-                ->where('status', 'confirmed')
-                ->lockForUpdate()
-                ->count();
+        $reservation = DB::transaction(function () use ($data, $package, $reservationCode, $capacity) {
+            $capacity->lockDates([$data['event_date']]);
 
-            if ($acceptedCount >= Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) {
+            if ($capacity->countForDate($data['event_date']) >= Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE) {
                 throw ValidationException::withMessages([
-                    'event_date' => 'This date already has the maximum of '.Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE.' accepted bookings. Choose another date or accept this booking on a date with room.',
+                    'event_date' => 'This date is fully booked with '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations. Choose another date.',
                 ]);
             }
+
+            $client = Client::firstOrCreate(
+                ['email' => $data['email']],
+                [
+                    'name' => $data['full_name'],
+                    'phone' => $data['contact_number'],
+                    'address' => $data['address'],
+                ],
+            );
 
             return Reservation::create([
                 'client_id' => $client->id,
@@ -69,7 +65,7 @@ class AdminReservationController extends Controller
                 'status' => 'pending',
                 'reservation_code' => $reservationCode,
             ]);
-        });
+        }, 3);
 
         try {
             Mail::to($reservation->email, $reservation->full_name)->send(new ReservationConfirmationMail($reservation));

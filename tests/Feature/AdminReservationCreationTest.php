@@ -79,4 +79,56 @@ class AdminReservationCreationTest extends TestCase
         Mail::assertSent(ReservationConfirmationMail::class, fn (ReservationConfirmationMail $mail) => $mail->hasTo('admin-booking@example.com')
             && str_contains($mail->render(), $reservation->reservation_code));
     }
+
+    public function test_admin_cannot_create_a_pending_booking_when_pending_reservations_fill_capacity(): void
+    {
+        Mail::fake();
+        $eventDate = '2030-10-08';
+        $package = Package::create([
+            'name' => 'Full date package',
+            'slug' => 'full-date-package',
+            'price' => 600,
+        ]);
+
+        for ($i = 0; $i < Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE; $i++) {
+            Reservation::create([
+                'package_id' => $package->id,
+                'full_name' => "Existing Client {$i}",
+                'contact_number' => '09682676371',
+                'email' => "existing-{$i}@example.com",
+                'address' => '123 Main Street, Quezon City',
+                'event_type' => 'Wedding',
+                'event_date' => $eventDate,
+                'event_time' => '18:00',
+                'venue' => 'Garden Hall',
+                'guest_count' => 40,
+                'estimated_budget' => 24000,
+                'status' => 'pending',
+                'reservation_code' => "RES-FULL{$i}",
+            ]);
+        }
+
+        $response = $this->withSession([
+            'is_admin' => true,
+            'admin_role' => 'full',
+        ])->from(route('admin.reservations.create'))->post(route('admin.reservations.store'), [
+            'full_name' => 'Blocked Admin Client',
+            'contact_number' => '09682676371',
+            'email' => 'blocked-admin-booking@example.com',
+            'address' => '123 Main Street, Quezon City',
+            'event_type' => 'Birthday',
+            'event_date' => $eventDate,
+            'event_time' => '18:00',
+            'venue' => 'Garden Hall',
+            'guest_count' => 40,
+            'package_id' => $package->id,
+        ]);
+
+        $response->assertRedirect(route('admin.reservations.create'));
+        $response->assertSessionHasErrors([
+            'event_date' => 'This date is fully booked with 4 active reservations. Choose another date.',
+        ]);
+        $this->assertDatabaseMissing('reservations', ['email' => 'blocked-admin-booking@example.com']);
+        $this->assertDatabaseMissing('clients', ['email' => 'blocked-admin-booking@example.com']);
+    }
 }

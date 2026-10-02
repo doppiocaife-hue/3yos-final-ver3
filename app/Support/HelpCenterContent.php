@@ -172,7 +172,7 @@ class HelpCenterContent
                         'id' => 'faq-multiple-events',
                         'question' => 'Can two events happen on the same date?',
                         'keywords' => ['same date', 'fully booked', 'availability'],
-                        'summary' => ['Yes. 3YOS can run multiple accepted events on the same date up to their daily capacity. The reservation form will tell you if a date is already fully booked.'],
+                        'summary' => ['Yes. Up to 4 active reservations can share an event date. Pending and Accepted reservations use capacity; Cancelled and Completed reservations do not. The reservation form will tell you if a date is fully booked.'],
                     ],
                     [
                         'id' => 'faq-cancel',
@@ -275,7 +275,7 @@ class HelpCenterContent
                         'question' => 'How many bookings can be accepted on the same date?',
                         'keywords' => ['capacity', 'fully booked', 'four', 'same date'],
                         'summary' => [
-                            'Up to 4 reservations with status Accepted are allowed on the same event date. This limit is enforced on the public reservation form, the admin "Add reservation" form, and when accepting a pending reservation — so it can\'t be bypassed from any entry point.',
+                            'Up to 4 active reservations are allowed on the same event date. Pending and Accepted reservations use capacity; Cancelled and Completed reservations do not. This limit is enforced on the public reservation form, the admin "Add reservation" form, and status changes — so it can\'t be bypassed from any entry point.',
                         ],
                     ],
                 ],
@@ -575,7 +575,7 @@ class HelpCenterContent
                     ['heading' => 'Event type', 'body' => ['Pick the kind of event you\'re planning — this helps 3YOS tailor the recommendation.']],
                     ['heading' => 'Package', 'body' => ['Select the package that fits your guest count and budget.']],
                     ['heading' => 'Services', 'body' => ['Add any extra services and note special requests.']],
-                    ['heading' => 'Date, time, and venue', 'body' => ['The form checks availability as you choose a date. A date already holding 4 accepted bookings is shown as fully booked and can\'t be selected.']],
+                    ['heading' => 'Date, time, and venue', 'body' => ['The form checks availability as you choose a date. Pending and Accepted reservations both use the daily limit of 4; a date at capacity is shown as fully booked and can\'t be selected. Cancelled and Completed reservations do not use capacity.']],
                     ['heading' => 'Your details', 'body' => ['Enter your name, contact number, email, address, and guest count.']],
                 ],
                 'related' => ['category' => 'reservations'],
@@ -709,7 +709,7 @@ class HelpCenterContent
                 'sections' => [
                     ['heading' => 'Needs Attention', 'body' => ['Open items that need a decision, computed live from current data — see the Needs Attention chapter.']],
                     ['heading' => 'Today', 'body' => ['This week\'s schedule, not lifetime totals: events today, events in the next 7 days, payments due soon, and inquiries needing a response. Each card is clickable and opens the matching filtered reservation or inquiry list — so the number on the card and the records behind it always match.']],
-                    ['heading' => 'Business overview and calendar', 'body' => ['Lifetime totals (bookings, revenue, outstanding balance, completed events) sit below Today, followed by the reservation calendar.']],
+                    ['heading' => 'Business overview and calendar', 'body' => ['Lifetime totals (bookings, revenue, outstanding balance, completed events) sit below Today, followed by the reservation calendar. Dates with reservations show active capacity from Pending and Accepted events; Cancelled and Completed history remains visible without using a slot.']],
                 ],
                 'related' => ['category' => 'admin-dashboard'],
             ],
@@ -771,7 +771,7 @@ class HelpCenterContent
                         'Completed — the event has taken place.',
                         'Cancelled — the booking will not proceed.',
                     ]],
-                    ['heading' => 'Accepting a booking', 'body' => ['A reservation can only move to Accepted if the event date currently has fewer than 4 other accepted bookings — this is enforced on the server, not just hidden in the UI.']],
+                    ['heading' => 'Accepting a booking', 'body' => ['Pending reservations already use capacity. An existing Pending reservation can move to Accepted without using an additional slot, while a reservation entering an active status can only do so when fewer than 4 other active reservations occupy the event date. This is enforced on the server, not just hidden in the UI. Cancelling a reservation releases its slot.']],
                 ],
                 'related' => ['category' => 'admin-reservations'],
             ],
@@ -791,7 +791,7 @@ class HelpCenterContent
                 'title' => 'Calendar',
                 'intro' => [],
                 'sections' => [
-                    ['heading' => 'Reading the calendar', 'body' => ['Shown on the dashboard, color-coded by status (pending, accepted, completed, cancelled), with multiple events per date supported — same-date bookings are never merged or treated as a conflict.']],
+                    ['heading' => 'Reading the calendar', 'body' => ['Shown on the dashboard, color-coded by status (pending, accepted, completed, cancelled), with multiple events per date supported — same-date bookings are never merged or treated as a conflict. Dates with reservations also show active capacity (Pending plus Accepted); Cancelled and Completed events remain visible without using a slot.']],
                     ['heading' => 'Opening a reservation from the calendar', 'body' => ['Every event — in the grid and in the reservation cards listed below it for the selected month — links to that exact reservation\'s detail page, including cancelled events, so you can review their history.']],
                 ],
                 'related' => ['category' => 'admin-calendar'],
@@ -924,7 +924,7 @@ class HelpCenterContent
                 'title' => 'Troubleshooting',
                 'intro' => [],
                 'sections' => [
-                    ['heading' => '"Accept" is unavailable for a pending reservation', 'body' => ['The event date already has 4 accepted bookings — this is the capacity limit, not an error.']],
+                    ['heading' => '"Accept" is unavailable for a pending reservation', 'body' => ['The event date already has 4 other active reservations (Pending or Accepted) — this is the capacity limit, not an error.']],
                     ['heading' => 'A payment won\'t save', 'body' => ['Check that the amount doesn\'t exceed the remaining balance, and that a contract price has been set on the reservation.']],
                     ['heading' => 'A save asks for my password again', 'body' => ['Expected behavior for package, service, and gallery changes — re-enter your admin password to continue.']],
                     ['heading' => 'A page redirects me to the login screen', 'body' => ['Your admin session has ended; sign in again.']],

@@ -16,6 +16,7 @@ use App\Models\ReservationStatusNotification;
 use App\Models\Service;
 use App\Services\ReservationNeedsAttentionService;
 use App\Services\ReservationFinancialService;
+use App\Services\ReservationCapacityService;
 use Illuminate\Database\Eloquent\Builder;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -28,17 +29,18 @@ use Symfony\Component\HttpFoundation\HeaderUtils;
 
 class AdminController extends Controller
 {
-    public function index(ReservationNeedsAttentionService $needsAttentionService)
+    public function index(ReservationNeedsAttentionService $needsAttentionService, ReservationCapacityService $capacity)
     {
         $reservationCount = Reservation::count();
         $inquiryCount = Inquiry::count();
         $serviceCount = Service::count();
         $packageCount = Package::count();
-        $calendarEvents = Reservation::query()
+        $calendarReservations = Reservation::query()
             ->whereIn('status', ['pending', 'confirmed', 'completed', 'cancelled'])
             ->orderBy('event_date')
-            ->get(['id', 'reservation_code', 'full_name', 'event_type', 'event_date', 'event_time', 'venue', 'status'])
-            ->map(fn (Reservation $reservation) => [
+            ->get(['id', 'reservation_code', 'full_name', 'event_type', 'event_date', 'event_time', 'venue', 'status']);
+        $capacityByDate = $capacity->countsForDates($calendarReservations->pluck('event_date')->all());
+        $calendarEvents = $calendarReservations->map(fn (Reservation $reservation) => [
                 'id' => $reservation->id,
                 'code' => $reservation->reservation_code,
                 'name' => $reservation->full_name,
@@ -47,13 +49,15 @@ class AdminController extends Controller
                 'time' => $reservation->event_time,
                 'venue' => $reservation->venue,
                 'status' => $reservation->status,
+                'occupiedCapacity' => (int) $capacityByDate->get($reservation->event_date, 0),
             ])
             ->values();
+        $calendarCapacityByDate = $capacityByDate->all();
 
         [$needsAttention, $todaySection, $businessOverview] = $this->buildDashboardInsights($needsAttentionService);
 
         return view('admin.dashboard', compact(
-            'reservationCount', 'inquiryCount', 'serviceCount', 'packageCount', 'calendarEvents',
+            'reservationCount', 'inquiryCount', 'serviceCount', 'packageCount', 'calendarEvents', 'calendarCapacityByDate',
             'needsAttention', 'todaySection', 'businessOverview',
         ));
     }
@@ -595,7 +599,7 @@ class AdminController extends Controller
         return $months;
     }
 
-    public function updateReservationStatus(Request $request, Reservation $reservation)
+    public function updateReservationStatus(Request $request, Reservation $reservation, ReservationCapacityService $capacity)
     {
         $data = $request->validate([
             'status' => ['sometimes', 'required', 'in:pending,confirmed,completed,cancelled'],
@@ -645,7 +649,7 @@ class AdminController extends Controller
         $reservationChanges = [];
         $detailsChanged = false;
 
-        DB::transaction(function () use ($request, $reservation, $data, $requestedPaid, $reason, $detailFields, $hasDetailUpdate, &$statusTransition, &$reservationChanges, &$detailsChanged): void {
+        DB::transaction(function () use ($request, $reservation, $data, $requestedPaid, $reason, $detailFields, $hasDetailUpdate, $capacity, &$statusTransition, &$reservationChanges, &$detailsChanged): void {
             $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
             $originalStatus = $reservation->status;
             $oldPackage = $reservation->package;
@@ -653,18 +657,21 @@ class AdminController extends Controller
 
             $targetStatus = $data['status'] ?? $originalStatus;
             $targetEventDate = $data['event_date'] ?? $reservation->event_date;
+            $capacityMayChange = $request->has('status') || $hasDetailUpdate;
+            if ($capacityMayChange) {
+                $capacity->lockDates([$reservation->event_date, $targetEventDate]);
+            }
+
             $scheduleDateChanged = isset($data['event_date'])
                 && Carbon::parse($data['event_date'])->toDateString() !== Carbon::parse($reservation->event_date)->toDateString();
-            if ($targetStatus === 'confirmed' && ($originalStatus !== 'confirmed' || $scheduleDateChanged || $hasDetailUpdate)) {
-                $acceptedCount = Reservation::whereDate('event_date', $targetEventDate)
-                    ->where('status', 'confirmed')
-                    ->where('id', '!=', $reservation->id)
-                    ->count();
+            if (in_array($targetStatus, Reservation::CAPACITY_OCCUPYING_STATUSES, true)
+                && ($originalStatus !== $targetStatus || $scheduleDateChanged || $hasDetailUpdate)) {
+                $occupiedCount = $capacity->countForDate($targetEventDate, $reservation->id);
 
-                if ($acceptedCount >= Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) {
+                if ($occupiedCount >= Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE) {
                     $message = $originalStatus === 'confirmed'
-                        ? 'Unable to save this schedule because the selected date already has '.Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE.' accepted reservations.'
-                        : 'Maximum accepted bookings for this date has been reached. Only '.Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE.' accepted bookings are allowed per day.';
+                        ? 'Unable to save this schedule because the selected date already has '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations.'
+                        : 'Maximum active reservations for this date has been reached. Only '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations are allowed per day.';
                     throw ValidationException::withMessages([
                         ($originalStatus === 'confirmed' ? 'event_date' : 'status') => $message,
                     ]);

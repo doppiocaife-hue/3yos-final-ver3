@@ -7,6 +7,7 @@ use App\Mail\ReservationConfirmationMail;
 use App\Models\Client;
 use App\Models\Package;
 use App\Models\Reservation;
+use App\Services\ReservationCapacityService;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -15,7 +16,7 @@ use ReCaptcha\ReCaptcha;
 
 class ReservationController extends Controller
 {
-    public function availability(\Illuminate\Http\Request $request)
+    public function availability(\Illuminate\Http\Request $request, ReservationCapacityService $capacity)
     {
         $data = $request->validate([
             'date' => ['required', 'date', 'after_or_equal:' . now()->addDays(2)->toDateString(), function ($attribute, $value, $fail) {
@@ -25,22 +26,16 @@ class ReservationController extends Controller
                 }
             }],
         ]);
-        $bookings = Reservation::acceptedCountForDate($data['date']);
-
-        return response()->json([
-            'bookings' => $bookings,
-            'remaining' => max(0, Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE - $bookings),
-            'available' => $bookings < Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE,
-        ]);
+        return response()->json($capacity->snapshotForDate($data['date']));
     }
 
-    public function store(StoreReservationRequest $request)
+    public function store(StoreReservationRequest $request, ReservationCapacityService $capacity)
     {
         if (now()->timestamp - (int) $request->input('form_started') < 3) {
             return back()->withInput()->withErrors(['full_name' => 'Unable to submit this request. Please try again.']);
         }
 
-        if (Reservation::acceptedCountForDate($request->input('event_date')) >= Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) {
+        if ($capacity->countForDate($request->input('event_date')) >= Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE) {
             throw ValidationException::withMessages(['event_date' => 'This date is fully booked. Please choose another date.']);
         }
 
@@ -52,11 +47,11 @@ class ReservationController extends Controller
             return back()->withInput()->withErrors(['g-recaptcha-response' => 'Please verify that you are not a robot.']);
         }
 
-        // Locks matching rows so a concurrent submission for the same date can't race past this count.
-        $reservation = DB::transaction(function () use ($request) {
-            $acceptedCount = Reservation::acceptedCountForDate($request->input('event_date'), true);
+        $reservation = DB::transaction(function () use ($request, $capacity) {
+            $eventDate = $request->input('event_date');
+            $capacity->lockDates([$eventDate]);
 
-            if ($acceptedCount >= Reservation::MAX_ACCEPTED_BOOKINGS_PER_DATE) {
+            if ($capacity->countForDate($eventDate) >= Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE) {
                 throw ValidationException::withMessages(['event_date' => 'This date is fully booked. Please choose another date.']);
             }
 
@@ -91,7 +86,7 @@ class ReservationController extends Controller
                 'status' => 'pending',
                 'reservation_code' => $reservationCode,
             ]);
-        });
+        }, 3);
 
         $mailSent = false;
         $mailError = null;

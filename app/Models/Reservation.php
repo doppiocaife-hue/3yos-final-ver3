@@ -7,10 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class Reservation extends Model
 {
+    public const STATUS_PENDING = 'pending';
     public const STATUS_CONFIRMED = 'confirmed';
+    public const CAPACITY_OCCUPYING_STATUSES = [self::STATUS_PENDING, self::STATUS_CONFIRMED];
 
-    /** The single source of truth for how many reservations may hold status = confirmed (Accepted) on the same event date. */
-    public const MAX_ACCEPTED_BOOKINGS_PER_DATE = 4;
+    public const MAX_ACTIVE_RESERVATIONS_PER_DATE = 4;
+
+    /** @deprecated Use MAX_ACTIVE_RESERVATIONS_PER_DATE. */
+    public const MAX_ACCEPTED_BOOKINGS_PER_DATE = self::MAX_ACTIVE_RESERVATIONS_PER_DATE;
 
     protected $fillable = [
         'client_id',
@@ -63,20 +67,14 @@ class Reservation extends Model
         return $this->contractFiles() !== [];
     }
 
+    public function scopeOccupyingCapacity(Builder $query): Builder
+    {
+        return $query->whereIn('status', self::CAPACITY_OCCUPYING_STATUSES);
+    }
+
     public function scopeOpenAccepted(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_CONFIRMED);
-    }
-
-    public static function acceptedCountForDate(string $eventDate, bool $lockForUpdate = false): int
-    {
-        $query = static::query()->openAccepted()->whereDate('event_date', $eventDate);
-
-        if ($lockForUpdate) {
-            $query->lockForUpdate();
-        }
-
-        return $query->count();
     }
 
     public function client()

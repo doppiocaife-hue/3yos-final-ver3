@@ -167,7 +167,11 @@ class PublicPagesTest extends TestCase
             'amount_paid' => 8000,
         ]);
 
-        $response = app(\App\Http\Controllers\AdminController::class)->updateReservationStatus($request, $reservation);
+        $response = app(\App\Http\Controllers\AdminController::class)->updateReservationStatus(
+            $request,
+            $reservation,
+            app(\App\Services\ReservationCapacityService::class),
+        );
 
         $this->assertSame('completed', $reservation->fresh()->status);
         $this->assertSame('Partially Paid', $reservation->fresh()->payment_status);
@@ -217,7 +221,11 @@ class PublicPagesTest extends TestCase
             'event_time' => '19:30',
         ]);
 
-        app(\App\Http\Controllers\AdminController::class)->updateReservationStatus($request, $reservation);
+        app(\App\Http\Controllers\AdminController::class)->updateReservationStatus(
+            $request,
+            $reservation,
+            app(\App\Services\ReservationCapacityService::class),
+        );
 
         $updated = $reservation->fresh();
         $this->assertSame($updatedPackage->id, $updated->package_id);

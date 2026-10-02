@@ -46,6 +46,22 @@ class AdminCalendarReservationLinkTest extends TestCase
         }
     }
 
+    public function test_calendar_capacity_counts_pending_and_accepted_but_not_terminal_reservations(): void
+    {
+        $this->reservation(['event_date' => '2030-10-08', 'status' => 'confirmed']);
+        $this->reservation(['event_date' => '2030-10-08', 'status' => 'confirmed']);
+        $this->reservation(['event_date' => '2030-10-08', 'status' => 'confirmed']);
+        $this->reservation(['event_date' => '2030-10-08', 'status' => 'pending']);
+        $this->reservation(['event_date' => '2030-10-08', 'status' => 'cancelled']);
+        $this->reservation(['event_date' => '2030-10-08', 'status' => 'completed']);
+
+        $response = $this->withSession(self::ADMIN)->get(route('admin.dashboard'));
+        $response->assertOk();
+        $response->assertSee('"2030-10-08":4', false);
+        $response->assertSee('const capacityByDate =', false);
+        $response->assertSee('`${occupied}/4 · FULL`', false);
+    }
+
     public function test_two_reservations_sharing_date_and_event_type_keep_distinct_ids(): void
     {
         // Mirrors the real scenario this feature targets: two separate "Graduation" bookings

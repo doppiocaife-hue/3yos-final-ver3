@@ -14,6 +14,7 @@
             <a class="back-link" href="{{ route('admin.reservations') }}">&larr; Back to reservations</a>
             <h1 class="fw-bold mb-1">{{ $reservation->full_name }}</h1>
             <p class="text-muted mb-0">{{ $reservation->reservation_code ?? 'No reservation code' }} &middot; {{ $reservation->event_type }} on {{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}</p>
+            <p class="text-muted small mt-2 mb-0"><span class="fw-semibold">Booked on</span> {{ $reservation->created_at?->timezone(config('app.timezone'))->format('F j, Y \a\t g:i A') ?? '—' }}</p>
         </div>
         <span class="status-badge status-badge--{{ $reservation->status }} reservation-show-status">{{ $statusLabel }}</span>
     </div>
