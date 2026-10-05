@@ -110,6 +110,8 @@
         <div class="col-lg-5 d-flex flex-column gap-3">
             <section class="card reservation-status-card" id="reservation-status" aria-labelledby="reservation-status-heading">
                 <h2 class="h6 fw-bold mb-3" id="reservation-status-heading">Status</h2>
+                <p class="mb-3">Reservation Status: <span class="status-badge status-badge--{{ $reservation->status }}">{{ \App\Models\Reservation::statusLabel($reservation->status) }}</span></p>
+                @php($canManuallyComplete = $reservation->status === \App\Models\Reservation::STATUS_CONFIRMED && \Illuminate\Support\Carbon::parse($reservation->event_date, config('app.timezone'))->toDateString() === now(config('app.timezone'))->toDateString())
                 <div class="reservation-timeline reservation-timeline--admin {{ $reservation->status === 'cancelled' ? 'reservation-timeline--cancelled' : '' }}">
                     @foreach($reservation->timelineSteps() as $step)
                         <div class="timeline-step timeline-step--{{ $step['state'] }}">
@@ -128,28 +130,15 @@
 
                 <div class="reservation-actions-group">
                     @if($reservation->status === 'pending')
-                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Accept this reservation? The change will be saved immediately.">@csrf @method('PATCH')<input type="hidden" name="status" value="confirmed"><button class="btn btn-sm btn-success" type="submit">Accept</button></form>
-                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf @method('PATCH')<input type="hidden" name="status" value="cancelled"><button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
+                        <form method="POST" action="{{ route('admin.reservations.accept', $reservation) }}" data-confirm-message="Accept this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-success" type="submit">Accept</button></form>
+                        <form method="POST" action="{{ route('admin.reservations.cancel', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
                     @elseif($reservation->status === 'confirmed')
-                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Mark this reservation as completed?">@csrf @method('PATCH')<input type="hidden" name="status" value="completed"><button class="btn btn-sm luxury-btn" type="submit">Complete</button></form>
-                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf @method('PATCH')<input type="hidden" name="status" value="cancelled"><button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
+                        @if($canManuallyComplete)
+                            <form method="POST" action="{{ route('admin.reservations.complete', $reservation) }}" data-confirm-message="Mark this reservation as completed?">@csrf<button class="btn btn-sm luxury-btn" type="submit">Complete</button></form>
+                        @endif
+                        <form method="POST" action="{{ route('admin.reservations.cancel', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
                     @endif
                 </div>
-
-                <details class="reservation-status-override">
-                    <summary>Change status manually</summary>
-                    <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="d-flex gap-2 mt-2" data-confirm-status>
-                        @csrf @method('PATCH')
-                        <select name="status" class="form-select form-select-sm status-select status-select--{{ $reservation->status }}">
-                            <option value="pending" @selected($reservation->status === 'pending')>Pending</option>
-                            <option value="confirmed" @selected($reservation->status === 'confirmed')>Accepted</option>
-                            <option value="completed" @selected($reservation->status === 'completed')>Completed</option>
-                            <option value="cancelled" @selected($reservation->status === 'cancelled')>Cancelled</option>
-                        </select>
-                        <button class="btn btn-sm btn-outline-secondary" type="submit">Save</button>
-                    </form>
-                </details>
-
             </section>
             <section class="card reservation-payment-card" id="reservation-payment" aria-labelledby="reservation-payment-heading">
                 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
@@ -179,9 +168,8 @@
                         <span class="reservation-disclosure-action" aria-hidden="true"><span class="disclosure-label-closed">Edit</span><span class="disclosure-label-open">Close</span><span class="reservation-disclosure-chevron"></span></span>
                     </summary>
                     @if($reservation->status === 'confirmed')
-                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Save changes to this confirmed reservation?">
+                        <form method="POST" action="{{ route('admin.reservations.update', $reservation) }}" data-confirm-message="Save changes to this confirmed reservation?">
                             @csrf @method('PATCH')
-                            <input type="hidden" name="status" value="confirmed">
                             <div class="mb-2">
                                 <label class="form-label" for="schedule-event-type">Event type</label>
                                 <select id="schedule-event-type" name="event_type" class="form-select form-select-sm" required>
@@ -249,7 +237,7 @@
                     </div>
                     <details class="reservation-notes-editor" id="reservation-notes-editor" @if($errors->any()) open @endif>
                         <summary class="btn btn-sm btn-outline-secondary">Edit</summary>
-                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" class="reservation-notes-form">
+                        <form method="POST" action="{{ route('admin.reservations.update', $reservation) }}" class="reservation-notes-form">
                             @csrf @method('PATCH')
                             <label class="form-label" for="admin-reservation-notes">Internal note</label>
                             <textarea id="admin-reservation-notes" name="admin_notes" class="form-control form-control-sm mb-2" rows="3" placeholder="Add an internal note...">{{ old('admin_notes', $reservation->admin_notes) }}</textarea>
@@ -353,8 +341,6 @@
 
     .reservation-actions-group { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
     .reservation-actions-group form { margin: 0; }
-    .reservation-status-override { margin-bottom: .75rem; padding-bottom: .75rem; border-bottom: 1px solid var(--line); }
-    .reservation-status-override summary { color: var(--teal-dark); font-size: .78rem; font-weight: 700; cursor: pointer; }
     .reservation-subheading { margin: 0 0 .4rem; font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
 
     .reservation-schedule-group { padding-top: .1rem; }
@@ -431,7 +417,6 @@
         .reservation-notes-editor { margin-left: auto; }
     }
     body.dark-mode .detail-list dd a,
-    body.dark-mode .reservation-status-override summary,
     body.dark-mode .reservation-disclosure-action,
     body.dark-mode .reservation-timeline .timeline-step--current .timeline-step-label { color: #76c8bf; }
 </style>

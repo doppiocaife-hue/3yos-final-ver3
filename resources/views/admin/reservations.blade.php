@@ -112,15 +112,18 @@
                             <span class="d-block">{{ $reservation->event_type }}</span>
                             <small class="text-muted">{{ $reservation->venue }}</small>
                         </td>
-                        <td>{{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}</td>
+                        <td>
+                            <span class="d-block">{{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}</span>
+                            <small class="text-muted">Added: {{ $reservation->created_at->format('M j, Y') }}</small>
+                        </td>
                         <td><strong>{{ $reservation->guest_count }}</strong></td>
                         <td><span class="status-badge status-badge--{{ $reservation->status }}">{{ $statusLabel }}</span></td>
                         <td><span class="status-badge status-badge--{{ \App\Models\Reservation::paymentStatusBadge($reservationFinancials['payment_status']) }}">{{ \App\Models\Reservation::paymentStatusLabel($reservationFinancials['payment_status']) }}</span></td>
                         <td>
                             <div class="reservation-row-actions">
                                 @if($reservation->status === 'pending')
-                                    <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Accept this reservation? The change will be saved immediately.">@csrf @method('PATCH')<input type="hidden" name="status" value="confirmed"><button class="btn btn-sm btn-success" type="submit">Accept</button></form>
-                                    <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf @method('PATCH')<input type="hidden" name="status" value="cancelled"><button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
+                                    <form method="POST" action="{{ route('admin.reservations.accept', $reservation) }}" data-confirm-message="Accept this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-success" type="submit">Accept</button></form>
+                                    <form method="POST" action="{{ route('admin.reservations.cancel', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
                                 @endif
                                 <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.reservations.show', $reservation) }}">View</a>
                             </div>
@@ -148,13 +151,17 @@
                 </div>
                 <div class="mobile-event-info">
                     <div><span>Event</span><strong>{{ $reservation->event_type }}</strong></div>
-                    <div><span>Date</span><strong>{{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}</strong></div>
+                    <div>
+                        <span>Date</span>
+                        <strong>{{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}</strong>
+                        <small class="d-block text-muted">Added: {{ $reservation->created_at->format('M j, Y') }}</small>
+                    </div>
                     <div><span>Guests</span><strong>{{ $reservation->guest_count }}</strong></div>
                 </div>
                 <div class="reservation-actions">
                     @if($reservation->status === 'pending')
-                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Accept this reservation? The change will be saved immediately.">@csrf @method('PATCH')<input type="hidden" name="status" value="confirmed"><button class="btn btn-sm btn-success" type="submit">Accept</button></form>
-                        <form method="POST" action="{{ route('admin.reservations.status', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf @method('PATCH')<input type="hidden" name="status" value="cancelled"><button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
+                        <form method="POST" action="{{ route('admin.reservations.accept', $reservation) }}" data-confirm-message="Accept this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-success" type="submit">Accept</button></form>
+                        <form method="POST" action="{{ route('admin.reservations.cancel', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
                     @endif
                     <a class="btn btn-sm luxury-btn" href="{{ route('admin.reservations.show', $reservation) }}">View reservation</a>
                 </div>

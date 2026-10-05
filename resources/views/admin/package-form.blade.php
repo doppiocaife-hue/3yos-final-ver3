@@ -11,7 +11,7 @@
         @if($errors->any())
             <div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
         @endif
-        <form method="POST" action="{{ $package->exists ? route('admin.packages.update', $package) : route('admin.packages.store') }}" enctype="multipart/form-data" data-password-confirm data-password-message="{{ $package->exists ? 'Update this package? Confirm your administrator password to continue.' : 'Add this package? Confirm your administrator password to continue.' }}">
+        <form method="POST" action="{{ $package->exists ? route('admin.packages.update', $package) : route('admin.packages.store') }}" enctype="multipart/form-data">
             @csrf
             @if($package->exists) @method('PUT') @endif
             <div class="row g-4">

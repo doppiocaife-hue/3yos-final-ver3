@@ -304,7 +304,6 @@ class AdminController extends Controller
     public function inquiries(Request $request)
     {
         $view = $request->input('view', 'all');
-        $priority = $request->input('priority');
         $search = trim((string) $request->input('search', ''));
 
         $query = Inquiry::query();
@@ -315,10 +314,6 @@ class AdminController extends Controller
             $query->needsAttention();
         } elseif (in_array($view, ['new', 'in_progress', 'responded', 'closed'], true)) {
             $query->where('status', $view);
-        }
-
-        if ($priority && in_array($priority, ['low', 'normal', 'high', 'urgent'], true)) {
-            $query->where('priority', $priority);
         }
 
         if ($search !== '') {
@@ -336,9 +331,9 @@ class AdminController extends Controller
 
         // Always computed fresh from the real data, independent of the filters above — this is
         // the "what needs my attention right now" view, not something a search/tab should hide.
-        $needsAttention = Inquiry::query()->needsAttention()->byPriorityThenRecency()->get();
+        $needsAttention = Inquiry::query()->needsAttention()->latest()->get();
 
-        return view('admin.inquiries', compact('inquiries', 'needsAttention', 'view', 'priority', 'search'));
+        return view('admin.inquiries', compact('inquiries', 'needsAttention', 'view', 'search'));
     }
 
     public function showInquiry(Inquiry $inquiry)
@@ -350,14 +345,6 @@ class AdminController extends Controller
         }
 
         return view('admin.inquiry-show', compact('inquiry'));
-    }
-
-    public function updateInquiryPriority(Request $request, Inquiry $inquiry)
-    {
-        $data = $request->validate(['priority' => ['required', 'in:low,normal,high,urgent']]);
-        $inquiry->update($data);
-
-        return back()->with('success', 'Priority set to '.Inquiry::priorityLabel($data['priority']).'.');
     }
 
     public function replyToInquiry(Request $request, Inquiry $inquiry)
@@ -601,10 +588,100 @@ class AdminController extends Controller
         return $months;
     }
 
-    public function updateReservationStatus(Request $request, Reservation $reservation, ReservationCapacityService $capacity)
+    public function acceptReservation(Request $request, Reservation $reservation, ReservationCapacityService $capacity)
+    {
+        return $this->transitionReservationStatus($request, $reservation, $capacity, Reservation::STATUS_CONFIRMED);
+    }
+
+    public function cancelReservation(Request $request, Reservation $reservation, ReservationCapacityService $capacity)
+    {
+        return $this->transitionReservationStatus($request, $reservation, $capacity, Reservation::STATUS_CANCELLED);
+    }
+
+    public function completeReservation(Request $request, Reservation $reservation)
+    {
+        $request->validate(['status' => ['prohibited']]);
+
+        DB::transaction(function () use ($request, $reservation): void {
+            $lockedReservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
+            if ($lockedReservation->status !== Reservation::STATUS_CONFIRMED) {
+                throw ValidationException::withMessages(['status' => 'Only accepted reservations can be completed.']);
+            }
+
+            $timezone = config('app.timezone');
+            $eventDate = Carbon::parse($lockedReservation->event_date, $timezone)->toDateString();
+            if ($eventDate !== now($timezone)->toDateString()) {
+                throw ValidationException::withMessages([
+                    'status' => 'This reservation can only be completed on the scheduled event date.',
+                ]);
+            }
+
+            $lockedReservation->update(['status' => Reservation::STATUS_COMPLETED]);
+            $this->logReservationActivity(
+                $request,
+                'Reservation status changed',
+                'Changed reservation #'.$lockedReservation->id.' status from '.Reservation::statusLabel(Reservation::STATUS_CONFIRMED).' to '.Reservation::statusLabel(Reservation::STATUS_COMPLETED).'.',
+            );
+        });
+
+        return back()->with('success', 'Reservation marked as completed.');
+    }
+
+    private function transitionReservationStatus(
+        Request $request,
+        Reservation $reservation,
+        ReservationCapacityService $capacity,
+        string $targetStatus,
+    ) {
+        $request->validate(['status' => ['prohibited']]);
+
+        $transitioned = DB::transaction(function () use ($request, $reservation, $capacity, $targetStatus): bool {
+            $lockedReservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
+            $originalStatus = $lockedReservation->status;
+
+            if ($originalStatus === $targetStatus) {
+                return false;
+            }
+
+            if ($targetStatus === Reservation::STATUS_CONFIRMED && $originalStatus !== Reservation::STATUS_PENDING) {
+                throw ValidationException::withMessages(['status' => 'Only pending reservations can be accepted.']);
+            }
+            if ($targetStatus === Reservation::STATUS_CANCELLED
+                && ! in_array($originalStatus, [Reservation::STATUS_PENDING, Reservation::STATUS_CONFIRMED], true)) {
+                throw ValidationException::withMessages(['status' => 'Only pending or accepted reservations can be cancelled.']);
+            }
+
+            $capacity->lockDates([$lockedReservation->event_date]);
+            if ($targetStatus === Reservation::STATUS_CONFIRMED
+                && $capacity->countForDate($lockedReservation->event_date, $lockedReservation->id) >= Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE) {
+                throw ValidationException::withMessages([
+                    'status' => 'Maximum active reservations for this date has been reached. Only '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations are allowed per date.',
+                ]);
+            }
+
+            $lockedReservation->ensurePaymentLedger();
+            $lockedReservation->recalculatePaymentTotals();
+            $lockedReservation->update(['status' => $targetStatus]);
+            $this->logReservationActivity(
+                $request,
+                'Reservation status changed',
+                'Changed reservation #'.$lockedReservation->id.' status from '.Reservation::statusLabel($originalStatus).' to '.Reservation::statusLabel($targetStatus).'.',
+            );
+
+            return true;
+        });
+
+        if (! $transitioned) {
+            return back()->with('success', 'Reservation saved successfully.');
+        }
+
+        return back()->with('success', $this->sendStatusNotification($reservation->fresh(), $targetStatus));
+    }
+
+    public function updateReservation(Request $request, Reservation $reservation, ReservationCapacityService $capacity)
     {
         $data = $request->validate([
-            'status' => ['sometimes', 'required', 'in:pending,confirmed,completed,cancelled'],
+            'status' => ['prohibited'],
             'payment_status' => ['sometimes', 'nullable', 'in:Unpaid,Downpayment,Partial Payment,Fully Paid'],
             'payment_type' => ['sometimes', 'nullable', 'in:Unpaid,Downpayment,Partial Payment,Final Payment,Full Payment'],
             'total_cost' => ['sometimes', 'nullable', 'numeric', 'min:0'],
@@ -647,11 +724,10 @@ class AdminController extends Controller
         $requestedPaid = $request->has('amount_paid') ? round((float) ($data['amount_paid'] ?? 0), 2) : null;
         unset($data['payment_status'], $data['payment_type'], $data['amount_paid']);
 
-        $statusTransition = null;
         $reservationChanges = [];
         $detailsChanged = false;
 
-        DB::transaction(function () use ($request, $reservation, $data, $requestedPaid, $reason, $detailFields, $hasDetailUpdate, $capacity, &$statusTransition, &$reservationChanges, &$detailsChanged): void {
+        DB::transaction(function () use ($request, $reservation, $data, $requestedPaid, $reason, $detailFields, $hasDetailUpdate, $capacity, &$reservationChanges, &$detailsChanged): void {
             $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
             $originalStatus = $reservation->status;
             $originalNotes = $reservation->admin_notes;
@@ -659,25 +735,21 @@ class AdminController extends Controller
             $oldPackage = $reservation->package;
             $oldPackageName = $oldPackage?->name ?? 'Custom package';
 
-            $targetStatus = $data['status'] ?? $originalStatus;
             $targetEventDate = $data['event_date'] ?? $reservation->event_date;
-            $capacityMayChange = $request->has('status') || $hasDetailUpdate;
+            $capacityMayChange = $hasDetailUpdate;
             if ($capacityMayChange) {
                 $capacity->lockDates([$reservation->event_date, $targetEventDate]);
             }
 
             $scheduleDateChanged = isset($data['event_date'])
                 && Carbon::parse($data['event_date'])->toDateString() !== Carbon::parse($reservation->event_date)->toDateString();
-            if (in_array($targetStatus, Reservation::CAPACITY_OCCUPYING_STATUSES, true)
-                && ($originalStatus !== $targetStatus || $scheduleDateChanged || $hasDetailUpdate)) {
+            if (in_array($originalStatus, Reservation::CAPACITY_OCCUPYING_STATUSES, true)
+                && ($scheduleDateChanged || $hasDetailUpdate)) {
                 $occupiedCount = $capacity->countForDate($targetEventDate, $reservation->id);
 
                 if ($occupiedCount >= Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE) {
-                    $message = $originalStatus === 'confirmed'
-                        ? 'Unable to save this schedule because the selected date already has '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations.'
-                        : 'Maximum active reservations for this date has been reached. Only '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations are allowed per date.';
                     throw ValidationException::withMessages([
-                        ($originalStatus === 'confirmed' ? 'event_date' : 'status') => $message,
+                        'event_date' => 'Unable to save this schedule because the selected date already has '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations.',
                     ]);
                 }
             }
@@ -735,17 +807,6 @@ class AdminController extends Controller
             }
 
             $reservation->update($data);
-
-            if (array_key_exists('status', $data) && $data['status'] !== $originalStatus) {
-                $this->logReservationActivity(
-                    $request,
-                    'Reservation status changed',
-                    'Changed reservation #'.$reservation->id.' status from '.Reservation::statusLabel($originalStatus).' to '.Reservation::statusLabel($data['status']).'.',
-                );
-                if (in_array($data['status'], [Reservation::STATUS_CONFIRMED, Reservation::STATUS_CANCELLED], true)) {
-                    $statusTransition = $data['status'];
-                }
-            }
 
             if (array_key_exists('admin_notes', $data)
                 && $this->normalizeReservationDetail('admin_notes', $originalNotes) !== $this->normalizeReservationDetail('admin_notes', $data['admin_notes'])) {
@@ -829,10 +890,6 @@ class AdminController extends Controller
 
             $reservation->recalculatePaymentTotals();
         });
-
-        if ($statusTransition !== null) {
-            return back()->with('success', $this->sendStatusNotification($reservation, $statusTransition));
-        }
 
         if ($detailsChanged) {
             return back()->with('success', $this->sendReservationUpdatedNotification($reservation->fresh('package')));

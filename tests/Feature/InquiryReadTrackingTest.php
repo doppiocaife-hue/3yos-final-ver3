@@ -3,53 +3,53 @@
 namespace Tests\Feature;
 
 use App\Models\Inquiry;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
-class InquiryPriorityAndReadTrackingTest extends TestCase
+class InquiryReadTrackingTest extends TestCase
 {
+    use RefreshDatabase;
+
     private const ADMIN = ['is_admin' => true, 'admin_role' => 'full'];
 
     private function inquiry(array $overrides = []): Inquiry
     {
         return Inquiry::create($overrides + [
-            'full_name' => 'Priority Client',
+            'full_name' => 'Inquiry Client',
             'contact_number' => '09171234567',
-            'email' => 'priority-'.uniqid().'@example.com',
-            'subject' => 'Priority subject',
+            'email' => 'inquiry-'.uniqid().'@example.com',
+            'subject' => 'Inquiry subject',
             'category' => 'Catering',
             'message' => 'Please send details.',
             'status' => 'new',
         ]);
     }
 
-    public function test_existing_inquiries_default_to_normal_priority(): void
+    public function test_priority_column_and_update_route_are_removed(): void
     {
-        $inquiry = $this->inquiry();
-
-        $this->assertSame('normal', $inquiry->fresh()->priority);
+        $this->assertFalse(Schema::hasColumn('inquiries', 'priority'));
+        $this->assertFalse(Route::has('admin.inquiries.priority'));
     }
 
-    public function test_admin_can_change_priority_from_the_detail_page(): void
+    public function test_inquiry_list_and_detail_no_longer_render_priority_controls_or_labels(): void
     {
         $inquiry = $this->inquiry();
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.inquiries.priority', $inquiry), ['priority' => 'urgent'])
-            ->assertSessionHasNoErrors();
-
-        $this->assertSame('urgent', $inquiry->fresh()->priority);
-    }
-
-    public function test_invalid_priority_is_rejected(): void
-    {
-        $inquiry = $this->inquiry();
+            ->get(route('admin.inquiries'))
+            ->assertOk()
+            ->assertDontSee('Set priority')
+            ->assertDontSee('inquiry-priority')
+            ->assertDontSee('priority-badge');
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.inquiries.priority', $inquiry), ['priority' => 'super-urgent'])
-            ->assertSessionHasErrors('priority');
-
-        $this->assertSame('normal', $inquiry->fresh()->priority);
+            ->get(route('admin.inquiries.show', $inquiry))
+            ->assertOk()
+            ->assertDontSee('Set priority')
+            ->assertDontSee('priority-badge');
     }
 
     public function test_viewing_an_inquiry_marks_it_read_but_does_not_change_status(): void

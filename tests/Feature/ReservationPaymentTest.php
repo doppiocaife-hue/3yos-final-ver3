@@ -923,7 +923,7 @@ class ReservationPaymentTest extends TestCase
             $this->post(route('admin.reservations.payments.store', $reservation), $fields),
             $this->put(route('admin.reservations.payments.update', [$reservation, $payment]), $fields),
             $this->patch(route('admin.reservations.payments.details', $reservation), ['total_cost' => 1]),
-            $this->patch(route('admin.reservations.status', $reservation), ['amount_paid' => 1000]),
+            $this->patch(route('admin.reservations.update', $reservation), ['amount_paid' => 1000]),
             $this->post(route('admin.reservations.refunds.store', $reservation), [
                 'request_key' => (string) Str::uuid(),
                 'refund_date' => now()->toDateString(),

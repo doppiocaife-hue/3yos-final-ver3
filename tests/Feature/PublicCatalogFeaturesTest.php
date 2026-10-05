@@ -5,8 +5,8 @@ namespace Tests\Feature;
 use App\Models\GalleryItem;
 use App\Models\Package;
 use App\Models\User;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -126,16 +126,14 @@ class PublicCatalogFeaturesTest extends TestCase
 
     public function test_admin_gallery_keeps_image_management_available_in_collapsed_controls(): void
     {
+        $admin = User::factory()->create(['role' => 'full']);
         GalleryItem::create([
             'title' => 'Admin gallery photo',
             'image_path' => 'gallery/admin-photo.jpg',
             'event_type' => 'Wedding',
         ]);
 
-        $response = $this->withSession([
-            'is_admin' => true,
-            'admin_role' => 'full',
-        ])->get(route('admin.gallery.index'));
+        $response = $this->withSession($this->websiteSession($admin))->get(route('admin.gallery.index'));
 
         $response->assertOk();
         $response->assertSee('gallery-admin-preview');
@@ -144,7 +142,7 @@ class PublicCatalogFeaturesTest extends TestCase
         $response->assertDontSee('name="title"');
         $response->assertDontSee('name="event_type"');
         $response->assertDontSee('name="description"');
-        $response->assertSee('Delete this gallery image?');
+        $response->assertDontSee('data-password-message="Delete this gallery image?', false);
     }
 
     public function test_admin_can_add_gallery_photo_without_metadata_fields(): void
@@ -154,15 +152,11 @@ class PublicCatalogFeaturesTest extends TestCase
             'password' => Hash::make('gallery-admin-password'),
         ]);
 
-        $response = $this->withSession([
-            'is_admin' => true,
-            'admin_role' => 'full',
-            'admin_user_id' => $admin->id,
-            'admin_email' => $admin->email,
-        ])->from(route('admin.gallery.index'))->post(route('admin.gallery.store'), [
-            'current_admin_password' => 'gallery-admin-password',
-            'is_featured' => '1',
-        ]);
+        $response = $this->withSession($this->websiteSession($admin))
+            ->from(route('admin.gallery.index'))->post(route('admin.gallery.store'), [
+                'current_admin_password' => 'gallery-admin-password',
+                'is_featured' => '1',
+            ]);
 
         $response->assertRedirect(route('admin.gallery.index'));
         $response->assertSessionHasErrors(['image']);
@@ -176,12 +170,7 @@ class PublicCatalogFeaturesTest extends TestCase
             'role' => 'full',
             'password' => Hash::make('image-admin-password'),
         ]);
-        $session = [
-            'is_admin' => true,
-            'admin_role' => 'full',
-            'admin_user_id' => $admin->id,
-            'admin_email' => $admin->email,
-        ];
+        $session = $this->websiteSession($admin);
         $image = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lb8AAAAASUVORK5CYII=');
 
         $packageResponse = $this->withSession($session)->post(route('admin.packages.store'), [
@@ -239,7 +228,8 @@ class PublicCatalogFeaturesTest extends TestCase
         $detail->assertOk();
         $detail->assertDontSee('Guests:');
 
-        $adminSession = ['is_admin' => true, 'admin_role' => 'full'];
+        $admin = User::factory()->create(['role' => 'full']);
+        $adminSession = $this->websiteSession($admin);
         $adminList = $this->withSession($adminSession)->get(route('admin.packages.index'));
         $adminList->assertOk();
         $adminList->assertDontSee('Guest range');
@@ -249,6 +239,21 @@ class PublicCatalogFeaturesTest extends TestCase
         $adminForm->assertOk();
         $adminForm->assertDontSee('Minimum guests');
         $adminForm->assertDontSee('Maximum guests');
+    }
+
+    private function websiteSession(User $admin): array
+    {
+        return [
+            'is_admin' => true,
+            'admin_role' => 'full',
+            'admin_auth_source' => 'database',
+            'admin_user_id' => $admin->id,
+            'admin_email' => $admin->email,
+            'manage_website_auth_user_id' => $admin->id,
+            'manage_website_auth_source' => 'database',
+            'manage_website_auth_email' => strtolower($admin->email),
+            'manage_website_auth_expires_at' => now()->addMinutes((int) config('session.lifetime'))->timestamp,
+        ];
     }
 
     public function test_reservation_shows_only_a_simple_selected_package_summary(): void

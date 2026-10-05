@@ -80,9 +80,13 @@ class AdminReservationDetailTest extends TestCase
         $response->assertSee('Notes');
         $response->assertSee('Activity');
         $response->assertSee('Submitted');
+        $response->assertSeeText('Reservation Status: Accepted');
         $response->assertSee('Under Review');
         $response->assertSee('Accepted');
         $response->assertSee('Completed');
+        $response->assertDontSee('Change status manually');
+        $response->assertDontSee('name="status"', false);
+        $response->assertDontSee('>Complete</button>', false);
     }
 
     public function test_reservation_detail_compacts_and_collapses_secondary_sections_by_default(): void
@@ -250,7 +254,7 @@ class AdminReservationDetailTest extends TestCase
         $timestamp = Carbon::create(2026, 10, 2, 23, 15, 0, config('app.timezone'));
         Carbon::setTestNow($timestamp);
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['admin_notes' => 'Client requested vegan menu.'])
+            ->patch(route('admin.reservations.update', $reservation), ['admin_notes' => 'Client requested vegan menu.'])
             ->assertSessionHasNoErrors();
 
         $this->assertSame('Client requested vegan menu.', $reservation->fresh()->admin_notes);
@@ -279,7 +283,7 @@ class AdminReservationDetailTest extends TestCase
         $reservation = $this->reservation(['admin_notes' => 'Original internal note.']);
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['admin_notes' => 'Revised internal note.'])
+            ->patch(route('admin.reservations.update', $reservation), ['admin_notes' => 'Revised internal note.'])
             ->assertSessionHasNoErrors();
 
         $this->assertSame('Revised internal note.', $reservation->fresh()->admin_notes);
@@ -291,37 +295,29 @@ class AdminReservationDetailTest extends TestCase
             ->assertSee($activity->description);
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['admin_notes' => 'Revised internal note.'])
+            ->patch(route('admin.reservations.update', $reservation), ['admin_notes' => 'Revised internal note.'])
             ->assertSessionHasNoErrors();
 
         $this->assertSame(1, ActivityLog::where('action', 'Internal note updated')->count());
         $this->assertSame(0, ActivityLog::where('action', 'Internal note added')->count());
     }
 
-    public function test_status_changes_log_canonical_old_and_new_labels_once_per_change(): void
+    public function test_workflow_status_changes_log_canonical_old_and_new_labels_once_per_change(): void
     {
         Mail::fake();
         $reservation = $this->reservation(['status' => 'pending']);
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['status' => 'confirmed'])
+            ->post(route('admin.reservations.accept', $reservation))
             ->assertSessionHasNoErrors();
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['status' => 'completed'])
-            ->assertSessionHasNoErrors();
-        $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['status' => 'pending'])
-            ->assertSessionHasNoErrors();
-        $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['status' => 'cancelled'])
+            ->post(route('admin.reservations.cancel', $reservation))
             ->assertSessionHasNoErrors();
 
         $activities = ActivityLog::where('action', 'Reservation status changed')->orderBy('id')->get();
-        $this->assertCount(4, $activities);
+        $this->assertCount(2, $activities);
         $this->assertSame([
             'Changed reservation #'.$reservation->id.' status from Under Review to Accepted.',
-            'Changed reservation #'.$reservation->id.' status from Accepted to Completed.',
-            'Changed reservation #'.$reservation->id.' status from Completed to Under Review.',
-            'Changed reservation #'.$reservation->id.' status from Under Review to Cancelled.',
+            'Changed reservation #'.$reservation->id.' status from Accepted to Cancelled.',
         ], $activities->pluck('description')->all());
         $this->assertSame(0, ActivityLog::where('description', 'like', 'Changed reservation #'.$reservation->id.' status to .')->count());
         $admin = User::where('email', 'detail@3yos.com')->firstOrFail();
@@ -385,8 +381,7 @@ class AdminReservationDetailTest extends TestCase
         $newDate = now()->addMonths(2)->toDateString();
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), [
-                'status' => 'confirmed',
+            ->patch(route('admin.reservations.update', $reservation), [
                 'event_type' => 'Wedding',
                 'event_date' => $newDate,
                 'event_time' => '19:30',
@@ -490,7 +485,6 @@ class AdminReservationDetailTest extends TestCase
         Mail::fake();
         $reservation = $this->reservation(['status' => 'confirmed']);
         $fields = [
-            'status' => 'confirmed',
             'event_type' => $reservation->event_type,
             'event_date' => $reservation->event_date,
             'event_time' => '18:00',
@@ -503,7 +497,7 @@ class AdminReservationDetailTest extends TestCase
         ];
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), $fields)
+            ->patch(route('admin.reservations.update', $reservation), $fields)
             ->assertSessionHas('success', 'Reservation saved successfully.');
 
         $this->assertSame(0, ActivityLog::whereIn('action', ['Reservation schedule changed', 'Reservation details updated'])->count());
@@ -522,8 +516,7 @@ class AdminReservationDetailTest extends TestCase
         $this->reservation(['status' => 'pending', 'event_date' => $targetDate]);
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), [
-                'status' => 'confirmed',
+            ->patch(route('admin.reservations.update', $reservation), [
                 'event_date' => $targetDate,
                 'event_time' => '19:30',
             ])
@@ -541,8 +534,7 @@ class AdminReservationDetailTest extends TestCase
     {
         $reservation = $this->reservation(['status' => 'confirmed']);
 
-        $this->patch(route('admin.reservations.status', $reservation), [
-            'status' => 'confirmed',
+        $this->patch(route('admin.reservations.update', $reservation), [
             'event_date' => now()->addMonths(2)->toDateString(),
             'event_time' => '19:30',
             'venue' => 'Unauthorized venue',
@@ -557,8 +549,7 @@ class AdminReservationDetailTest extends TestCase
         $reservation = $this->reservation(['status' => 'confirmed']);
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), [
-                'status' => 'confirmed',
+            ->patch(route('admin.reservations.update', $reservation), [
                 'event_time' => '19:30',
             ])
             ->assertSessionHas('success', 'Reservation updated. The update notification email could not be sent.');
@@ -587,8 +578,7 @@ class AdminReservationDetailTest extends TestCase
         $newDate = now()->addMonths(2)->toDateString();
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), [
-                'status' => 'confirmed',
+            ->patch(route('admin.reservations.update', $reservation), [
                 'event_date' => $newDate,
                 'reason' => '   ',
             ])
@@ -613,8 +603,7 @@ class AdminReservationDetailTest extends TestCase
         $reservation = $this->reservation(['status' => 'confirmed']);
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), [
-                'status' => 'confirmed',
+            ->patch(route('admin.reservations.update', $reservation), [
                 'event_time' => '7:30 PM',
             ])
             ->assertSessionHasErrors('event_time');

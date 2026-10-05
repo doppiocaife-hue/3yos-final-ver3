@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Service;
+use App\Rules\UniqueNormalizedName;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -53,8 +54,13 @@ class AdminServiceController extends Controller
 
     private function validated(Request $request, ?Service $service = null): array
     {
+        $name = $request->input('name');
+        if (is_string($name)) {
+            $request->merge(['name' => \Illuminate\Support\Str::squish($name)]);
+        }
+
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:100', new UniqueNormalizedName($service ?? new Service(), 'service')],
             'description' => ['nullable', 'string'],
             'icon' => ['nullable', 'string', 'max:100'],
             'is_featured' => ['nullable', 'boolean'],

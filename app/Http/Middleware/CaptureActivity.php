@@ -13,7 +13,10 @@ class CaptureActivity
     {
         $response = $next($request);
         $isExplicitlyAuditedReservationUpdate = $request->routeIs(
-            'admin.reservations.status',
+            'admin.reservations.update',
+            'admin.reservations.accept',
+            'admin.reservations.complete',
+            'admin.reservations.cancel',
             'admin.reservations.payments.details',
         );
         $isBackupAction = $request->routeIs('admin.backups*');

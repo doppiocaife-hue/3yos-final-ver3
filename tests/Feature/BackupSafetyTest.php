@@ -2,18 +2,21 @@
 
 namespace Tests\Feature;
 
-use App\Models\Package;
 use App\Models\ActivityLog;
+use App\Models\Client;
+use App\Models\Package;
+use App\Models\Reservation;
 use App\Models\User;
 use App\Services\BackupService;
 use Carbon\Carbon;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Database\QueryException;
 use Illuminate\Encryption\Encrypter;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class BackupSafetyTest extends TestCase
@@ -329,8 +332,8 @@ class BackupSafetyTest extends TestCase
             ->assertSee('Database status')
             ->assertSee('Healthy')
             ->assertSee('Database Recovery')
-            ->assertSee('This page cannot recover a database it depends on.')
-            ->assertSee('Emergency Super Admin account');
+            ->assertSee('Administrator account recovery and full database recovery require authorized server access. Follow the documented recovery procedure to restore access or recover the database from a validated backup.')
+            ->assertDontSee('This page cannot recover a database it depends on.');
         $this->assertSame('healthy', app(BackupService::class)->databaseStatus()['status']);
     }
 
@@ -385,6 +388,399 @@ class BackupSafetyTest extends TestCase
             $this->assertSame('validated', $backupService->metadataForDisplay($backupName)['validation_status']);
         } finally {
             $backupService->delete($backupName);
+        }
+    }
+
+    public function test_complete_current_backup_validates_all_required_tables_and_columns(): void
+    {
+        $package = Package::create([
+            'name' => 'Complete backup package',
+            'slug' => 'complete-backup-package',
+            'price' => 500,
+            'min_guests' => 10,
+            'max_guests' => 50,
+            'description' => 'Complete structure',
+        ]);
+        $backupService = app(BackupService::class);
+        $existingBackups = $backupService->listBackups();
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+
+        try {
+            $validation = $backupService->validate($backupName);
+
+            $this->assertSame('validated', $backupService->metadataForDisplay($backupName)['validation_status']);
+            $this->assertSame('JSON v'.BackupService::BACKUP_VERSION, $backupService->inspect($backupName)['format']);
+            $this->assertSame(Package::query()->count(), $validation['expected_rows']['packages']);
+            $this->assertContains('name', $validation['required_columns']['packages']);
+            $this->assertArrayHasKey('reservation_payments', $validation['expected_rows']);
+            $this->assertArrayHasKey('reservation_refunds', $validation['expected_rows']);
+        } finally {
+            foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
+                $backupService->delete($backup);
+            }
+        }
+    }
+
+    public function test_current_backup_missing_a_required_table_cannot_validate_or_restore(): void
+    {
+        $package = Package::create([
+            'name' => 'Missing table package',
+            'slug' => 'missing-table-package',
+            'price' => 500,
+            'min_guests' => 10,
+            'max_guests' => 50,
+            'description' => 'Keep current data',
+        ]);
+        $backupService = app(BackupService::class);
+        $existingBackups = $backupService->listBackups();
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+        $contents = json_decode(Crypt::decryptString(file_get_contents($backupPath)), true, 512, JSON_THROW_ON_ERROR);
+        unset($contents['tables']['packages']);
+        file_put_contents($backupPath, Crypt::encryptString(json_encode($contents, JSON_THROW_ON_ERROR)), LOCK_EX);
+        $package->update(['description' => 'Changed after backup']);
+        $admin = User::factory()->create(['role' => 'full', 'password' => 'validation-admin-password']);
+
+        try {
+            $this->assertFalse($backupService->inspect($backupName)['compatible']);
+            $this->assertNotSame('validated', $backupService->metadataForDisplay($backupName)['validation_status']);
+            try {
+                $backupService->validate($backupName);
+                $this->fail('A current backup missing packages must fail validation.');
+            } catch (\InvalidArgumentException $exception) {
+                $this->assertStringContainsString('required table is missing', $exception->getMessage());
+            }
+
+            $listedBackups = $backupService->listBackups();
+            $response = $this->from('/admin/backups')->withSession([
+                'is_admin' => true,
+                'admin_role' => 'full',
+                'admin_user_id' => $admin->id,
+                'admin_email' => $admin->email,
+            ])->post(route('admin.backups.restore'), [
+                'backup' => $backupName,
+                'current_admin_password' => 'validation-admin-password',
+            ]);
+
+            $response->assertRedirect('/admin/backups')
+                ->assertSessionHasErrors('backup');
+            $this->assertSame('Changed after backup', $package->fresh()->description);
+            $this->assertSame($listedBackups, $backupService->listBackups());
+        } finally {
+            foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
+                $backupService->delete($backup);
+            }
+        }
+    }
+
+    public function test_current_backup_with_an_incomplete_required_row_fails_validation(): void
+    {
+        Package::create([
+            'name' => 'Incomplete row package',
+            'slug' => 'incomplete-row-package',
+            'price' => 500,
+            'min_guests' => 10,
+            'max_guests' => 50,
+            'description' => 'Required name is removed',
+        ]);
+        $backupService = app(BackupService::class);
+        $existingBackups = $backupService->listBackups();
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+        $contents = json_decode(Crypt::decryptString(file_get_contents($backupPath)), true, 512, JSON_THROW_ON_ERROR);
+        unset($contents['tables']['packages'][0]['name']);
+        file_put_contents($backupPath, Crypt::encryptString(json_encode($contents, JSON_THROW_ON_ERROR)), LOCK_EX);
+
+        try {
+            $this->assertFalse($backupService->inspect($backupName)['compatible']);
+            $this->expectException(\InvalidArgumentException::class);
+            $backupService->validate($backupName);
+        } finally {
+            foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
+                $backupService->delete($backup);
+            }
+        }
+    }
+
+    public function test_legacy_backup_may_omit_tables_not_present_in_its_format(): void
+    {
+        $backupService = app(BackupService::class);
+        $existingBackups = $backupService->listBackups();
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+        $contents = json_decode(Crypt::decryptString(file_get_contents($backupPath)), true, 512, JSON_THROW_ON_ERROR);
+        unset($contents['backup_format'], $contents['backup_version']);
+        unset(
+            $contents['tables']['reservation_payments'],
+            $contents['tables']['reservation_refunds'],
+            $contents['tables']['gallery_items'],
+        );
+        file_put_contents($backupPath, Crypt::encryptString(json_encode($contents, JSON_THROW_ON_ERROR)), LOCK_EX);
+
+        try {
+            $this->assertTrue($backupService->inspect($backupName)['compatible']);
+            $this->assertArrayHasKey('expected_rows', $backupService->validate($backupName));
+        } finally {
+            foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
+                $backupService->delete($backup);
+            }
+        }
+    }
+
+    public function test_restore_verifies_counts_relationships_and_administrator_protection(): void
+    {
+        $package = Package::create([
+            'name' => 'Verified restore package',
+            'slug' => 'verified-restore-package',
+            'price' => 500,
+            'min_guests' => 10,
+            'max_guests' => 50,
+            'description' => 'Backup description',
+        ]);
+        $client = Client::create([
+            'name' => 'Verified restore client',
+            'email' => 'verified-restore-client@example.test',
+        ]);
+        $reservation = Reservation::create([
+            'client_id' => $client->id,
+            'package_id' => $package->id,
+            'full_name' => $client->name,
+            'contact_number' => '09123456789',
+            'email' => $client->email,
+            'address' => 'Test address',
+            'event_type' => 'Wedding',
+            'event_date' => '2030-01-01',
+            'event_time' => '10:00 AM',
+            'venue' => 'Test venue',
+            'guest_count' => 20,
+            'estimated_budget' => 500,
+            'status' => 'confirmed',
+            'reservation_code' => 'VERIFIED-RELATION',
+        ]);
+        $paymentId = DB::table('reservation_payments')->insertGetId([
+            'reservation_id' => $reservation->id,
+            'payment_date' => '2026-10-01',
+            'payment_type' => 'Downpayment',
+            'amount' => 100,
+            'payment_method' => 'Cash',
+            'recorded_by_name' => 'Test administrator',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('reservation_refunds')->insert([
+            'reservation_id' => $reservation->id,
+            'payment_id' => $paymentId,
+            'refund_date' => '2026-10-02',
+            'amount' => 10,
+            'refund_method' => 'Cash',
+            'request_key' => (string) Str::uuid(),
+            'recorded_by_name' => 'Test administrator',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $admin = User::factory()->create([
+            'role' => 'full',
+            'password' => 'unchanged-admin-password',
+            'is_active' => true,
+        ]);
+        $backupService = app(BackupService::class);
+        $existingBackups = $backupService->listBackups();
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+
+        try {
+            $validation = $backupService->validate($backupName);
+            $this->assertSame(Package::query()->count(), $validation['expected_rows']['packages']);
+            $this->assertSame(1, $validation['expected_rows']['reservations']);
+            $this->assertSame(1, $validation['expected_rows']['reservation_payments']);
+            $this->assertSame(1, $validation['expected_rows']['reservation_refunds']);
+            $package->update(['description' => 'Changed after backup']);
+
+            $restoredRows = $backupService->restore($backupName);
+            $verification = $backupService->verifyRestoration($validation);
+
+            $this->assertGreaterThan(0, $restoredRows);
+            $this->assertTrue($verification['success'], implode(' ', $verification['warnings']));
+            $this->assertSame('Backup description', $package->fresh()->description);
+            $this->assertTrue(Hash::check('unchanged-admin-password', $admin->fresh()->password));
+            $this->assertSame(1, DB::table('reservation_payments')->where('reservation_id', $reservation->id)->count());
+            $this->assertSame(1, DB::table('reservation_refunds')->where('payment_id', $paymentId)->count());
+
+            Package::create([
+                'name' => 'Unexpected post-restore package',
+                'slug' => 'unexpected-post-restore-package',
+                'price' => 0,
+                'min_guests' => 0,
+                'max_guests' => 0,
+            ]);
+            $failedVerification = $backupService->verifyRestoration($validation);
+            $this->assertFalse($failedVerification['success']);
+            $this->assertContains('Restored data counts do not match the validated backup.', $failedVerification['warnings']);
+        } finally {
+            foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
+                $backupService->delete($backup);
+            }
+        }
+    }
+
+    public function test_backup_validation_rejects_invalid_reservation_payment_and_refund_relationships(): void
+    {
+        $package = Package::create([
+            'name' => 'Relationship validation package',
+            'slug' => 'relationship-validation-package',
+            'price' => 500,
+            'min_guests' => 10,
+            'max_guests' => 50,
+        ]);
+        $reservation = Reservation::create([
+            'full_name' => 'Relationship validation reservation',
+            'contact_number' => '09123456789',
+            'email' => 'relationship-validation@example.test',
+            'address' => 'Test address',
+            'event_type' => 'Wedding',
+            'event_date' => '2030-01-01',
+            'event_time' => '10:00 AM',
+            'venue' => 'Test venue',
+            'guest_count' => 20,
+            'estimated_budget' => 500,
+            'status' => 'confirmed',
+            'reservation_code' => 'RELATIONSHIP-VALIDATION',
+            'package_id' => $package->id,
+        ]);
+        $paymentId = DB::table('reservation_payments')->insertGetId([
+            'reservation_id' => $reservation->id,
+            'payment_date' => '2026-10-01',
+            'payment_type' => 'Downpayment',
+            'amount' => 100,
+            'payment_method' => 'Cash',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('reservation_refunds')->insert([
+            'reservation_id' => $reservation->id,
+            'payment_id' => $paymentId,
+            'refund_date' => '2026-10-02',
+            'amount' => 10,
+            'refund_method' => 'Cash',
+            'request_key' => (string) Str::uuid(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $backupService = app(BackupService::class);
+        $existingBackups = $backupService->listBackups();
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+        $contents = json_decode(Crypt::decryptString(file_get_contents($backupPath)), true, 512, JSON_THROW_ON_ERROR);
+        try {
+            foreach ([
+                ['reservation_payments', 'reservation_id'],
+                ['reservation_refunds', 'payment_id'],
+            ] as [$table, $column]) {
+                $invalidContents = $contents;
+                $invalidContents['tables'][$table][0][$column] = 99999999;
+                file_put_contents($backupPath, Crypt::encryptString(json_encode($invalidContents, JSON_THROW_ON_ERROR)), LOCK_EX);
+
+                try {
+                    $backupService->validate($backupName);
+                    $this->fail("Invalid {$table} relationship must fail validation.");
+                } catch (\InvalidArgumentException) {
+                    $this->assertSame($package->id, DB::table('reservations')->where('id', $reservation->id)->value('package_id'));
+                }
+            }
+        } finally {
+            foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
+                $backupService->delete($backup);
+            }
+        }
+    }
+
+    public function test_backup_validation_rejects_duplicate_reservation_codes(): void
+    {
+        $first = Reservation::create([
+            'full_name' => 'First duplicate-code reservation',
+            'contact_number' => '09123456789',
+            'email' => 'duplicate-code-one@example.test',
+            'address' => 'Test address',
+            'event_type' => 'Wedding',
+            'event_date' => '2030-01-01',
+            'event_time' => '10:00 AM',
+            'venue' => 'Test venue',
+            'guest_count' => 20,
+            'estimated_budget' => 500,
+            'status' => 'confirmed',
+            'reservation_code' => 'DUPLICATE-CODE-ONE',
+        ]);
+        $second = Reservation::create([
+            'full_name' => 'Second duplicate-code reservation',
+            'contact_number' => '09123456789',
+            'email' => 'duplicate-code-two@example.test',
+            'address' => 'Test address',
+            'event_type' => 'Wedding',
+            'event_date' => '2030-01-02',
+            'event_time' => '10:00 AM',
+            'venue' => 'Test venue',
+            'guest_count' => 20,
+            'estimated_budget' => 500,
+            'status' => 'confirmed',
+            'reservation_code' => 'DUPLICATE-CODE-TWO',
+        ]);
+        $backupService = app(BackupService::class);
+        $existingBackups = $backupService->listBackups();
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+        $contents = json_decode(Crypt::decryptString(file_get_contents($backupPath)), true, 512, JSON_THROW_ON_ERROR);
+        $contents['tables']['reservations'][1]['reservation_code'] = $contents['tables']['reservations'][0]['reservation_code'];
+        file_put_contents($backupPath, Crypt::encryptString(json_encode($contents, JSON_THROW_ON_ERROR)), LOCK_EX);
+
+        try {
+            $this->assertNotSame($first->reservation_code, $second->reservation_code);
+            $this->assertFalse($backupService->inspect($backupName)['compatible']);
+            $this->expectException(\InvalidArgumentException::class);
+            $backupService->validate($backupName);
+        } finally {
+            foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
+                $backupService->delete($backup);
+            }
+        }
+    }
+
+    public function test_generic_settings_values_are_excluded_and_live_settings_survive_restore(): void
+    {
+        DB::table('settings')->insert([
+            'key' => 'arbitrary-sensitive-setting',
+            'value' => 'do-not-back-up-this-value',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $backupService = app(BackupService::class);
+        $existingBackups = $backupService->listBackups();
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+
+        try {
+            $payload = json_decode(Crypt::decryptString(file_get_contents($backupPath)), true, 512, JSON_THROW_ON_ERROR);
+            $this->assertSame([], $payload['tables']['settings']);
+            $this->assertStringNotContainsString('arbitrary-sensitive-setting', file_get_contents($backupPath));
+            $this->assertStringNotContainsString('do-not-back-up-this-value', file_get_contents($backupPath));
+            $validation = $backupService->validate($backupName);
+
+            DB::table('settings')->where('key', 'arbitrary-sensitive-setting')->update([
+                'value' => 'changed-live-value',
+            ]);
+            $backupService->restore($backupName);
+            $verification = $backupService->verifyRestoration($validation);
+
+            $this->assertTrue($verification['success'], implode(' ', $verification['warnings']));
+            $this->assertDatabaseHas('settings', [
+                'key' => 'arbitrary-sensitive-setting',
+                'value' => 'changed-live-value',
+            ]);
+        } finally {
+            DB::table('settings')->where('key', 'arbitrary-sensitive-setting')->delete();
+            foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
+                $backupService->delete($backup);
+            }
         }
     }
 
@@ -743,8 +1139,8 @@ class BackupSafetyTest extends TestCase
             try {
                 $backupService->restore($backupName);
                 $this->fail('A unique constraint violation should abort the restore.');
-            } catch (QueryException) {
-                // The transaction must leave the current business and authentication state intact.
+            } catch (\InvalidArgumentException|QueryException) {
+                // Invalid backup data or a database constraint must leave the current state intact.
             }
 
             $this->assertSame('Must roll back to this value', $package->fresh()->description);
@@ -968,6 +1364,7 @@ class BackupSafetyTest extends TestCase
         $contents['created_at'] = '2020-01-02T03:04:05.123456+08:00';
         $contents['tables']['users'] = [
             User::factory()->make([
+                'id' => 999999,
                 'role' => 'full',
                 'password' => 'ArchivedSecret#2020',
             ])->getAttributes(),

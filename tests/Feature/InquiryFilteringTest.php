@@ -34,7 +34,7 @@ class InquiryFilteringTest extends TestCase
     }
 
     /** Everything from the "All inquiries" results container onward, since that section (unlike
-     *  "Needs attention") is the one actually affected by the view/priority/search filters. */
+     *  "Needs attention") is the one actually affected by the view and search filters. */
     private function allInquiriesSection(string $html): string
     {
         $position = strpos($html, 'id="inquiry-results"');
@@ -54,18 +54,6 @@ class InquiryFilteringTest extends TestCase
         $section = $this->allInquiriesSection($response->getContent());
         $this->assertStringContainsString('Responded one', $section);
         $this->assertStringNotContainsString('Closed one', $section);
-    }
-
-    public function test_priority_filter_narrows_the_list(): void
-    {
-        $this->handledInquiry(['priority' => 'urgent', 'subject' => 'Urgent one']);
-        $this->handledInquiry(['priority' => 'low', 'subject' => 'Low one']);
-
-        $response = $this->withSession(self::ADMIN)->get(route('admin.inquiries', ['priority' => 'urgent']));
-
-        $response->assertOk();
-        $response->assertSee('Urgent one');
-        $response->assertDontSee('Low one');
     }
 
     public function test_search_matches_subject_and_email(): void

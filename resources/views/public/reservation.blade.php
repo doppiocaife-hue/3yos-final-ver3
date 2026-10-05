@@ -111,7 +111,7 @@
                         <div class="wizard-stepper-item" data-stepper-step="4"><span class="wizard-stepper-num">4</span><span class="wizard-stepper-label">Review</span></div>
                     </div>
 
-                    <form method="POST" action="{{ route('reservation.store') }}" id="reservation-form">@csrf<input type="text" name="website" class="d-none" tabindex="-1" autocomplete="off"><input type="hidden" name="form_started" value="{{ now()->timestamp }}">
+                    <form method="POST" action="{{ route('reservation.store') }}" id="reservation-form">@csrf<input type="text" name="website" class="d-none" tabindex="-1" autocomplete="off"><input type="hidden" name="submission_key" value="{{ old('submission_key', $submissionKey) }}"><input type="hidden" name="form_started" value="{{ now()->timestamp }}">
 
                         <fieldset class="wizard-step" data-step="1">
                             <legend class="wizard-step-title">Tell us about your event</legend>

@@ -5,8 +5,8 @@ namespace App\Services;
 use Carbon\Carbon;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -41,6 +41,17 @@ class BackupService
         'gallery_items',
     ];
 
+    private const LEGACY_REQUIRED_TABLES = [
+        'services',
+        'packages',
+        'clients',
+        'reservations',
+        'inquiries',
+        'activity_logs',
+        'settings',
+        'notification_templates',
+    ];
+
     private const REQUIRED_TABLES = [
         'users',
         'services',
@@ -57,9 +68,12 @@ class BackupService
     ];
 
     private const MAX_UPLOAD_SIZE = 20 * 1024 * 1024;
+
     public const BACKUP_FORMAT = '3YOS_JSON_BACKUP';
 
     public const BACKUP_VERSION = 2;
+
+    private const VALIDATION_VERSION = 2;
 
     public function currentFormat(): array
     {
@@ -107,6 +121,7 @@ class BackupService
 
         try {
             $this->assertBackupCompatible($contents);
+            $this->assertBackupRelationships($contents['tables']);
             $compatible = true;
         } catch (\InvalidArgumentException) {
             $compatible = false;
@@ -132,7 +147,9 @@ class BackupService
 
         foreach (self::TABLES as $table) {
             if (Schema::hasTable($table)) {
-                $contents['tables'][$table] = DB::table($table)->get()->map(fn ($row) => (array) $row)->all();
+                $contents['tables'][$table] = $table === 'settings'
+                    ? []
+                    : DB::table($table)->get()->map(fn ($row) => (array) $row)->all();
             }
         }
 
@@ -201,7 +218,10 @@ class BackupService
 
         $tables = $this->detachArchivedUserReferences($contents['tables']);
 
-        $restoreTables = array_values(array_filter(self::TABLES, fn ($table) => array_key_exists($table, $tables) && Schema::hasTable($table)));
+        $restoreTables = array_values(array_filter(
+            self::TABLES,
+            fn ($table) => $table !== 'settings' && array_key_exists($table, $tables) && Schema::hasTable($table),
+        ));
         $rowsByTable = [];
         $columnsByTable = [];
         foreach ($restoreTables as $table) {
@@ -278,14 +298,29 @@ class BackupService
         $this->assertBackupRelationships($contents['tables']);
         $this->writeMetadata($backup, $contents);
 
+        $definition = $this->backupDefinition($contents);
         $expectedRows = [];
         foreach ($contents['tables'] as $table => $rows) {
-            if ($table !== 'activity_logs') {
+            if (! in_array($table, ['activity_logs', 'settings', 'users'], true)) {
                 $expectedRows[$table] = count($rows);
             }
         }
+        if (array_key_exists('reservations', $contents['tables'])) {
+            foreach (['reservation_payments', 'reservation_refunds'] as $table) {
+                if (! array_key_exists($table, $contents['tables'])) {
+                    $expectedRows[$table] = 0;
+                }
+            }
+        }
+        $archivedTables = $this->detachArchivedUserReferences($contents['tables']);
 
-        return ['expected_rows' => $expectedRows];
+        return [
+            'expected_rows' => $expectedRows,
+            'expected_tables' => $definition['required_tables'],
+            'required_columns' => $this->requiredColumnsForTables(array_keys($contents['tables'])),
+            'expected_activity_logs' => $archivedTables['activity_logs'] ?? [],
+            'protected_administrators' => $this->administratorProtectionState(),
+        ];
     }
 
     public function metadataForDisplay(string $backup): array
@@ -305,6 +340,9 @@ class BackupService
                     clearstatcache(true, $backupPath);
                     if (($metadata['file_size'] ?? null) !== (filesize($backupPath) ?: 0)
                         || ($metadata['file_modified_at'] ?? null) !== (filemtime($backupPath) ?: 0)) {
+                        return $this->unknownMetadata($backup);
+                    }
+                    if (($metadata['validation_version'] ?? null) !== self::VALIDATION_VERSION) {
                         return $this->unknownMetadata($backup);
                     }
                     $metadata['created_at'] = $this->parseCreationTime($metadata['created_at']);
@@ -362,14 +400,26 @@ class BackupService
         ];
     }
 
-    public function verifyRestoration(array $expectedRows): array
+    public function verifyRestoration(array $expectations): array
     {
         $issues = [];
+        $expectedTables = $expectations['expected_tables'] ?? [];
+        $requiredColumns = $expectations['required_columns'] ?? [];
+        $expectedRows = $expectations['expected_rows'] ?? [];
 
-        foreach (self::REQUIRED_TABLES as $table) {
+        foreach ($expectedTables as $table) {
             if (! Schema::hasTable($table)) {
-                $issues[] = 'A required application table is missing.';
-                break;
+                $issues[] = 'A required backup table is missing after restoration.';
+
+                continue;
+            }
+
+            $actualColumns = Schema::getColumnListing($table);
+            foreach ($requiredColumns[$table] ?? [] as $column) {
+                if (! in_array($column, $actualColumns, true)) {
+                    $issues[] = 'A required table column is missing after restoration.';
+                    break;
+                }
             }
         }
 
@@ -380,46 +430,29 @@ class BackupService
             }
         }
 
-        if (Schema::hasTable('reservations')) {
-            $duplicateCodes = DB::table('reservations')
-                ->select('reservation_code')
-                ->whereNotNull('reservation_code')
-                ->groupBy('reservation_code')
-                ->havingRaw('COUNT(*) > 1')
-                ->exists();
-            if ($duplicateCodes) {
-                $issues[] = 'Duplicate reservation codes were found.';
+        if (Schema::hasTable('reservations') && $this->hasDuplicateReservationCodes()) {
+            $issues[] = 'Duplicate reservation codes were found.';
+        }
+
+        foreach ($this->databaseRelationshipIssues() as $issue) {
+            $issues[] = $issue;
+        }
+
+        foreach ($expectations['expected_activity_logs'] ?? [] as $row) {
+            if (! Schema::hasTable('activity_logs')) {
+                $issues[] = 'A required archived activity record is missing.';
+                break;
+            }
+            $row = array_intersect_key($row, array_flip(Schema::getColumnListing('activity_logs')));
+            if ($row !== [] && ! DB::table('activity_logs')->where($row)->exists()) {
+                $issues[] = 'An archived activity record was not restored.';
+                break;
             }
         }
 
-        foreach ([
-            ['reservations', 'client_id', 'clients'],
-            ['reservations', 'package_id', 'packages'],
-        ] as [$child, $foreignKey, $parent]) {
-            if (Schema::hasTable($child) && Schema::hasTable($parent)
-                && DB::table($child)->whereNotNull($foreignKey)
-                    ->leftJoin($parent, $child.'.'.$foreignKey, '=', $parent.'.id')
-                    ->whereNull($parent.'.id')->exists()) {
-                $issues[] = 'A restored reservation has no matching client or package.';
-            }
-        }
-
-        foreach ([
-            ['reservation_payments', 'reservation_id', 'reservations'],
-            ['reservation_refunds', 'reservation_id', 'reservations'],
-        ] as [$child, $foreignKey, $parent]) {
-            if (Schema::hasTable($child) && Schema::hasTable($parent)
-                && DB::table($child)->leftJoin($parent, $child.'.'.$foreignKey, '=', $parent.'.id')
-                    ->whereNull($parent.'.id')->exists()) {
-                $issues[] = 'A restored payment or refund has no matching reservation.';
-            }
-        }
-
-        if (Schema::hasTable('reservation_refunds') && Schema::hasTable('reservation_payments')
-            && DB::table('reservation_refunds')->whereNotNull('payment_id')
-                ->leftJoin('reservation_payments', 'reservation_refunds.payment_id', '=', 'reservation_payments.id')
-                ->whereNull('reservation_payments.id')->exists()) {
-            $issues[] = 'A restored refund has no matching payment.';
+        if (isset($expectations['protected_administrators'])
+            && $expectations['protected_administrators'] !== $this->administratorProtectionState()) {
+            $issues[] = 'Administrator accounts changed during restoration.';
         }
 
         return [
@@ -523,33 +556,173 @@ class BackupService
         }
 
         $tables = $contents['tables'];
-        if ($tables === []) {
-            throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
-        }
-
-        $allowedTables = ! $hasVersion || $version === 1 ? self::LEGACY_TABLES : self::TABLES;
-        $unexpectedTables = array_diff(array_keys($tables), $allowedTables);
+        $definition = $this->backupDefinition($contents);
+        $unexpectedTables = array_diff(array_keys($tables), $definition['allowed_tables']);
         if ($unexpectedTables !== []) {
             throw new \InvalidArgumentException('Backup format is not compatible with the current system.');
         }
 
+        foreach ($definition['required_tables'] as $table) {
+            if (! array_key_exists($table, $tables)) {
+                throw new \InvalidArgumentException('Backup format is not compatible with the current system: a required table is missing.');
+            }
+        }
+
+        $legacyLedgerMissing = ! array_key_exists('reservation_payments', $tables)
+            && ! array_key_exists('reservation_refunds', $tables)
+            && in_array('reservations', $tables, true)
+            && (array_key_exists('backup_version', $contents) ? (int) $contents['backup_version'] === self::BACKUP_VERSION : true);
+        if ($legacyLedgerMissing) {
+            foreach (['reservation_payments', 'reservation_refunds'] as $table) {
+                if (array_key_exists($table, $tables)) {
+                    continue;
+                }
+                if (in_array($table, $definition['required_tables'], true)) {
+                    $definition['required_tables'] = array_values(array_filter(
+                        $definition['required_tables'],
+                        static fn (string $requiredTable): bool => $requiredTable !== $table,
+                    ));
+                }
+            }
+        }
+
+        foreach ($definition['required_tables'] as $table) {
+            if (! array_key_exists($table, $tables)) {
+                throw new \InvalidArgumentException('Backup format is not compatible with the current system: a required table is missing.');
+            }
+        }
+
+        if ($hasVersion && $version === self::BACKUP_VERSION) {
+            if (! $this->hasTimezoneAwareCreationTime($contents['created_at'] ?? null)) {
+                throw new \InvalidArgumentException('The backup file is invalid or corrupted: required metadata is missing.');
+            }
+        } elseif (array_key_exists('created_at', $contents)
+            && (! is_string($contents['created_at']) || strtotime($contents['created_at']) === false)) {
+            throw new \InvalidArgumentException('The backup file is invalid or corrupted: creation metadata is invalid.');
+        }
+
         foreach ($tables as $table => $rows) {
-            if (! is_string($table) || ! in_array($table, $allowedTables, true)) {
+            if (! is_string($table) || ! in_array($table, $definition['allowed_tables'], true)) {
                 throw new \InvalidArgumentException('Backup format is not compatible with the current system.');
             }
             if (! is_array($rows) || ! array_is_list($rows)) {
                 throw new \InvalidArgumentException("The backup file is invalid or corrupted for {$table}.");
             }
-
-            foreach ($rows as $row) {
-                if (! is_array($row)) {
-                    throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
-                }
-            }
             if (! Schema::hasTable($table)) {
                 throw new \InvalidArgumentException('Backup format is not compatible with the current system.');
             }
+
+            $requiredColumns = $this->requiredColumnsForTable($table);
+            $availableColumns = Schema::getColumnListing($table);
+            if (array_diff($requiredColumns, $availableColumns) !== []) {
+                throw new \InvalidArgumentException('Backup format is not compatible with the current database schema.');
+            }
+
+            if ($table === 'settings' && $rows !== []) {
+                throw new \InvalidArgumentException('The backup contains unsupported settings values.');
+            }
+
+            foreach ($rows as $row) {
+                if (! is_array($row)) {
+                    throw new \InvalidArgumentException("The backup file contains an invalid row for {$table}.");
+                }
+                foreach ($requiredColumns as $column) {
+                    if (! array_key_exists($column, $row) || $row[$column] === null) {
+                        throw new \InvalidArgumentException("The backup file contains an incomplete {$column} field for {$table}.");
+                    }
+                }
+                if (array_key_exists('service_contracts', $row)
+                    && $row['service_contracts'] !== null
+                    && ! $this->isValidContractList($row['service_contracts'])) {
+                    throw new \InvalidArgumentException('The backup contains invalid contract references.');
+                }
+            }
         }
+    }
+
+    private function backupDefinition(array $contents): array
+    {
+        $tables = $contents['tables'] ?? [];
+        $version = $contents['backup_version'] ?? null;
+
+        if (! array_key_exists('backup_version', $contents)) {
+            return [
+                'required_tables' => self::LEGACY_REQUIRED_TABLES,
+                'allowed_tables' => self::LEGACY_TABLES,
+            ];
+        }
+
+        $requiredTables = self::TABLES;
+        $allowedTables = $version === 1 ? self::LEGACY_TABLES : self::TABLES;
+
+        $legacyLedgerMissing = ! array_key_exists('reservation_payments', $tables)
+            && ! array_key_exists('reservation_refunds', $tables)
+            && array_key_exists('reservations', $tables)
+            && $version === self::BACKUP_VERSION;
+
+        if ($legacyLedgerMissing) {
+            $requiredTables = array_values(array_filter(
+                $requiredTables,
+                static fn (string $table): bool => ! in_array($table, ['reservation_payments', 'reservation_refunds'], true),
+            ));
+        }
+
+        return [
+            'required_tables' => $requiredTables,
+            'allowed_tables' => $allowedTables,
+        ];
+    }
+
+    private function requiredColumnsForTable(string $table): array
+    {
+        if ($table === 'users') {
+            return ['id', 'name', 'email'];
+        }
+
+        $requiredColumns = [];
+        foreach (Schema::getColumns($table) as $column) {
+            if ($column['name'] === 'id'
+                || (! $column['nullable'] && ($column['default'] ?? null) === null && ! ($column['auto_increment'] ?? false))) {
+                $requiredColumns[] = $column['name'];
+            }
+        }
+
+        return array_values(array_unique($requiredColumns));
+    }
+
+    private function requiredColumnsForTables(array $tables): array
+    {
+        $columns = [];
+        foreach ($tables as $table) {
+            $columns[$table] = $this->requiredColumnsForTable($table);
+        }
+
+        return $columns;
+    }
+
+    private function hasTimezoneAwareCreationTime(mixed $createdAt): bool
+    {
+        if (! is_string($createdAt)
+            || preg_match('/(?:Z|[+-]\d{2}:\d{2})$/i', $createdAt) !== 1) {
+            return false;
+        }
+
+        return $this->parseCreationTime($createdAt) !== null;
+    }
+
+    private function isValidContractList(mixed $value): bool
+    {
+        if (is_string($value)) {
+            try {
+                $value = json_decode($value, true, 512, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                return false;
+            }
+        }
+
+        return is_array($value)
+            && array_is_list($value)
+            && count(array_filter($value, static fn ($path): bool => is_string($path) && $path !== '')) === count($value);
     }
 
     private function assertDatabaseReady(): void
@@ -587,10 +760,18 @@ class BackupService
 
     private function assertBackupRelationships(array $tables): void
     {
-        $idsFor = static fn (string $table): array => array_fill_keys(array_map(
-            static fn (array $row): string => (string) ($row['id'] ?? ''),
-            $tables[$table] ?? [],
-        ), true);
+        $idsFor = static function (string $table) use ($tables): array {
+            $ids = [];
+            foreach ($tables[$table] ?? [] as $row) {
+                $id = (string) $row['id'];
+                if (isset($ids[$id])) {
+                    throw new \InvalidArgumentException("The backup contains duplicate {$table} identifiers.");
+                }
+                $ids[$id] = true;
+            }
+
+            return $ids;
+        };
 
         $reservations = $idsFor('reservations');
         $payments = $idsFor('reservation_payments');
@@ -606,33 +787,97 @@ class BackupService
                 }
                 $reservationCodes[$code] = true;
             }
-            if (isset($row['client_id']) && $row['client_id'] !== null && array_key_exists('clients', $tables)
+            if (($row['client_id'] ?? null) !== null && array_key_exists('clients', $tables)
                 && ! isset($clients[(string) $row['client_id']])) {
                 throw new \InvalidArgumentException('The backup contains an invalid relationship.');
             }
-            if (isset($row['package_id']) && $row['package_id'] !== null && array_key_exists('packages', $tables)
+            if (($row['package_id'] ?? null) !== null && array_key_exists('packages', $tables)
                 && ! isset($packages[(string) $row['package_id']])) {
                 throw new \InvalidArgumentException('The backup contains an invalid relationship.');
             }
         }
 
         foreach ($tables['reservation_payments'] ?? [] as $row) {
-            if (isset($row['reservation_id']) && array_key_exists('reservations', $tables)
+            if (array_key_exists('reservations', $tables)
                 && ! isset($reservations[(string) $row['reservation_id']])) {
                 throw new \InvalidArgumentException('The backup contains an invalid relationship.');
             }
         }
 
         foreach ($tables['reservation_refunds'] ?? [] as $row) {
-            if (isset($row['reservation_id']) && array_key_exists('reservations', $tables)
+            if (array_key_exists('reservations', $tables)
                 && ! isset($reservations[(string) $row['reservation_id']])) {
                 throw new \InvalidArgumentException('The backup contains an invalid relationship.');
             }
-            if (isset($row['payment_id']) && $row['payment_id'] !== null && array_key_exists('reservation_payments', $tables)
+            if (! array_key_exists('reservation_payments', $tables) && ($row['payment_id'] ?? null) !== null) {
+                throw new \InvalidArgumentException('The backup contains an invalid relationship.');
+            }
+            if (($row['payment_id'] ?? null) !== null && array_key_exists('reservation_payments', $tables)
                 && ! isset($payments[(string) $row['payment_id']])) {
                 throw new \InvalidArgumentException('The backup contains an invalid relationship.');
             }
         }
+    }
+
+    private function hasDuplicateReservationCodes(): bool
+    {
+        return DB::table('reservations')
+            ->select('reservation_code')
+            ->whereNotNull('reservation_code')
+            ->groupBy('reservation_code')
+            ->havingRaw('COUNT(*) > 1')
+            ->exists();
+    }
+
+    private function databaseRelationshipIssues(): array
+    {
+        $issues = [];
+        foreach ([
+            ['reservations', 'client_id', 'clients', true],
+            ['reservations', 'package_id', 'packages', true],
+            ['reservation_payments', 'reservation_id', 'reservations', false],
+            ['reservation_refunds', 'reservation_id', 'reservations', false],
+        ] as [$child, $foreignKey, $parent, $nullable]) {
+            if (! Schema::hasTable($child) || ! Schema::hasTable($parent) || ! Schema::hasColumn($child, $foreignKey)) {
+                continue;
+            }
+            $query = DB::table($child)->leftJoin($parent, $child.'.'.$foreignKey, '=', $parent.'.id');
+            if ($nullable) {
+                $query->whereNotNull($child.'.'.$foreignKey);
+            }
+            if ($query->whereNull($parent.'.id')->exists()) {
+                $issues[] = 'A restored reservation, payment, or refund has no matching parent record.';
+                break;
+            }
+        }
+
+        if (Schema::hasTable('reservation_refunds')
+            && Schema::hasTable('reservation_payments')
+            && Schema::hasColumn('reservation_refunds', 'payment_id')
+            && DB::table('reservation_refunds')->whereNotNull('payment_id')
+                ->leftJoin('reservation_payments', 'reservation_refunds.payment_id', '=', 'reservation_payments.id')
+                ->whereNull('reservation_payments.id')->exists()) {
+            $issues[] = 'A restored refund has no matching payment.';
+        }
+
+        return $issues;
+    }
+
+    private function administratorProtectionState(): array
+    {
+        if (! Schema::hasTable('users')) {
+            return [];
+        }
+
+        $availableColumns = Schema::getColumnListing('users');
+        $protectedColumns = array_values(array_intersect(
+            ['id', 'email', 'password', 'role', 'is_active', 'session_version'],
+            $availableColumns,
+        ));
+
+        return DB::table('users')->orderBy('id')->get($protectedColumns)->map(
+            static fn ($user): array => (array) $user,
+        )->all();
     }
 
     private function isRecognizedLegacyBackup(array $contents): bool
@@ -737,6 +982,7 @@ class BackupService
             'created_at' => $createdAt,
             'compatible' => true,
             'validation_status' => 'validated',
+            'validation_version' => self::VALIDATION_VERSION,
             'validated_at' => now()->toIso8601String(),
             'encrypted' => $this->isEncrypted($backup),
             'legacy' => ! isset($contents['backup_version'])

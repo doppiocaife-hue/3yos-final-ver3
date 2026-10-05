@@ -113,7 +113,7 @@ class AdminCalendarReservationLinkTest extends TestCase
     public function test_reservation_detail_opened_from_the_calendar_still_shows_its_activity_history(): void
     {
         $reservation = $this->reservation();
-        $this->withSession(self::ADMIN)->patch(route('admin.reservations.status', $reservation), ['status' => 'confirmed']);
+        $this->withSession(self::ADMIN)->post(route('admin.reservations.accept', $reservation));
 
         $response = $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation));
 

@@ -158,7 +158,15 @@ class AuthController extends Controller
             if ($validSuperAdminPassword) {
                 RateLimiter::clear($throttleKey);
                 $request->session()->regenerate();
-                $request->session()->forget(['admin_user_id', 'admin_session_version']);
+                $request->session()->forget([
+                    'admin_user_id',
+                    'admin_session_version',
+                    'manage_website_auth_user_id',
+                    'manage_website_auth_source',
+                    'manage_website_auth_email',
+                    'manage_website_auth_expires_at',
+                    'manage_website_return_to',
+                ]);
                 $request->session()->put('is_admin', true);
                 $request->session()->put('admin_role', 'full');
                 $request->session()->put('admin_auth_source', 'emergency');
@@ -190,6 +198,13 @@ class AuthController extends Controller
         if ($validPassword && $user->is_active === true) {
             RateLimiter::clear($throttleKey);
             $request->session()->regenerate();
+            $request->session()->forget([
+                'manage_website_auth_user_id',
+                'manage_website_auth_source',
+                'manage_website_auth_email',
+                'manage_website_auth_expires_at',
+                'manage_website_return_to',
+            ]);
             $request->session()->put('is_admin', true);
             $request->session()->put('admin_role', $user->role);
             $request->session()->put('admin_auth_source', 'database');

@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Inquiry extends Model
 {
-    protected $fillable = ['full_name', 'contact_number', 'email', 'subject', 'category', 'message', 'status', 'priority', 'admin_reply', 'replied_at', 'viewed_at'];
+    protected $fillable = ['full_name', 'contact_number', 'email', 'subject', 'category', 'message', 'status', 'admin_reply', 'replied_at', 'viewed_at'];
 
     protected function casts(): array
     {
@@ -35,15 +35,4 @@ class Inquiry extends Model
         });
     }
 
-    /** Newest first, with the most urgent priority first within the same recency tier. */
-    public function scopeByPriorityThenRecency(Builder $query): Builder
-    {
-        return $query->orderByRaw("CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 WHEN 'low' THEN 4 ELSE 3 END")
-            ->latest();
-    }
-
-    public static function priorityLabel(?string $priority): string
-    {
-        return ucfirst($priority ?? 'normal');
-    }
 }

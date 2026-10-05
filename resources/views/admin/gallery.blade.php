@@ -16,7 +16,7 @@
 
     <section class="gallery-upload mb-4">
         <h2 class="h5 mb-3">Add photo</h2>
-        <form method="POST" action="{{ route('admin.gallery.store') }}" enctype="multipart/form-data" data-password-confirm data-password-message="Add this gallery photo? Confirm your administrator password to continue.">
+        <form method="POST" action="{{ route('admin.gallery.store') }}" enctype="multipart/form-data">
             @csrf
             <div class="mb-3">
                 <label class="form-label" for="new-gallery-image">Image file</label>
@@ -48,13 +48,13 @@
                     <div class="gallery-admin-controls">
                         <div class="gallery-admin-actions">
                             <button type="button" class="btn btn-outline-secondary btn-sm gallery-edit-toggle" aria-expanded="false" aria-controls="gallery-editor-{{ $item->id }}">Edit</button>
-                            <form method="POST" action="{{ route('admin.gallery.destroy', $item) }}" data-password-confirm data-password-message="Delete this gallery image? Confirm your administrator password to continue.">
+                            <form method="POST" action="{{ route('admin.gallery.destroy', $item) }}">
                                 @csrf @method('DELETE')
                                 <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
                             </form>
                         </div>
                         <div class="gallery-admin-editor-body" id="gallery-editor-{{ $item->id }}" hidden>
-                            <form method="POST" action="{{ route('admin.gallery.update', $item) }}" enctype="multipart/form-data" data-password-confirm data-password-message="Save these image changes? Confirm your administrator password to continue.">
+                            <form method="POST" action="{{ route('admin.gallery.update', $item) }}" enctype="multipart/form-data">
                                 @csrf @method('PUT')
                                 <label class="form-label" for="gallery-image-{{ $item->id }}">Replace image</label>
                                 <input id="gallery-image-{{ $item->id }}" class="form-control mb-2" type="file" name="image" accept="image/jpeg,image/png,image/webp">

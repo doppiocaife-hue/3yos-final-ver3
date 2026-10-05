@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Package;
+use App\Rules\UniqueNormalizedName;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -18,8 +19,13 @@ class AdminPackageController extends Controller
 
     private function validated(Request $request, ?Package $package = null): array
     {
+        $name = $request->input('name');
+        if (is_string($name)) {
+            $request->merge(['name' => \Illuminate\Support\Str::squish($name)]);
+        }
+
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:100'], 'description' => ['nullable', 'string'], 'price' => ['required', 'numeric', 'min:0'],
+            'name' => ['required', 'string', 'max:100', new UniqueNormalizedName($package ?? new Package(), 'package')], 'description' => ['nullable', 'string'], 'price' => ['required', 'numeric', 'min:0'],
             'menu' => ['nullable', 'string'],
             'freebies' => ['nullable', 'string'], 'addons' => ['nullable', 'string'], 'event_type' => ['nullable', 'string', 'max:255'], 'is_featured' => ['nullable', 'boolean'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],

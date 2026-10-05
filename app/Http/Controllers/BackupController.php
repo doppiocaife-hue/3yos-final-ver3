@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
-use App\Services\BackupService;
 use App\Services\AdminPasswordVerifier;
+use App\Services\BackupService;
 use Illuminate\Http\Request;
 
 class BackupController extends Controller
@@ -187,7 +187,7 @@ class BackupController extends Controller
             }
             $this->recordBackupActivity($request, 'Recovery safety backup created', 'Created encrypted pre-restore safety backup '.basename($safetyBackupPath).'.');
             $restoredRows = $backupService->restore($data['backup']);
-            $verification = $backupService->verifyRestoration($validation['expected_rows']);
+            $verification = $backupService->verifyRestoration($validation);
             $this->recordBackupActivity(
                 $request,
                 'Recovery verification completed',

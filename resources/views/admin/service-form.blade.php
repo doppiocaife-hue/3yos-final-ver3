@@ -3,7 +3,7 @@
 @section('content')
 <div class="content-card p-4">
     <div class="page-header"><div><a class="back-link" href="{{ route('admin.services.index') }}">← Back to services</a><h1 class="fw-bold mb-1">{{ $service->exists ? 'Edit service' : 'Add service' }}</h1></div></div>
-    <form method="POST" action="{{ $service->exists ? route('admin.services.update', $service) : route('admin.services.store') }}" data-password-confirm data-password-message="{{ $service->exists ? 'Update this service? Confirm your administrator password to continue.' : 'Add this service? Confirm your administrator password to continue.' }}">
+    <form method="POST" action="{{ $service->exists ? route('admin.services.update', $service) : route('admin.services.store') }}">
         @csrf @if($service->exists) @method('PUT') @endif
         <div class="row g-3">
             <div class="col-md-6"><label class="form-label">Service name</label><input class="form-control" name="name" value="{{ old('name', $service->name) }}" required></div>

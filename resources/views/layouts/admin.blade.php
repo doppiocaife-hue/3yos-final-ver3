@@ -8,10 +8,20 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ asset('css/admin-workspace.css') }}?v={{ filemtime(public_path('css/admin-workspace.css')) }}">
-    <link rel="stylesheet" href="{{ asset('css/scroll-header.css') }}?v={{ filemtime(public_path('css/scroll-header.css')) }}">
 </head>
 <body>
 @php
+    $manageWebsiteRouteActive = request()->routeIs('admin.packages.*', 'admin.services.*', 'admin.gallery.*');
+    $manageWebsiteExpiresAt = session('manage_website_auth_expires_at');
+    $manageWebsiteAuthenticated = session('admin_role') === 'full'
+        && session('manage_website_auth_user_id') === session('admin_user_id')
+        && session('manage_website_auth_source') === session('admin_auth_source')
+        && session('manage_website_auth_email') === strtolower((string) session('admin_email'))
+        && is_numeric($manageWebsiteExpiresAt)
+        && (int) $manageWebsiteExpiresAt > now()->timestamp;
+    $manageWebsiteOpen = $manageWebsiteAuthenticated || $manageWebsiteRouteActive;
+    $adminHeaderName = session('admin_name', 'Administrator');
+    $adminHeaderDate = now(config('app.timezone'))->format('F j, Y');
     $adminHeaderContext = match (request()->route()?->getName()) {
         'admin.dashboard' => "Today's operations and business overview",
         'admin.reservations', 'admin.reservations.export' => 'Manage and review catering reservations',
@@ -51,9 +61,15 @@
         </a>
         @if(session('admin_role') === 'full')
         <div class="nav-caption mt-3">Content & insights</div>
-        <a class="nav-link {{ request()->routeIs('admin.packages.*') ? 'active' : '' }}" href="{{ route('admin.packages.index') }}" @if(request()->routeIs('admin.packages.*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 8.5 4.5v9L12 21l-8.5-4.5v-9L12 3Z"/><path d="m3.8 7.7 8.2 4.5 8.2-4.5M12 12.2V21M8 5.1l8.4 4.6"/></svg></span><span>Packages</span></a>
-        <a class="nav-link {{ request()->routeIs('admin.services.*') ? 'active' : '' }}" href="{{ route('admin.services.index') }}" @if(request()->routeIs('admin.services.*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4v5a4 4 0 0 0 8 0V4M8 4v6M4 9h8M16 4v16M16 4a4 4 0 0 1 4 4v3h-4"/></svg></span><span>Services</span></a>
-        <a class="nav-link {{ request()->routeIs('admin.gallery.*') ? 'active' : '' }}" href="{{ route('admin.gallery.index') }}" @if(request()->routeIs('admin.gallery.*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg></span><span>Gallery</span></a>
+        <button class="nav-link manage-website-toggle {{ $manageWebsiteRouteActive ? 'active' : '' }}" id="manageWebsiteToggle" type="button" aria-expanded="{{ $manageWebsiteOpen ? 'true' : 'false' }}" aria-controls="manageWebsiteSubnav" data-manage-website-unlocked="{{ $manageWebsiteAuthenticated ? 'true' : 'false' }}">
+            <span class="manage-website-label"><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3M12 14v3"/></svg></span><span>Manage Website</span></span>
+            <span class="manage-website-chevron" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></span>
+        </button>
+        <div class="manage-website-subnav" id="manageWebsiteSubnav" @if(! $manageWebsiteOpen) hidden @endif>
+            <a class="nav-link {{ request()->routeIs('admin.packages.*') ? 'active' : '' }}" href="{{ route('admin.packages.index') }}" @if(request()->routeIs('admin.packages.*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 8.5 4.5v9L12 21l-8.5-4.5v-9L12 3Z"/><path d="m3.8 7.7 8.2 4.5 8.2-4.5M12 12.2V21M8 5.1l8.4 4.6"/></svg></span><span>Packages</span></a>
+            <a class="nav-link {{ request()->routeIs('admin.services.*') ? 'active' : '' }}" href="{{ route('admin.services.index') }}" @if(request()->routeIs('admin.services.*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4v5a4 4 0 0 0 8 0V4M8 4v6M4 9h8M16 4v16M16 4a4 4 0 0 1 4 4v3h-4"/></svg></span><span>Services</span></a>
+            <a class="nav-link {{ request()->routeIs('admin.gallery.*') ? 'active' : '' }}" href="{{ route('admin.gallery.index') }}" @if(request()->routeIs('admin.gallery.*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg></span><span>Gallery</span></a>
+        </div>
         <a class="nav-link {{ request()->routeIs('admin.analytics') ? 'active' : '' }}" href="{{ route('admin.analytics') }}" @if(request()->routeIs('admin.analytics')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V5M4 20h17"/><path d="m7 15 4-4 3 2 6-7"/><circle cx="7" cy="15" r=".7"/><circle cx="11" cy="11" r=".7"/><circle cx="14" cy="13" r=".7"/><circle cx="20" cy="6" r=".7"/></svg></span><span>Analytics</span></a>
         <a class="nav-link {{ request()->routeIs('admin.reports*') ? 'active' : '' }}" href="{{ route('admin.reports') }}" @if(request()->routeIs('admin.reports*')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 20V3.5Z"/><path d="M14 3.5v5h5M9 13h6M9 16.5h6"/></svg></span><span>Reports</span></a>
         <a class="nav-link {{ request()->routeIs('admin.users') ? 'active' : '' }}" href="{{ route('admin.users') }}" @if(request()->routeIs('admin.users')) aria-current="page" @endif><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0M16 5a3.4 3.4 0 0 1 0 6.7M17.3 14.2a5.8 5.8 0 0 1 4 5.3"/></svg></span><span>Team Admins</span></a>
@@ -65,18 +81,34 @@
         <a class="nav-link {{ request()->routeIs('admin.support*') ? 'active' : '' }}" href="{{ route('admin.support') }}" @if(request()->routeIs('admin.support*')) aria-current="page" @endif>
             <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.3 9a2.7 2.7 0 0 1 5.2.9c0 1.8-2.5 2-2.5 3.6"/><path d="M12 17.2h.01"/></svg></span><span>Support</span>
         </a>
+        <div class="sidebar-utility">
+            <button class="nav-link sidebar-utility-button theme-toggle" id="themeToggle" type="button" aria-label="Enable dark mode" title="Enable dark mode" aria-pressed="false">
+                <span class="sidebar-icon" aria-hidden="true">&#9790;</span><span>Dark Mode</span>
+            </button>
+            <form method="POST" action="{{ route('admin.logout') }}">
+                @csrf
+                <button class="nav-link sidebar-utility-button sidebar-sign-out" type="submit">
+                    <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H10"/><path d="M13 8l4 4-4 4M17 12H9"/></svg></span><span>Sign Out</span>
+                </button>
+            </form>
+        </div>
         </nav>
+        <form id="manageWebsiteAuthForm" class="d-none" method="POST" action="{{ route('admin.manage-website.reauthenticate') }}" data-password-confirm data-password-title="Unlock Manage Website" data-password-label="Current administrator password" data-password-button="Unlock" data-password-message="{{ $errors->first('manage_website_password') ?: 'Enter your current administrator password to access Packages, Services, and Gallery.' }}">
+            @csrf
+            <input type="hidden" name="return_to" value="{{ session('manage_website_return_to', request()->getRequestUri()) }}">
+        </form>
     </aside>
     <div class="admin-main">
-        <header class="header-bar" data-scroll-header>
+        <header class="header-bar">
             <div class="admin-heading">
                 <button class="header-btn" type="button" id="adminMobileMenu" aria-label="Open navigation" aria-controls="adminSidebar" aria-expanded="false" title="Open navigation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-                <div class="admin-heading-context"><h4 class="mb-0">Operations workspace</h4><p class="mb-0">{{ $adminHeaderContext }}</p></div>
+                <div class="admin-heading-context">
+                    <h4 class="mb-0">Welcome, <span class="admin-header-name">{{ $adminHeaderName }}</span><span class="admin-header-date"> | {{ $adminHeaderDate }}</span></h4>
+                    <p class="mb-0">{{ $adminHeaderContext }}</p>
+                </div>
             </div>
             <div class="admin-header-actions">
-                <button class="header-btn theme-toggle" id="themeToggle" type="button" aria-label="Enable dark mode" title="Enable dark mode"><span aria-hidden="true">&#9790;</span></button>
                 <a href="{{ route('home') }}" class="header-btn">View website</a>
-                <form method="POST" action="{{ route('admin.logout') }}">@csrf<button class="header-btn header-btn-danger" type="submit">Sign out</button></form>
             </div>
         </header>
         <div class="admin-page-content">@yield('content')</div>
@@ -96,7 +128,6 @@
     </form>
 </dialog>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="{{ asset('js/scroll-header.js') }}?v={{ filemtime(public_path('js/scroll-header.js')) }}"></script>
 <script>
 (() => {
     const sidebar = document.getElementById('adminSidebar');
@@ -104,6 +135,7 @@
     const navBackdrop = document.getElementById('adminNavBackdrop');
     const mobileBreakpoint = window.matchMedia('(max-width: 991.98px)');
     const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = themeToggle?.querySelector('.sidebar-icon');
     const savedTheme = localStorage.getItem('admin-theme');
 
     const setNavigationOpen = (open, restoreFocus = false) => {
@@ -137,10 +169,10 @@
 
     const applyAdminTheme = (dark) => {
         document.body.classList.toggle('dark-mode', dark);
-        themeToggle.innerHTML = dark ? '&#9788;' : '&#9790;';
-        themeToggle.setAttribute('aria-label', dark ? 'Enable light mode' : 'Enable dark mode');
-        themeToggle.setAttribute('title', dark ? 'Enable light mode' : 'Enable dark mode');
-        themeToggle.setAttribute('aria-pressed', String(dark));
+        if (themeIcon) themeIcon.innerHTML = dark ? '&#9788;' : '&#9790;';
+        themeToggle?.setAttribute('aria-label', dark ? 'Enable light mode' : 'Enable dark mode');
+        themeToggle?.setAttribute('title', dark ? 'Enable light mode' : 'Enable dark mode');
+        themeToggle?.setAttribute('aria-pressed', String(dark));
     };
 
     applyAdminTheme(savedTheme === 'dark');
@@ -156,17 +188,9 @@ document.addEventListener('submit', (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || form.method.toLowerCase() === 'get' || form.hasAttribute('onsubmit') || form.hasAttribute('data-password-confirm')) return;
 
-    const status = form.querySelector('select[name="status"]')?.value || form.querySelector('input[name="status"]')?.value;
     const label = event.submitter?.textContent.trim().toLowerCase() || '';
     let message = form.dataset.confirmMessage || '';
 
-    if (!message && (form.hasAttribute('data-confirm-status') || status === 'cancelled' || label === 'cancel' || (status === 'confirmed' && label === 'accept'))) {
-        message = status === 'cancelled'
-            ? 'Cancel this reservation? The change will be saved immediately.'
-            : status === 'confirmed'
-                ? 'Accept this reservation? The change will be saved immediately.'
-                : 'Update this reservation status?';
-    }
     if (!message && /^(add|create|upload)\b/.test(label)) message = 'Add this item with the details entered?';
     if (!message && /^(save|update)\b/.test(label)) message = 'Update this item with the changes entered?';
 
@@ -272,6 +296,28 @@ document.querySelectorAll('form input:not([type="hidden"]), form select, form te
             form.requestSubmit();
         }
     });
+})();
+</script>
+<script>
+(() => {
+    const toggle = document.getElementById('manageWebsiteToggle');
+    const submenu = document.getElementById('manageWebsiteSubnav');
+    const authForm = document.getElementById('manageWebsiteAuthForm');
+
+    toggle?.addEventListener('click', () => {
+        if (toggle.dataset.manageWebsiteUnlocked !== 'true') {
+            authForm?.requestSubmit();
+            return;
+        }
+
+        const open = toggle.getAttribute('aria-expanded') !== 'true';
+        toggle.setAttribute('aria-expanded', String(open));
+        submenu.hidden = !open;
+    });
+
+    @if(session('manage_website_auth_required') || $errors->has('manage_website_password'))
+        authForm?.requestSubmit();
+    @endif
 })();
 </script>
 <script>

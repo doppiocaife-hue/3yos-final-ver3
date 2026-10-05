@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'ensure.full-admin' => \App\Http\Middleware\EnsureFullAdmin::class,
             'capture.activity' => \App\Http\Middleware\CaptureActivity::class,
             'confirm.admin-password' => \App\Http\Middleware\ConfirmAdminPassword::class,
+            'ensure.manage-website' => \App\Http\Middleware\EnsureManageWebsiteAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -205,30 +205,29 @@ class PublicPagesTest extends TestCase
             'email' => 'client@example.com',
             'address' => '123 Test Street, Cebu City',
             'event_type' => 'Wedding',
-            'event_date' => now()->addDays(5)->toDateString(),
+            'event_date' => now()->toDateString(),
             'event_time' => '18:00',
             'venue' => 'Nustad Hall',
             'guest_count' => 100,
             'estimated_budget' => 25000,
-            'status' => 'pending',
+            'status' => 'confirmed',
             'reservation_code' => 'RES-TEST-001',
         ]);
 
         $request = new \Illuminate\Http\Request([
-            'status' => 'completed',
             'payment_status' => 'Downpayment',
             'payment_type' => 'Downpayment',
             'total_cost' => 30000,
             'amount_paid' => 8000,
         ]);
 
-        $response = app(\App\Http\Controllers\AdminController::class)->updateReservationStatus(
+        $response = app(\App\Http\Controllers\AdminController::class)->updateReservation(
             $request,
             $reservation,
             app(\App\Services\ReservationCapacityService::class),
         );
 
-        $this->assertSame('completed', $reservation->fresh()->status);
+        $this->assertSame('confirmed', $reservation->fresh()->status);
         $this->assertSame('Partially Paid', $reservation->fresh()->payment_status);
         $this->assertSame('Downpayment', $reservation->fresh()->payment_type);
         $this->assertSame(30000.0, (float) $reservation->fresh()->total_cost);
@@ -270,13 +269,12 @@ class PublicPagesTest extends TestCase
         ]);
 
         $request = new \Illuminate\Http\Request([
-            'status' => 'confirmed',
             'package_id' => $updatedPackage->id,
             'event_date' => now()->addDays(10)->toDateString(),
             'event_time' => '19:30',
         ]);
 
-        app(\App\Http\Controllers\AdminController::class)->updateReservationStatus(
+        app(\App\Http\Controllers\AdminController::class)->updateReservation(
             $request,
             $reservation,
             app(\App\Services\ReservationCapacityService::class),

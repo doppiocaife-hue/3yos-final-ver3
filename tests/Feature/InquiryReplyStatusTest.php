@@ -97,8 +97,7 @@ class InquiryReplyStatusTest extends TestCase
         $response->assertOk();
         $response->assertSee('inquiry-card', false);
         $response->assertSeeInOrder([$inquiry->full_name, $inquiry->subject, 'Responded'], false);
-        // The list page does have a top-level status *filter* (tabs) and a priority *filter*
-        // dropdown, but no per-row/per-card status editor — that's what this test guards against.
+        // The list page has status filter tabs but no per-row/per-card status editor.
         $response->assertDontSee('inquiry-status-select', false);
         preg_match('/<article class="inquiry-card[^"]*">.*?<\/article>/s', $response->getContent(), $matches);
         $this->assertNotEmpty($matches, 'Expected to find a rendered inquiry card.');

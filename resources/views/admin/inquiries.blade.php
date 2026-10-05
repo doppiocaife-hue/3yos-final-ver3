@@ -38,27 +38,17 @@
             <label class="form-label" for="inquiry-search">Search</label>
             <input id="inquiry-search" type="search" name="search" class="form-control" value="{{ old('search', $search ?? '') }}" placeholder="Name, email, subject, or inquiry ID">
         </div>
-        <div class="filter-field">
-            <label class="form-label" for="inquiry-priority">Priority</label>
-            <select id="inquiry-priority" name="priority" class="form-select">
-                <option value="">All priorities</option>
-                <option value="low" @selected($priority === 'low')>Low</option>
-                <option value="normal" @selected($priority === 'normal')>Normal</option>
-                <option value="high" @selected($priority === 'high')>High</option>
-                <option value="urgent" @selected($priority === 'urgent')>Urgent</option>
-            </select>
-        </div>
         <input type="hidden" name="view" value="{{ $view }}">
-        <div class="filter-field">
-            @if($priority || ($search ?? '') !== '' || $view !== 'all')
+        @if(($search ?? '') !== '' || $view !== 'all')
+            <div class="filter-field">
                 <a href="{{ route('admin.inquiries') }}" class="btn btn-outline-secondary w-100" data-live-filter-clear="#inquiry-filter-form">Clear</a>
-            @endif
-        </div>
+            </div>
+        @endif
     </form>
 
     <div class="inquiry-tabs" role="tablist" aria-label="Filter by status">
         @foreach(['all' => 'All', 'new' => 'New', 'in_progress' => 'In Progress', 'responded' => 'Responded', 'closed' => 'Closed'] as $value => $label)
-            <a href="{{ route('admin.inquiries', array_filter(['view' => $value, 'priority' => $priority, 'search' => $search])) }}"
+            <a href="{{ route('admin.inquiries', array_filter(['view' => $value, 'search' => $search])) }}"
                class="inquiry-tab {{ $view === $value ? 'is-active' : '' }}">{{ $label }}</a>
         @endforeach
     </div>
@@ -66,7 +56,7 @@
     <div id="inquiry-results" aria-live="polite">
         @if($inquiries->isEmpty())
             <div class="text-center text-muted py-5">
-                @if($view === 'all' && !$priority && ($search ?? '') === '')
+                @if($view === 'all' && ($search ?? '') === '')
                     <p class="mb-0 fw-bold">No inquiries yet.</p>
                     <p class="mb-0">New customer inquiries will appear here.</p>
                 @else
@@ -105,16 +95,6 @@
     .inquiry-card-meta-item strong { font-size: .82rem; font-weight: 600; color: var(--ink); }
     .inquiry-card-badges { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; flex: 0 0 auto; }
     .inquiry-card-action { flex: 0 0 auto; margin-left: auto; }
-
-    .priority-badge { display: inline-flex; height: 24px; align-items: center; justify-content: center; padding: 0 .65rem; border: 1px solid transparent; border-radius: 999px; font-size: .68rem; font-weight: 800; white-space: nowrap; }
-    .priority-badge--low { border-color: var(--line); background: transparent; color: var(--muted); }
-    .priority-badge--normal { border-color: #cfd8dc; background: #eef2f4; color: #4c6073; }
-    .priority-badge--high { border-color: #f0c98a; background: #fff1da; color: #8a5a00; }
-    .priority-badge--urgent { border-color: #f0bcbc; background: #fdeaea; color: #8d2020; }
-    body.dark-mode .priority-badge--low { color: var(--muted); }
-    body.dark-mode .priority-badge--normal { border-color: #425761; background: #20323d; color: #c9d6dc; }
-    body.dark-mode .priority-badge--high { border-color: rgba(247, 213, 122, .45); background: rgba(146, 99, 0, .28); color: #f7d57a; }
-    body.dark-mode .priority-badge--urgent { border-color: rgba(255, 176, 176, .4); background: rgba(127, 34, 34, .34); color: #ffb0b0; }
 
     @media (max-width: 575.98px) {
         .inquiry-card { flex-direction: column; align-items: stretch; }

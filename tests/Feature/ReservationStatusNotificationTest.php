@@ -45,7 +45,7 @@ class ReservationStatusNotificationTest extends TestCase
         $reservation = $this->reservation();
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['status' => 'confirmed'])
+            ->post(route('admin.reservations.accept', $reservation))
             ->assertSessionHas('success', 'Reservation accepted and notification email sent.');
 
         Mail::assertSent(ReservationAcceptedMail::class, fn ($mail) => $mail->hasTo('status@example.com'));
@@ -58,7 +58,7 @@ class ReservationStatusNotificationTest extends TestCase
         $reservation = $this->reservation();
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['status' => 'cancelled'])
+            ->post(route('admin.reservations.cancel', $reservation))
             ->assertSessionHas('success', 'Reservation cancelled and notification email sent.');
 
         Mail::assertSent(ReservationCancelledMail::class, fn ($mail) => $mail->hasTo('status@example.com'));
@@ -71,7 +71,7 @@ class ReservationStatusNotificationTest extends TestCase
         $reservation = $this->reservation(['status' => 'confirmed']);
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['status' => 'confirmed'])
+            ->post(route('admin.reservations.accept', $reservation))
             ->assertSessionHas('success', 'Reservation saved successfully.');
 
         Mail::assertNothingSent();
@@ -83,23 +83,37 @@ class ReservationStatusNotificationTest extends TestCase
         Mail::fake();
         $reservation = $this->reservation();
 
-        $this->withSession(self::ADMIN)->patch(route('admin.reservations.status', $reservation), ['status' => 'confirmed']);
-        $this->withSession(self::ADMIN)->patch(route('admin.reservations.status', $reservation), ['status' => 'confirmed'])
+        $this->withSession(self::ADMIN)->post(route('admin.reservations.accept', $reservation));
+        $this->withSession(self::ADMIN)->post(route('admin.reservations.accept', $reservation))
             ->assertSessionHas('success', 'Reservation saved successfully.');
 
         Mail::assertSent(ReservationAcceptedMail::class, 1);
         $this->assertSame(1, ReservationStatusNotification::count());
     }
 
-    public function test_moving_completed_or_pending_does_not_send_a_notification(): void
+    public function test_direct_status_submission_is_rejected_without_sending_a_notification(): void
     {
         Mail::fake();
-        $reservation = $this->reservation(['status' => 'confirmed']);
+        $reservation = $this->reservation();
 
-        $this->withSession(self::ADMIN)->patch(route('admin.reservations.status', $reservation), ['status' => 'completed']);
+        foreach (['pending', 'confirmed', 'completed', 'cancelled'] as $status) {
+            $this->withSession(self::ADMIN)
+                ->patch(route('admin.reservations.update', $reservation), ['status' => $status])
+                ->assertSessionHasErrors('status');
+        }
+        $this->withSession(self::ADMIN)
+            ->post(route('admin.reservations.accept', $reservation), ['status' => 'completed'])
+            ->assertSessionHasErrors('status');
+        $this->withSession(self::ADMIN)
+            ->post(route('admin.reservations.complete', $reservation), ['status' => 'cancelled'])
+            ->assertSessionHasErrors('status');
+        $this->withSession(self::ADMIN)
+            ->patch('/admin/reservations/'.$reservation->id.'/status', ['status' => 'cancelled'])
+            ->assertNotFound();
 
         Mail::assertNothingSent();
         $this->assertSame(0, ReservationStatusNotification::count());
+        $this->assertSame('pending', $reservation->fresh()->status);
     }
 
     public function test_email_failure_reports_the_error_without_blocking_the_status_change(): void
@@ -108,7 +122,7 @@ class ReservationStatusNotificationTest extends TestCase
         $reservation = $this->reservation();
 
         $this->withSession(self::ADMIN)
-            ->patch(route('admin.reservations.status', $reservation), ['status' => 'confirmed'])
+            ->post(route('admin.reservations.accept', $reservation))
             ->assertSessionHas('success', 'Reservation accepted, but the notification email could not be sent.');
 
         $this->assertSame('confirmed', $reservation->fresh()->status);

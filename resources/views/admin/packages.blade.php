@@ -15,7 +15,7 @@
                 <td><strong>{{ $package->name }}</strong><br><small class="text-muted">{{ str($package->description)->limit(50) }}</small></td>
                 <td class="text-nowrap"><span class="fw-bold">PHP {{ number_format($package->price, 2) }}</span></td>
                 <td class="d-none d-md-table-cell"><span class="badge-soft {{ $package->is_featured ? '' : 'badge-primary' }}">{{ $package->is_featured ? 'Featured' : 'Regular' }}</span></td>
-                <td class="text-end"><div class="table-actions" role="group" aria-label="Actions"><a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.packages.edit', $package) }}">Edit</a><form class="d-inline" method="POST" action="{{ route('admin.packages.destroy', $package) }}" data-password-confirm data-password-message="Delete this package? Confirm your administrator password to continue.">@csrf @method('DELETE')<button class="btn btn-sm btn-outline-danger">Delete</button></form></div></td>
+                <td class="text-end"><div class="table-actions" role="group" aria-label="Actions"><a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.packages.edit', $package) }}">Edit</a><form class="d-inline" method="POST" action="{{ route('admin.packages.destroy', $package) }}">@csrf @method('DELETE')<button class="btn btn-sm btn-outline-danger">Delete</button></form></div></td>
             </tr>
         @empty
             <tr><td colspan="4" class="text-center text-muted py-4">No packages yet.</td></tr>

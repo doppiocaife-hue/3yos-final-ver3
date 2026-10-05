@@ -31,7 +31,7 @@ class AdminDashboardTest extends TestCase
         ])->get(route('admin.dashboard'));
 
         $response->assertOk()
-            ->assertSee('Operations workspace')
+            ->assertSee('Welcome,')
             ->assertSee('Today / Upcoming')
             ->assertSee('Events today')
             ->assertSee('Payments due soon')
@@ -46,7 +46,7 @@ class AdminDashboardTest extends TestCase
             ->assertDontSee('Priority workspace');
 
         $content = $response->getContent();
-        $this->assertLessThan(strpos($content, 'id="reservation-calendar"'), strpos($content, 'Operations workspace'));
+        $this->assertLessThan(strpos($content, 'id="reservation-calendar"'), strpos($content, 'Welcome,'));
         $this->assertLessThan(strpos($content, 'Needs Attention'), strpos($content, 'id="reservation-calendar"'));
         $this->assertLessThan(strpos($content, 'Today / Upcoming'), strpos($content, 'Needs Attention'));
         $this->assertLessThan(strpos($content, 'Quick Actions'), strpos($content, 'Today / Upcoming'));

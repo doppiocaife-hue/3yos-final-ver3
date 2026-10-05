@@ -9,6 +9,7 @@ use App\Models\Service;
 use App\Support\HelpCenterContent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class PublicController extends Controller
 {
@@ -82,7 +83,9 @@ class PublicController extends Controller
             $reservation = Reservation::with('package')->where('reservation_code', strtoupper($lookupCode))->first();
         }
 
-        return view('public.reservation', compact('packages', 'reservation', 'lookupCode'));
+        $submissionKey = $reservation ? null : Str::random(64);
+
+        return view('public.reservation', compact('packages', 'reservation', 'lookupCode', 'submissionKey'));
     }
 
     public function reservationStatus(Request $request)

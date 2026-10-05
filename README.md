@@ -33,7 +33,7 @@ This repository is the capstone project's source code. A working deployment also
 ### Administration
 
 - Dashboard, reservation and inquiry management, and support documentation.
-- Create reservations on behalf of clients; review submitted event details and update reservation status.
+- Create reservations on behalf of clients; review submitted event details and use the dedicated acceptance or cancellation actions.
 - Manage catalog packages and services, including package descriptions and pricing, service availability, and gallery images.
 - Review analytics and generate daily, weekly, monthly, and yearly reports. Report exports are available as CSV and Excel workbooks.
 - Manage administrator accounts, review activity logs, and create, upload, download, restore, or delete database backups.
@@ -62,14 +62,14 @@ The public and admin layouts load Bootstrap and their custom styles from `public
 1. A guest chooses a package and submits their contact information, event type, date, time, venue, guest count, and any additional details.
 2. The application validates the request, verifies reCAPTCHA, and creates a reservation with `pending` status and a generated reservation code.
 3. The guest can use the reservation code on the reservation status page to view the request's progress.
-4. An administrator reviews the request and can update its status. Stored statuses are `pending`, `confirmed`, `completed`, and `cancelled`; the guest-facing progress view labels a pending request as “Under Review” and a confirmed request as “Accepted.”
+4. An administrator reviews the request and accepts or cancels it through the dedicated workflow actions. Statuses cannot be edited directly; confirmed reservations are automatically completed at 11:59 PM on the event date. Stored statuses are `pending`, `confirmed`, `completed`, and `cancelled`; the guest-facing progress view labels a pending request as “Under Review” and a confirmed request as “Accepted.”
 5. Configured email delivery sends reservation confirmation and applicable status notifications.
 
-Reservation dates must be at least two days in advance. The maximum is 4 active reservations/events per date: both `pending` and `confirmed` reservations consume capacity, while `cancelled` and terminal `completed` reservations do not. Guest submissions, administrator-created reservations, status changes, and confirmed-reservation date edits use the same capacity rule. These are application rules, not a statement of general business availability.
+Reservation dates must be at least two days in advance. The maximum is 4 active reservations/events per date: both `pending` and `confirmed` reservations consume capacity, while `cancelled` and terminal `completed` reservations do not. Guest submissions, administrator-created reservations, acceptance/cancellation actions, and confirmed-reservation date edits use the same capacity rule. These are application rules, not a statement of general business availability.
 
 ### Inquiries
 
-Guests submit contact details, a subject, category, and message. Administrators can review inquiries, update priority/read state, and reply by email. Public reservation and inquiry submissions are rate-limited and require server-verified reCAPTCHA.
+Guests submit contact details, a subject, category, and message. Administrators can review inquiries, track read state, and reply by email. Public reservation and inquiry submissions are rate-limited and require server-verified reCAPTCHA.
 
 ## Administrator access
 
@@ -97,6 +97,8 @@ The application does not currently provide a refund edit/delete workflow. Paymen
 The default local disk stores private files under `storage/app/private`; this includes payment receipts, service contracts, and generated backups. The public disk stores gallery images under `storage/app/public` and is exposed through Laravel's `public/storage` symbolic link.
 
 Admin-created backups use the `3YOS_JSON_BACKUP` format, currently format version `2`, and are JSON data encrypted with Laravel's application encryption key (`APP_KEY`) before storage under `storage/app/private/backups`. The format and version metadata stay inside the encrypted payload. A small encrypted private metadata cache lets the Backup page display the format, original creation time, and most recent validation without decrypting every full backup on each page view. If older files have no cache, their details remain unknown until an administrator explicitly validates them. Validation authenticates/decrypts the archive, checks its format, supported tables, row structure, and known reservation/payment/refund relationships, and does not change database content. Version 2 is current; version 1 and recognized versionless legacy backups have an explicit compatibility path, but their archived `users` rows are never restored. Unsupported formats and versions are rejected before database changes. Uploading a compatible older backup stores it encrypted in the current version after removing archived user records. Restore requires an authorized Primary Admin, password confirmation, successful validation, and a safety backup; it replaces supported business records, merges historical activity entries without deleting current audit history, preserves administrator accounts and sessions, and verifies table counts and supported relationships after restoration. Imported activity rows are detached from current user IDs and retain actor snapshots where available. There is no public full-system restore operation. Uploaded legacy JSON backups may be unencrypted and require explicit confirmation before restore. The backup service includes only the application tables it explicitly supports; it is not a full server, uploaded-file, or source-code backup.
+
+The generic `settings` table has no application-defined keys or runtime read/write call sites. Because it can hold arbitrary values, backups store it empty and restore leaves the live table unchanged; existing settings values are not copied into backup archives.
 
 Older plaintext `.json` backup files, if present in `storage/app/backups`, are legacy archives; new backup creation always writes encrypted `.json.enc` files under the private backup directory. They are not exposed through Laravel's public storage link, but a full administrator may download them through the authenticated backup controller, so do not leave obsolete plaintext copies indefinitely. To retire a legacy file without risking data loss, first upload it through the authenticated Backup page; compatible uploads are validated and stored encrypted as a current-format `.json.enc` backup while preserving the archive's original `created_at`. Verify the encrypted replacement's format, compatibility, and creation date in the backup list, and test its restore only in a separate test database. Keep the original until verification and retention approval are complete, then remove it through an authorized, controlled server-side retention process; never expose it through `public/` or delete it before the encrypted copy is verified.
 

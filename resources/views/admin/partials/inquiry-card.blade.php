@@ -29,7 +29,6 @@
         </div>
     </div>
     <div class="inquiry-card-badges">
-        <span class="priority-badge priority-badge--{{ $inquiry->priority }}">{{ \App\Models\Inquiry::priorityLabel($inquiry->priority) }}</span>
         <span class="status-badge {{ $statusBadgeClass }}">{{ $statusLabel }}</span>
     </div>
     <div class="inquiry-card-action">

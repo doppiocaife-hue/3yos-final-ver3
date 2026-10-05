@@ -18,7 +18,6 @@
             <h1 class="fw-bold mb-1">{{ $inquiry->subject }}</h1>
             <p class="text-muted mb-2">{{ $inquiry->category }} · received {{ $inquiry->created_at->format('M j, Y') }} · {{ $inquiry->created_at->format('g:i A') }}</p>
             <div class="d-flex flex-wrap gap-2">
-                <span class="priority-badge priority-badge--{{ $inquiry->priority }}">{{ \App\Models\Inquiry::priorityLabel($inquiry->priority) }} priority</span>
                 <span class="status-badge {{ $statusBadgeClass }}">{{ $statusLabel }}</span>
             </div>
         </div>
@@ -47,16 +46,6 @@
                     <div><dt>Received</dt><dd>{{ $inquiry->created_at->format('M j, Y') }} &middot; {{ $inquiry->created_at->format('g:i A') }}</dd></div>
                     <div><dt>Status</dt><dd><span class="status-badge {{ $statusBadgeClass }}">{{ $statusLabel }}</span></dd></div>
                 </dl>
-                <form method="POST" action="{{ route('admin.inquiries.priority', $inquiry) }}" class="d-flex gap-2">
-                    @csrf @method('PATCH')
-                    <select name="priority" class="form-select form-select-sm">
-                        <option value="low" @selected($inquiry->priority === 'low')>Low</option>
-                        <option value="normal" @selected($inquiry->priority === 'normal')>Normal</option>
-                        <option value="high" @selected($inquiry->priority === 'high')>High</option>
-                        <option value="urgent" @selected($inquiry->priority === 'urgent')>Urgent</option>
-                    </select>
-                    <button class="btn btn-sm btn-outline-secondary" type="submit">Set priority</button>
-                </form>
             </div>
         </div>
         <div class="col-lg-7">

@@ -7,6 +7,7 @@ use App\Mail\ReservationConfirmationMail;
 use App\Models\Client;
 use App\Models\Package;
 use App\Models\Reservation;
+use App\Services\PrimaryAdminReservationNotifier;
 use App\Services\ReservationCapacityService;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -29,8 +30,25 @@ class ReservationController extends Controller
         return response()->json($capacity->snapshotForDate($data['date']));
     }
 
-    public function store(StoreReservationRequest $request, ReservationCapacityService $capacity)
+    public function store(
+        StoreReservationRequest $request,
+        ReservationCapacityService $capacity,
+        PrimaryAdminReservationNotifier $primaryAdminNotifier,
+    )
     {
+        $submissionKey = $request->input('submission_key');
+        if (is_string($submissionKey)) {
+            $submissionMap = $request->session()->get('reservation_submission_keys', []);
+            $existingReservationId = is_array($submissionMap) ? ($submissionMap[$submissionKey] ?? null) : null;
+            $existingReservation = $existingReservationId === null ? null : Reservation::find($existingReservationId);
+
+            if ($existingReservation) {
+                return redirect()
+                    ->route('reservation', ['code' => $existingReservation->reservation_code])
+                    ->with('success', 'Your reservation request has already been received. Your reservation ID is '.$existingReservation->reservation_code.'.');
+            }
+        }
+
         if (now()->timestamp - (int) $request->input('form_started') < 3) {
             return back()->withInput()->withErrors(['full_name' => 'Unable to submit this request. Please try again.']);
         }
@@ -88,6 +106,13 @@ class ReservationController extends Controller
             ]);
         }, 3);
 
+        if (is_string($submissionKey)) {
+            $submissionMap = $request->session()->get('reservation_submission_keys', []);
+            $submissionMap = is_array($submissionMap) ? $submissionMap : [];
+            $submissionMap[$submissionKey] = $reservation->id;
+            $request->session()->put('reservation_submission_keys', array_slice($submissionMap, -20, null, true));
+        }
+
         $mailSent = false;
         $mailError = null;
 
@@ -98,6 +123,8 @@ class ReservationController extends Controller
             $mailError = $exception;
             report($exception);
         }
+
+        $primaryAdminNotifier->notify($reservation);
 
         $request->session()->flash('reservation_code', $reservation->reservation_code);
         $request->session()->flash('reservation_status', 'pending');

@@ -47,6 +47,7 @@ class StoreReservationRequest extends FormRequest
             'additional_services' => ['nullable', 'string', 'max:1000'],
             'special_requests' => ['nullable', 'string', 'max:1000'],
             'additional_notes' => ['nullable', 'string', 'max:1000'],
+            'submission_key' => ['nullable', 'string', 'regex:/\A[A-Za-z0-9]{64}\z/'],
             'website' => ['prohibited'],
             'form_started' => ['required', 'integer'],
             'g-recaptcha-response' => ['required', 'string'],
