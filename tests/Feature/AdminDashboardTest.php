@@ -15,11 +15,60 @@ class AdminDashboardTest extends TestCase
         ])->get(route('admin.dashboard'));
 
         $response->assertOk();
-        $response->assertSee('Reservation calendar');
+        $response->assertSee('Calendar');
         $response->assertSee('id="reservationCalendar"', false);
         $response->assertSee('Previous month');
         $response->assertSee('Next month');
+        $response->assertSee('Monthly schedule · Capacity');
         $response->assertDontSee('href="'.route('admin.dashboard').'#reservation-calendar"', false);
+    }
+
+    public function test_overview_uses_the_operational_command_center_hierarchy_and_quick_actions(): void
+    {
+        $response = $this->withSession([
+            'is_admin' => true,
+            'admin_role' => 'full',
+        ])->get(route('admin.dashboard'));
+
+        $response->assertOk()
+            ->assertSee('Operations workspace')
+            ->assertSee('Today / Upcoming')
+            ->assertSee('Events today')
+            ->assertSee('Payments due soon')
+            ->assertSee('Next 7 days')
+            ->assertSee('Inquiries needing response')
+            ->assertSee('Quick Actions')
+            ->assertSee('Review Reservations')
+            ->assertSee('Client Inquiries')
+            ->assertSee('Manage Packages')
+            ->assertSee('View Reports')
+            ->assertDontSee('Business overview')
+            ->assertDontSee('Priority workspace');
+
+        $content = $response->getContent();
+        $this->assertLessThan(strpos($content, 'id="reservation-calendar"'), strpos($content, 'Operations workspace'));
+        $this->assertLessThan(strpos($content, 'Needs Attention'), strpos($content, 'id="reservation-calendar"'));
+        $this->assertLessThan(strpos($content, 'Today / Upcoming'), strpos($content, 'Needs Attention'));
+        $this->assertLessThan(strpos($content, 'Quick Actions'), strpos($content, 'Today / Upcoming'));
+
+        $response->assertSee('href="'.route('admin.reservations').'"', false)
+            ->assertSee('href="'.route('admin.inquiries').'"', false)
+            ->assertSee('href="'.route('admin.packages.index').'"', false)
+            ->assertSee('href="'.route('admin.reports').'"', false);
+    }
+
+    public function test_limited_admin_quick_actions_only_include_permitted_destinations(): void
+    {
+        $response = $this->withSession([
+            'is_admin' => true,
+            'admin_role' => 'limited',
+        ])->get(route('admin.dashboard'));
+
+        $response->assertOk()
+            ->assertSee('Review Reservations')
+            ->assertSee('Client Inquiries')
+            ->assertDontSee('Manage Packages')
+            ->assertDontSee('View Reports');
     }
 
     public function test_calendar_includes_event_details_without_a_duplicate_month_list(): void

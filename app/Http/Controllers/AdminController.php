@@ -84,6 +84,7 @@ class AdminController extends Controller
             'unpaid_accepted' => $attentionAnalysis['counts'][ReservationNeedsAttentionService::NO_PAYMENT],
             'missing_contracts' => $attentionAnalysis['counts'][ReservationNeedsAttentionService::MISSING_CONTRACT],
             'outstanding_balances' => $attentionAnalysis['counts'][ReservationNeedsAttentionService::OUTSTANDING_BALANCE],
+            'events_awaiting_completion' => $attentionAnalysis['counts'][ReservationNeedsAttentionService::EVENTS_AWAITING_COMPLETION],
         ];
 
         $weekAhead = now()->addDays(7)->endOfDay();
@@ -129,6 +130,7 @@ class AdminController extends Controller
             ReservationNeedsAttentionService::NO_PAYMENT,
             ReservationNeedsAttentionService::MISSING_CONTRACT,
             ReservationNeedsAttentionService::OUTSTANDING_BALANCE,
+            ReservationNeedsAttentionService::EVENTS_AWAITING_COMPLETION,
         ], true)) {
             $query->whereIn('id', $needsAttentionService->reservationIds()[$attentionFilter]);
         }

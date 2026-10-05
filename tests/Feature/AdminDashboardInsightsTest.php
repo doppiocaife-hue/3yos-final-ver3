@@ -5,12 +5,20 @@ namespace Tests\Feature;
 use App\Models\Inquiry;
 use App\Models\Package;
 use App\Models\Reservation;
+use Carbon\Carbon;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class AdminDashboardInsightsTest extends TestCase
 {
     private const ADMIN = ['is_admin' => true, 'admin_role' => 'full'];
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+
+        parent::tearDown();
+    }
 
     private function reservation(array $overrides = []): Reservation
     {
@@ -38,7 +46,7 @@ class AdminDashboardInsightsTest extends TestCase
         $response = $this->withSession(self::ADMIN)->get(route('admin.dashboard'));
 
         $response->assertOk();
-        $response->assertSee('Needs attention');
+        $response->assertSee('Needs Attention');
         $response->assertSee('Nothing needs attention right now.');
     }
 
@@ -139,7 +147,8 @@ class AdminDashboardInsightsTest extends TestCase
         $response->assertOk()->assertViewHas('needsAttention', function (array $counts): bool {
             return $counts['unpaid_accepted'] === 3
                 && $counts['missing_contracts'] === 3
-                && $counts['outstanding_balances'] === 1;
+                && $counts['outstanding_balances'] === 1
+                && $counts['events_awaiting_completion'] === 0;
         });
         $response->assertSee(route('admin.reservations', [
             'status' => 'confirmed',
@@ -158,6 +167,118 @@ class AdminDashboardInsightsTest extends TestCase
         $this->assertSame(0, $fullyRefunded->fresh()->financials()['net_paid_cents']);
         $this->assertNull($noContractPrice->fresh()->financials()['remaining_balance_cents']);
         $this->assertSame(0, $zeroContractPrice->fresh()->financials()['remaining_balance_cents']);
+    }
+
+    public function test_events_awaiting_completion_counts_only_past_confirmed_date_and_time(): void
+    {
+        config(['app.timezone' => 'Asia/Manila']);
+        Carbon::setTestNow(Carbon::parse('2026-10-03 14:00:00', config('app.timezone')));
+
+        $past = $this->reservation([
+            'status' => Reservation::STATUS_CONFIRMED,
+            'event_date' => '2026-10-02',
+            'event_time' => '18:00',
+            'full_name' => 'Past accepted event',
+            'service_contracts' => ['contracts/first.pdf', 'contracts/second.pdf'],
+        ]);
+        $past->payments()->createMany([
+            ['payment_date' => '2026-09-01', 'payment_type' => 'Downpayment', 'amount' => 100, 'payment_method' => 'Cash'],
+            ['payment_date' => '2026-09-02', 'payment_type' => 'Partial Payment', 'amount' => 100, 'payment_method' => 'Cash'],
+        ]);
+        $past->refunds()->createMany([
+            ['refund_date' => '2026-09-03', 'amount' => 10, 'refund_method' => 'Cash', 'status' => 'completed', 'request_key' => (string) Str::uuid()],
+            ['refund_date' => '2026-09-04', 'amount' => 10, 'refund_method' => 'Cash', 'status' => 'completed', 'request_key' => (string) Str::uuid()],
+        ]);
+
+        $todayPast = $this->reservation([
+            'status' => Reservation::STATUS_CONFIRMED,
+            'event_date' => '2026-10-03',
+            'event_time' => '10:00',
+            'full_name' => 'Today past-time event',
+        ]);
+        $todayFuture = $this->reservation([
+            'status' => Reservation::STATUS_CONFIRMED,
+            'event_date' => '2026-10-03',
+            'event_time' => '22:00',
+            'full_name' => 'Today future-time event',
+        ]);
+        $sameTime = $this->reservation([
+            'status' => Reservation::STATUS_CONFIRMED,
+            'event_date' => '2026-10-03',
+            'event_time' => '14:00',
+            'full_name' => 'Event at current time',
+        ]);
+        $future = $this->reservation([
+            'status' => Reservation::STATUS_CONFIRMED,
+            'event_date' => '2026-10-04',
+            'event_time' => '10:00',
+            'full_name' => 'Future event',
+        ]);
+        $completed = $this->reservation([
+            'status' => Reservation::STATUS_COMPLETED,
+            'event_date' => '2026-10-02',
+            'event_time' => '10:00',
+            'full_name' => 'Completed past event',
+        ]);
+        $cancelled = $this->reservation([
+            'status' => Reservation::STATUS_CANCELLED,
+            'event_date' => '2026-10-02',
+            'event_time' => '10:00',
+            'full_name' => 'Cancelled past event',
+        ]);
+        $rejected = $this->reservation([
+            'status' => 'rejected',
+            'event_date' => '2026-10-02',
+            'event_time' => '10:00',
+            'full_name' => 'Rejected past event',
+        ]);
+        $pending = $this->reservation([
+            'status' => Reservation::STATUS_PENDING,
+            'event_date' => '2026-10-02',
+            'event_time' => '10:00',
+            'full_name' => 'Pending past event',
+        ]);
+        $invalidTime = $this->reservation([
+            'status' => Reservation::STATUS_CONFIRMED,
+            'event_date' => '2026-10-02',
+            'event_time' => 'not-a-time',
+            'full_name' => 'Past event with invalid time',
+        ]);
+
+        $response = $this->withSession(self::ADMIN)->get(route('admin.dashboard'));
+        $response->assertOk()
+            ->assertSee('Events Awaiting Completion')
+            ->assertSee('<span class="attention-item-count">2</span>', false)
+            ->assertViewHas('needsAttention', function (array $counts): bool {
+                return $counts['events_awaiting_completion'] === 2;
+            });
+        $response->assertSee(array_sum($response->viewData('needsAttention')).' OPEN ITEMS');
+
+        $filtered = $this->withSession(self::ADMIN)->get(route('admin.reservations', [
+            'status' => Reservation::STATUS_CONFIRMED,
+            'attention' => \App\Services\ReservationNeedsAttentionService::EVENTS_AWAITING_COMPLETION,
+        ]));
+        $filtered->assertOk()
+            ->assertSee('Past accepted event')
+            ->assertSee('Today past-time event')
+            ->assertDontSee('Today future-time event')
+            ->assertDontSee('Event at current time')
+            ->assertDontSee('Future event')
+            ->assertDontSee('Completed past event')
+            ->assertDontSee('Cancelled past event')
+            ->assertDontSee('Rejected past event')
+            ->assertDontSee('Pending past event')
+            ->assertDontSee('Past event with invalid time');
+
+        $this->assertSame(2, $filtered->viewData('matchingReservationCount'));
+        $this->assertNotContains($sameTime->id, $filtered->viewData('reservations')->pluck('id')->all());
+        $this->assertNotContains($todayFuture->id, $filtered->viewData('reservations')->pluck('id')->all());
+        $this->assertNotContains($future->id, $filtered->viewData('reservations')->pluck('id')->all());
+        $this->assertNotContains($completed->id, $filtered->viewData('reservations')->pluck('id')->all());
+        $this->assertNotContains($cancelled->id, $filtered->viewData('reservations')->pluck('id')->all());
+        $this->assertNotContains($rejected->id, $filtered->viewData('reservations')->pluck('id')->all());
+        $this->assertNotContains($pending->id, $filtered->viewData('reservations')->pluck('id')->all());
+        $this->assertNotContains($invalidTime->id, $filtered->viewData('reservations')->pluck('id')->all());
     }
 
     public function test_invalid_refund_history_is_not_classified_as_unpaid_or_outstanding_and_does_not_break_dashboard(): void
@@ -191,7 +312,7 @@ class AdminDashboardInsightsTest extends TestCase
             });
     }
 
-    public function test_business_overview_shows_lifetime_revenue_separate_from_today(): void
+    public function test_overview_keeps_daily_operational_summary_without_business_kpis(): void
     {
         $reservation = $this->reservation(['status' => 'confirmed', 'total_cost' => 45000]);
         // Record through the real endpoint so payment_status is recalculated, not the raw model.
@@ -205,9 +326,12 @@ class AdminDashboardInsightsTest extends TestCase
         $response = $this->withSession(self::ADMIN)->get(route('admin.dashboard'));
 
         $response->assertOk();
-        $response->assertSee('Business overview');
-        $response->assertSee('Lifetime totals');
-        $response->assertSee('&#8369;15,000', false);
+        $response->assertSee('Today / Upcoming');
+        $response->assertSee('Events today');
+        $response->assertSee('Payments due soon');
+        $response->assertDontSee('Business overview');
+        $response->assertDontSee('Lifetime totals');
+        $response->assertDontSee('Net payments received, all time');
         // Once a payment is recorded the reservation no longer counts as "no payment on file".
         $response->assertDontSee('Accepted reservations with no payment on file');
     }
