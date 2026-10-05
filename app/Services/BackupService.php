@@ -41,6 +41,21 @@ class BackupService
         'gallery_items',
     ];
 
+    private const REQUIRED_TABLES = [
+        'users',
+        'services',
+        'packages',
+        'clients',
+        'reservations',
+        'reservation_payments',
+        'reservation_refunds',
+        'inquiries',
+        'activity_logs',
+        'settings',
+        'notification_templates',
+        'gallery_items',
+    ];
+
     private const MAX_UPLOAD_SIZE = 20 * 1024 * 1024;
     public const BACKUP_FORMAT = '3YOS_JSON_BACKUP';
 
@@ -108,6 +123,7 @@ class BackupService
 
     public function create(): string
     {
+        $this->assertDatabaseReady();
         $contents = [
             'backup_format' => self::BACKUP_FORMAT,
             'backup_version' => self::BACKUP_VERSION,
@@ -135,6 +151,7 @@ class BackupService
 
         $json = json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
         $this->writeAtomically($path, Crypt::encryptString($json));
+        $this->writeMetadata(basename($path), $contents);
 
         return $path;
     }
@@ -151,6 +168,7 @@ class BackupService
 
         $contents = $this->decodeBackup($file);
         $this->assertBackupCompatible($contents);
+        $this->assertBackupRelationships($contents['tables']);
 
         $contents['tables'] = $this->detachArchivedUserReferences($contents['tables']);
         unset($contents['tables']['users']);
@@ -169,14 +187,17 @@ class BackupService
         $contents['backup_version'] = self::BACKUP_VERSION;
         $encoded = json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
         $this->writeAtomically($path, Crypt::encryptString($encoded));
+        $this->writeMetadata(basename($path), $contents);
 
         return basename($path);
     }
 
     public function restore(string $backup): int
     {
+        $this->assertDatabaseReady();
         $contents = $this->readBackup($backup);
         $this->assertBackupCompatible($contents);
+        $this->assertBackupRelationships($contents['tables']);
 
         $tables = $this->detachArchivedUserReferences($contents['tables']);
 
@@ -249,9 +270,162 @@ class BackupService
         return $restoredRows;
     }
 
-    public function validate(string $backup): void
+    public function validate(string $backup): array
     {
-        $this->assertBackupCompatible($this->readBackup($backup));
+        $this->assertDatabaseReady();
+        $contents = $this->readBackup($backup);
+        $this->assertBackupCompatible($contents);
+        $this->assertBackupRelationships($contents['tables']);
+        $this->writeMetadata($backup, $contents);
+
+        $expectedRows = [];
+        foreach ($contents['tables'] as $table => $rows) {
+            if ($table !== 'activity_logs') {
+                $expectedRows[$table] = count($rows);
+            }
+        }
+
+        return ['expected_rows' => $expectedRows];
+    }
+
+    public function metadataForDisplay(string $backup): array
+    {
+        $backupPath = $this->pathFor($backup);
+        $metadataPath = $this->metadataPath($backup);
+
+        if (is_file($metadataPath)) {
+            try {
+                $encryptedMetadata = file_get_contents($metadataPath);
+                if ($encryptedMetadata === false) {
+                    return $this->unknownMetadata($backup);
+                }
+                $metadata = json_decode(Crypt::decryptString($encryptedMetadata), true, 512, JSON_THROW_ON_ERROR);
+                if (is_array($metadata)) {
+                    $metadata = array_merge($this->unknownMetadata($backup), $metadata);
+                    clearstatcache(true, $backupPath);
+                    if (($metadata['file_size'] ?? null) !== (filesize($backupPath) ?: 0)
+                        || ($metadata['file_modified_at'] ?? null) !== (filemtime($backupPath) ?: 0)) {
+                        return $this->unknownMetadata($backup);
+                    }
+                    $metadata['created_at'] = $this->parseCreationTime($metadata['created_at']);
+                    $metadata['sort_timestamp'] = $metadata['created_at'] === null
+                        ? null
+                        : (float) $metadata['created_at']->format('U.u');
+
+                    return $metadata;
+                }
+            } catch (DecryptException|\JsonException) {
+                // Metadata is only a display cache; an explicit validation will rebuild it.
+            }
+        }
+
+        return $this->unknownMetadata($backup);
+    }
+
+    public function databaseStatus(): array
+    {
+        try {
+            DB::connection()->getPdo();
+        } catch (\Throwable) {
+            return [
+                'status' => 'unavailable',
+                'label' => 'Unavailable',
+                'message' => 'The application could not connect to the database. Database recovery requires server or hosting access.',
+            ];
+        }
+
+        try {
+            $missingTables = array_values(array_filter(
+                $this->requiredTables(),
+                static fn (string $table): bool => ! Schema::hasTable($table),
+            ));
+        } catch (\Throwable) {
+            return [
+                'status' => 'connection_error',
+                'label' => 'Connection Error',
+                'message' => 'The database connection could not be checked safely.',
+            ];
+        }
+
+        if ($missingTables !== []) {
+            return [
+                'status' => 'recovery_required',
+                'label' => 'Recovery Required',
+                'message' => 'The database is reachable, but required application tables are missing. Review migrations before restoring.',
+            ];
+        }
+
+        return [
+            'status' => 'healthy',
+            'label' => 'Healthy',
+            'message' => 'The database connection and required application tables are available.',
+        ];
+    }
+
+    public function verifyRestoration(array $expectedRows): array
+    {
+        $issues = [];
+
+        foreach (self::REQUIRED_TABLES as $table) {
+            if (! Schema::hasTable($table)) {
+                $issues[] = 'A required application table is missing.';
+                break;
+            }
+        }
+
+        foreach ($expectedRows as $table => $expectedCount) {
+            if (! Schema::hasTable($table) || DB::table($table)->count() !== $expectedCount) {
+                $issues[] = 'Restored data counts do not match the validated backup.';
+                break;
+            }
+        }
+
+        if (Schema::hasTable('reservations')) {
+            $duplicateCodes = DB::table('reservations')
+                ->select('reservation_code')
+                ->whereNotNull('reservation_code')
+                ->groupBy('reservation_code')
+                ->havingRaw('COUNT(*) > 1')
+                ->exists();
+            if ($duplicateCodes) {
+                $issues[] = 'Duplicate reservation codes were found.';
+            }
+        }
+
+        foreach ([
+            ['reservations', 'client_id', 'clients'],
+            ['reservations', 'package_id', 'packages'],
+        ] as [$child, $foreignKey, $parent]) {
+            if (Schema::hasTable($child) && Schema::hasTable($parent)
+                && DB::table($child)->whereNotNull($foreignKey)
+                    ->leftJoin($parent, $child.'.'.$foreignKey, '=', $parent.'.id')
+                    ->whereNull($parent.'.id')->exists()) {
+                $issues[] = 'A restored reservation has no matching client or package.';
+            }
+        }
+
+        foreach ([
+            ['reservation_payments', 'reservation_id', 'reservations'],
+            ['reservation_refunds', 'reservation_id', 'reservations'],
+        ] as [$child, $foreignKey, $parent]) {
+            if (Schema::hasTable($child) && Schema::hasTable($parent)
+                && DB::table($child)->leftJoin($parent, $child.'.'.$foreignKey, '=', $parent.'.id')
+                    ->whereNull($parent.'.id')->exists()) {
+                $issues[] = 'A restored payment or refund has no matching reservation.';
+            }
+        }
+
+        if (Schema::hasTable('reservation_refunds') && Schema::hasTable('reservation_payments')
+            && DB::table('reservation_refunds')->whereNotNull('payment_id')
+                ->leftJoin('reservation_payments', 'reservation_refunds.payment_id', '=', 'reservation_payments.id')
+                ->whereNull('reservation_payments.id')->exists()) {
+            $issues[] = 'A restored refund has no matching payment.';
+        }
+
+        return [
+            'success' => $issues === [],
+            'warnings' => array_values(array_unique($issues)),
+        ];
     }
 
     public function pathFor(string $backup): string
@@ -270,7 +444,12 @@ class BackupService
 
     public function delete(string $backup): void
     {
-        if (! unlink($this->pathFor($backup))) {
+        $path = $this->pathFor($backup);
+        $metadataPath = $this->metadataPath($backup);
+        if (is_file($metadataPath) && ! unlink($metadataPath)) {
+            throw new \RuntimeException('The selected backup metadata could not be deleted.');
+        }
+        if (! unlink($path)) {
             throw new \RuntimeException('The selected backup could not be deleted.');
         }
     }
@@ -367,6 +546,92 @@ class BackupService
                     throw new \InvalidArgumentException('The backup file is invalid or corrupted.');
                 }
             }
+            if (! Schema::hasTable($table)) {
+                throw new \InvalidArgumentException('Backup format is not compatible with the current system.');
+            }
+        }
+    }
+
+    private function assertDatabaseReady(): void
+    {
+        if ($this->databaseStatus()['status'] !== 'healthy') {
+            throw new \RuntimeException('The database is not ready for backup or recovery operations.');
+        }
+    }
+
+    private function requiredTables(): array
+    {
+        $tables = self::REQUIRED_TABLES;
+
+        if (config('session.driver') === 'database') {
+            $tables[] = (string) config('session.table', 'sessions');
+        }
+
+        $cacheStore = config('cache.stores.'.config('cache.default'));
+        if (($cacheStore['driver'] ?? null) === 'database') {
+            $tables[] = (string) ($cacheStore['table'] ?? 'cache');
+            $tables[] = (string) ($cacheStore['lock_table'] ?? 'cache_locks');
+        }
+
+        $queueConnection = config('queue.connections.'.config('queue.default'));
+        if (($queueConnection['driver'] ?? null) === 'database') {
+            $tables[] = (string) ($queueConnection['table'] ?? 'jobs');
+            $tables[] = (string) config('queue.batching.table', 'job_batches');
+            if (str_starts_with((string) config('queue.failed.driver'), 'database')) {
+                $tables[] = (string) config('queue.failed.table', 'failed_jobs');
+            }
+        }
+
+        return array_values(array_unique($tables));
+    }
+
+    private function assertBackupRelationships(array $tables): void
+    {
+        $idsFor = static fn (string $table): array => array_fill_keys(array_map(
+            static fn (array $row): string => (string) ($row['id'] ?? ''),
+            $tables[$table] ?? [],
+        ), true);
+
+        $reservations = $idsFor('reservations');
+        $payments = $idsFor('reservation_payments');
+        $clients = $idsFor('clients');
+        $packages = $idsFor('packages');
+        $reservationCodes = [];
+
+        foreach ($tables['reservations'] ?? [] as $row) {
+            $code = $row['reservation_code'] ?? null;
+            if (is_string($code) && $code !== '') {
+                if (isset($reservationCodes[$code])) {
+                    throw new \InvalidArgumentException('The backup contains duplicate reservation codes.');
+                }
+                $reservationCodes[$code] = true;
+            }
+            if (isset($row['client_id']) && $row['client_id'] !== null && array_key_exists('clients', $tables)
+                && ! isset($clients[(string) $row['client_id']])) {
+                throw new \InvalidArgumentException('The backup contains an invalid relationship.');
+            }
+            if (isset($row['package_id']) && $row['package_id'] !== null && array_key_exists('packages', $tables)
+                && ! isset($packages[(string) $row['package_id']])) {
+                throw new \InvalidArgumentException('The backup contains an invalid relationship.');
+            }
+        }
+
+        foreach ($tables['reservation_payments'] ?? [] as $row) {
+            if (isset($row['reservation_id']) && array_key_exists('reservations', $tables)
+                && ! isset($reservations[(string) $row['reservation_id']])) {
+                throw new \InvalidArgumentException('The backup contains an invalid relationship.');
+            }
+        }
+
+        foreach ($tables['reservation_refunds'] ?? [] as $row) {
+            if (isset($row['reservation_id']) && array_key_exists('reservations', $tables)
+                && ! isset($reservations[(string) $row['reservation_id']])) {
+                throw new \InvalidArgumentException('The backup contains an invalid relationship.');
+            }
+            if (isset($row['payment_id']) && $row['payment_id'] !== null && array_key_exists('reservation_payments', $tables)
+                && ! isset($payments[(string) $row['payment_id']])) {
+                throw new \InvalidArgumentException('The backup contains an invalid relationship.');
+            }
         }
     }
 
@@ -448,6 +713,69 @@ class BackupService
     private function privateBackupDirectory(): string
     {
         return storage_path('app/private/backups');
+    }
+
+    private function metadataPath(string $backup): string
+    {
+        return $this->privateBackupDirectory().'/.metadata/'.basename($backup).'.meta.enc';
+    }
+
+    private function writeMetadata(string $backup, array $contents): void
+    {
+        $metadataDirectory = $this->privateBackupDirectory().'/.metadata';
+        $this->ensureDirectory($metadataDirectory);
+        $backupPath = $this->pathFor($backup);
+        clearstatcache(true, $backupPath);
+        $createdAt = isset($contents['created_at']) && is_string($contents['created_at'])
+            ? $contents['created_at']
+            : null;
+        $metadata = [
+            'format' => isset($contents['backup_version'])
+                ? 'JSON v'.$contents['backup_version']
+                : 'Legacy format',
+            'version' => $contents['backup_version'] ?? null,
+            'created_at' => $createdAt,
+            'compatible' => true,
+            'validation_status' => 'validated',
+            'validated_at' => now()->toIso8601String(),
+            'encrypted' => $this->isEncrypted($backup),
+            'legacy' => ! isset($contents['backup_version'])
+                || (is_numeric($contents['backup_version']) && (float) $contents['backup_version'] < self::BACKUP_VERSION),
+            'file_size' => filesize($backupPath) ?: 0,
+            'file_modified_at' => filemtime($backupPath) ?: 0,
+        ];
+        $this->writeAtomically(
+            $this->metadataPath($backup),
+            Crypt::encryptString(json_encode($metadata, JSON_THROW_ON_ERROR)),
+        );
+    }
+
+    private function unknownMetadata(string $backup): array
+    {
+        return [
+            'format' => 'Not validated',
+            'version' => null,
+            'created_at' => null,
+            'compatible' => null,
+            'validation_status' => 'unknown',
+            'validated_at' => null,
+            'encrypted' => $this->isEncrypted($backup),
+            'legacy' => false,
+            'sort_timestamp' => null,
+        ];
+    }
+
+    private function parseCreationTime(mixed $createdAt): ?Carbon
+    {
+        if (! is_string($createdAt) || preg_match('/(?:Z|[+-]\d{2}:\d{2})$/i', $createdAt) !== 1) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($createdAt)->setTimezone(config('app.timezone'));
+        } catch (\Exception) {
+            return null;
+        }
     }
 
     private function ensureDirectory(string $directory): void

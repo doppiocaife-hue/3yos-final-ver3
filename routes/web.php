@@ -116,8 +116,10 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
         // Backups contain the full database (including every admin's password hash), so they get
         // the same full-admin-only scope as every other sensitive management feature.
         Route::get('/backups', [BackupController::class, 'index'])->name('admin.backups');
+        Route::post('/backups/check-database', [BackupController::class, 'checkDatabase'])->name('admin.backups.check-database');
         Route::post('/backups/create', [BackupController::class, 'createBackup'])->name('admin.backups.create');
         Route::post('/backups/upload', [BackupController::class, 'uploadBackup'])->name('admin.backups.upload');
+        Route::post('/backups/validate', [BackupController::class, 'validateBackup'])->name('admin.backups.validate');
         Route::post('/backups/restore', [BackupController::class, 'restoreBackup'])->name('admin.backups.restore');
         Route::post('/backups/download', [BackupController::class, 'downloadBackup'])->name('admin.backups.download');
         Route::delete('/backups', [BackupController::class, 'deleteBackup'])->name('admin.backups.delete');

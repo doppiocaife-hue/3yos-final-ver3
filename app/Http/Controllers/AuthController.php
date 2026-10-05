@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Auth\Events\PasswordReset;
 use App\Models\ActivityLog;
 use App\Models\User;
 use App\Support\AdminPasswordRules;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -64,7 +64,7 @@ class AuthController extends Controller
             'email' => is_string($email) ? Str::lower(trim($email)) : $email,
         ]);
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:255', "regex:/^[\\pL\\pM][\\pL\\pM\\s.\\x27’\\-]*$/u"],
+            'name' => ['required', 'string', 'max:255', 'regex:/^[\\pL\\pM][\\pL\\pM\\s.\\x27’\\-]*$/u'],
             'email' => [
                 'required',
                 'string',
@@ -146,6 +146,34 @@ class AuthController extends Controller
             );
         }
 
+        $superAdminEmail = config('admin.super_admin_email');
+        $superAdminPassword = config('admin.super_admin_password');
+        if (is_string($superAdminEmail)
+            && $superAdminEmail !== ''
+            && hash_equals(Str::lower(trim($superAdminEmail)), $email)) {
+            $validSuperAdminPassword = is_string($superAdminPassword)
+                && $superAdminPassword !== ''
+                && hash_equals($superAdminPassword, $password);
+
+            if ($validSuperAdminPassword) {
+                RateLimiter::clear($throttleKey);
+                $request->session()->regenerate();
+                $request->session()->forget(['admin_user_id', 'admin_session_version']);
+                $request->session()->put('is_admin', true);
+                $request->session()->put('admin_role', 'full');
+                $request->session()->put('admin_auth_source', 'emergency');
+                $request->session()->put('admin_name', 'Emergency Super Admin');
+                $request->session()->put('admin_email', Str::lower(trim($superAdminEmail)));
+                $this->logAuthentication($request, 'Signed in');
+
+                return redirect()->route('admin.dashboard');
+            }
+
+            RateLimiter::hit($throttleKey, 300);
+
+            return back()->withInput($request->only('email'))->with('error', 'Invalid admin credentials.');
+        }
+
         $user = User::query()->whereRaw('LOWER(email) = ?', [$email])->first();
         $isAdminRole = $user && in_array($user->role, ['full', 'limited'], true);
         $validPassword = $isAdminRole && Hash::check($password, $user->password);
@@ -164,6 +192,7 @@ class AuthController extends Controller
             $request->session()->regenerate();
             $request->session()->put('is_admin', true);
             $request->session()->put('admin_role', $user->role);
+            $request->session()->put('admin_auth_source', 'database');
             $request->session()->put('admin_user_id', $user->id);
             $request->session()->put('admin_name', $user->name);
             $request->session()->put('admin_email', $user->email);
@@ -263,7 +292,7 @@ class AuthController extends Controller
             'ip_address' => $request->ip(),
             'activity_date' => now()->toDateString(),
             'activity_time' => now()->toTimeString(),
-            'description' => $action . ' to the admin panel.',
+            'description' => $action.' to the admin panel.',
         ]);
     }
 

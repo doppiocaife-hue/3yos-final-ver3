@@ -10,6 +10,15 @@ class AdminPasswordVerifier
 {
     public function verify(Request $request, string $password): bool
     {
+        if ($request->session()->get('admin_auth_source') === 'emergency'
+            && $request->session()->get('admin_role') === 'full') {
+            $configuredPassword = config('admin.super_admin_password');
+
+            return is_string($configuredPassword)
+                && $configuredPassword !== ''
+                && hash_equals($configuredPassword, $password);
+        }
+
         $user = User::find($request->session()->get('admin_user_id'));
 
         return $user !== null && $this->verifyUser($user, $password);

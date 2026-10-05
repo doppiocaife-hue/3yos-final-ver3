@@ -16,9 +16,8 @@ class BackupController extends Controller
 
             return array_merge([
                 'name' => $name,
-                'encrypted' => $backupService->isEncrypted($name),
                 'size' => filesize($path) ?: 0,
-            ], $backupService->inspect($name));
+            ], $backupService->metadataForDisplay($name));
         }, $backupService->listBackups());
         usort($backups, static function (array $left, array $right): int {
             if ($left['sort_timestamp'] === null || $right['sort_timestamp'] === null) {
@@ -42,17 +41,39 @@ class BackupController extends Controller
             $backups[$index]['older'] = $latestTimestamp !== null && $timestamp !== null && $timestamp < $latestTimestamp;
         }
         $currentBackupFormat = $backupService->currentFormat();
+        $databaseStatus = $backupService->databaseStatus();
+        $lastSuccessfulBackup = collect($backups)
+            ->filter(static fn (array $backup): bool => $backup['validation_status'] === 'validated' && $backup['created_at'] !== null)
+            ->sortByDesc(static fn (array $backup): float => $backup['sort_timestamp'])
+            ->first();
+        $compatibleBackupCount = collect($backups)->filter(static fn (array $backup): bool => $backup['compatible'] === true)->count();
 
-        return view('admin.backups', compact('backups', 'currentBackupFormat'));
+        return view('admin.backups', compact('backups', 'currentBackupFormat', 'databaseStatus', 'lastSuccessfulBackup', 'compatibleBackupCount'));
+    }
+
+    public function checkDatabase(Request $request, BackupService $backupService)
+    {
+        $databaseStatus = $backupService->databaseStatus();
+        if ($databaseStatus['status'] === 'healthy') {
+            $this->recordBackupActivity($request, 'Database health checked', 'Confirmed that the database connection and required application tables are available.');
+        }
+
+        return back()->with('database_status', $databaseStatus);
     }
 
     public function createBackup(Request $request, BackupService $backupService)
     {
+        if ($backupService->databaseStatus()['status'] !== 'healthy') {
+            return back()->with('error', 'Database health is not Healthy. No backup was created.');
+        }
+
         try {
             $path = $backupService->create();
         } catch (\Throwable $exception) {
             report($exception);
-            $this->recordBackupActivity($request, 'Backup creation failed', 'A database backup could not be created.');
+            if ($backupService->databaseStatus()['status'] === 'healthy') {
+                $this->recordBackupActivity($request, 'Backup creation failed', 'A database backup could not be created.');
+            }
 
             return back()->with('error', 'The database backup could not be created. Check storage permissions and the application log.');
         }
@@ -96,12 +117,47 @@ class BackupController extends Controller
         return back()->with('success', 'Backup uploaded successfully.')->withInput(['uploaded_backup' => $backupName]);
     }
 
+    public function validateBackup(Request $request, BackupService $backupService)
+    {
+        $data = $request->validate([
+            'backup' => ['required', 'string', 'regex:/^(?:backup-\d{14}(?:-\d+)?|uploaded-backup-\d{8}(?:-\d{6})?(?:-\d+)?)\.json(?:\.enc)?$/D'],
+        ]);
+
+        if ($backupService->databaseStatus()['status'] !== 'healthy') {
+            return back()->withErrors(['backup' => 'Database health must be Healthy before validation. The database was not changed.']);
+        }
+
+        try {
+            $backupService->validate($data['backup']);
+        } catch (\InvalidArgumentException $exception) {
+            $this->recordBackupActivity($request, 'Backup validation failed', 'Validation rejected '.$data['backup'].'.');
+            $message = str_contains($exception->getMessage(), 'not compatible')
+                ? 'Backup validation failed. The database was not changed. This backup is incompatible with the current system.'
+                : 'Backup validation failed. The database was not changed. The backup is corrupted or invalid.';
+
+            return back()->withErrors(['backup' => $message]);
+        } catch (\Throwable $exception) {
+            report($exception);
+            $this->recordBackupActivity($request, 'Backup validation failed', 'Validation could not complete for '.$data['backup'].'.');
+
+            return back()->withErrors(['backup' => 'Backup validation failed. The database was not changed.']);
+        }
+
+        $this->recordBackupActivity($request, 'Backup validated', 'Validated backup '.$data['backup'].' for compatibility and integrity.');
+
+        return back()->with('success', 'Backup validation passed. The backup is compatible and its integrity is verified.');
+    }
+
     public function restoreBackup(Request $request, BackupService $backupService, AdminPasswordVerifier $passwordVerifier)
     {
         $data = $request->validate([
             'backup' => ['required', 'string', 'regex:/^(?:backup-\d{14}(?:-\d+)?|uploaded-backup-\d{8}(?:-\d{6})?(?:-\d+)?)\.json(?:\.enc)?$/D'],
             'current_admin_password' => ['required', 'string'],
         ]);
+
+        if ($backupService->databaseStatus()['status'] !== 'healthy') {
+            return back()->withErrors(['backup' => 'Database health must be Healthy before restoration can begin.']);
+        }
 
         $isLegacy = ! $backupService->isEncrypted($data['backup']);
         if ($isLegacy && ! $request->boolean('confirm_legacy')) {
@@ -115,14 +171,43 @@ class BackupController extends Controller
         }
 
         try {
-            $backupService->validate($data['backup']);
-            $safetyBackupPath = $backupService->create();
+            $validation = $backupService->validate($data['backup']);
+            $this->recordBackupActivity($request, 'Backup validated', 'Validated backup '.$data['backup'].' before restore.');
+            $this->recordBackupActivity($request, 'Database restore started', 'Started restoring backup '.$data['backup'].'.');
+            try {
+                $safetyBackupPath = $backupService->create();
+            } catch (\Throwable $exception) {
+                report($exception);
+                $this->recordBackupActivity($request, 'Recovery safety backup failed', 'Could not create a safety backup; restore was cancelled for '.$data['backup'].'.');
+                $this->recordBackupActivity($request, 'Database restore failed', 'Restore was cancelled because the safety backup could not be created.');
+
+                return back()->withErrors([
+                    'backup' => 'A safety backup could not be created. Restoration was cancelled and the database was not changed.',
+                ])->withInput(['backup' => $data['backup']]);
+            }
+            $this->recordBackupActivity($request, 'Recovery safety backup created', 'Created encrypted pre-restore safety backup '.basename($safetyBackupPath).'.');
             $restoredRows = $backupService->restore($data['backup']);
+            $verification = $backupService->verifyRestoration($validation['expected_rows']);
+            $this->recordBackupActivity(
+                $request,
+                'Recovery verification completed',
+                $verification['success']
+                    ? 'Post-restore verification passed for '.$data['backup'].'.'
+                    : 'Post-restore verification found issues for '.$data['backup'].'.',
+            );
+
+            if (! $verification['success']) {
+                $this->recordBackupActivity($request, 'Database restore failed', 'Post-restore verification failed for '.$data['backup'].'.');
+
+                return back()->withErrors([
+                    'backup' => 'Database recovery completed with warnings. Review the recovery verification before normal use: '.implode(' ', $verification['warnings']),
+                ])->withInput(['backup' => $data['backup']]);
+            }
         } catch (\InvalidArgumentException $exception) {
             $this->recordBackupActivity($request, 'Backup restore failed', 'Restore verification failed for '.$data['backup'].'.');
             $message = str_contains($exception->getMessage(), 'not compatible')
-                ? 'Backup format is not compatible with the current system.'
-                : 'This backup could not be verified as compatible. It may be corrupted or modified. No data was restored.';
+                ? 'Backup format is incompatible with the current system. No data was restored.'
+                : 'This backup could not be verified. It may be corrupted or invalid. No data was restored.';
 
             return back()->withErrors(['backup' => $message])->withInput(['backup' => $data['backup']]);
         } catch (\Throwable $exception) {
@@ -133,9 +218,9 @@ class BackupController extends Controller
         }
 
         $safetyBackupName = basename($safetyBackupPath);
-        $this->recordBackupActivity($request, 'Backup restored successfully', 'Restored '.$data['backup'].' ('.$restoredRows.' rows). Safety backup: '.$safetyBackupName.'.');
+        $this->recordBackupActivity($request, 'Database restore completed', 'Restored '.$data['backup'].' ('.$restoredRows.' rows). Safety backup: '.$safetyBackupName.'.');
 
-        return back()->with('success', "Backup restored successfully ({$restoredRows} rows).");
+        return back()->with('success', "Database recovery completed successfully. Restored {$restoredRows} rows; post-restore verification passed.");
     }
 
     public function downloadBackup(Request $request, BackupService $backupService)

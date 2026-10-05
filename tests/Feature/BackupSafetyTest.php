@@ -11,7 +11,9 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Database\QueryException;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class BackupSafetyTest extends TestCase
@@ -194,7 +196,7 @@ class BackupSafetyTest extends TestCase
 
             $response->assertRedirect('/admin/backups')
                 ->assertSessionHasErrors([
-                    'backup' => 'This backup could not be verified as compatible. It may be corrupted or modified. No data was restored.',
+                    'backup' => 'This backup could not be verified. It may be corrupted or invalid. No data was restored.',
                 ])
                 ->assertDontSee('CurrentAdmin#2026')
                 ->assertDontSee('AES-256-CBC');
@@ -246,7 +248,7 @@ class BackupSafetyTest extends TestCase
 
             $response->assertRedirect('/admin/backups')
                 ->assertSessionHasErrors([
-                    'backup' => 'This backup could not be verified as compatible. It may be corrupted or modified. No data was restored.',
+                    'backup' => 'This backup could not be verified. It may be corrupted or invalid. No data was restored.',
                 ])
                 ->assertDontSee('CurrentAdmin#2026');
             $this->assertSame('Changed after backup', $package->fresh()->description);
@@ -315,7 +317,112 @@ class BackupSafetyTest extends TestCase
             ->assertDontSee('backup-format-card', false);
     }
 
-    public function test_backup_list_uses_each_payload_version_and_creation_time_for_status_and_latest_badge(): void
+    public function test_backup_page_shows_database_health_and_distinguishes_infrastructure_recovery(): void
+    {
+        $response = $this->withSession([
+            'is_admin' => true,
+            'admin_role' => 'full',
+            'admin_email' => 'backup-admin@example.test',
+        ])->get(route('admin.backups'));
+
+        $response->assertOk()
+            ->assertSee('Database status')
+            ->assertSee('Healthy')
+            ->assertSee('Database Recovery')
+            ->assertSee('This page cannot recover a database it depends on.')
+            ->assertSee('Emergency Super Admin account');
+        $this->assertSame('healthy', app(BackupService::class)->databaseStatus()['status']);
+    }
+
+    public function test_database_health_response_does_not_expose_connection_errors(): void
+    {
+        DB::shouldReceive('connection')
+            ->once()
+            ->andThrow(new \PDOException('database-password=do-not-expose'));
+
+        $status = app(BackupService::class)->databaseStatus();
+
+        $this->assertSame('unavailable', $status['status']);
+        $this->assertSame('Unavailable', $status['label']);
+        $this->assertStringNotContainsString('do-not-expose', json_encode($status, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_database_health_requires_configured_database_backed_session_tables(): void
+    {
+        config([
+            'session.driver' => 'database',
+            'session.table' => 'recovery_sessions',
+        ]);
+        Schema::shouldReceive('hasTable')
+            ->andReturnUsing(static fn (string $table): bool => $table !== 'recovery_sessions');
+
+        $status = app(BackupService::class)->databaseStatus();
+
+        $this->assertSame('recovery_required', $status['status']);
+        $this->assertSame('Recovery Required', $status['label']);
+        $this->assertStringNotContainsString('recovery_sessions', $status['message']);
+    }
+
+    public function test_primary_admin_can_validate_a_backup_and_the_action_is_audited(): void
+    {
+        $backupService = app(BackupService::class);
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+
+        try {
+            $response = $this->withSession([
+                'is_admin' => true,
+                'admin_role' => 'full',
+                'admin_email' => 'backup-admin@example.test',
+            ])->post(route('admin.backups.validate'), ['backup' => $backupName]);
+
+            $response->assertRedirect()
+                ->assertSessionHas('success', 'Backup validation passed. The backup is compatible and its integrity is verified.');
+            $this->assertDatabaseHas('activity_logs', [
+                'action' => 'Backup validated',
+                'actor_email' => 'backup-admin@example.test',
+            ]);
+            $this->assertSame('validated', $backupService->metadataForDisplay($backupName)['validation_status']);
+        } finally {
+            $backupService->delete($backupName);
+        }
+    }
+
+    public function test_tampered_backup_validation_fails_without_modifying_database_data(): void
+    {
+        $package = Package::create([
+            'name' => 'Validation package',
+            'slug' => 'validation-package',
+            'price' => 500,
+            'min_guests' => 10,
+            'max_guests' => 50,
+            'description' => 'Current data stays intact',
+        ]);
+        $backupService = app(BackupService::class);
+        $backupPath = $backupService->create();
+        $backupName = basename($backupPath);
+        file_put_contents($backupPath, file_get_contents($backupPath).'tampered', LOCK_EX);
+
+        try {
+            $response = $this->from('/admin/backups')->withSession([
+                'is_admin' => true,
+                'admin_role' => 'full',
+                'admin_email' => 'backup-admin@example.test',
+            ])->post(route('admin.backups.validate'), ['backup' => $backupName]);
+
+            $response->assertRedirect('/admin/backups')
+                ->assertSessionHasErrors(['backup' => 'Backup validation failed. The database was not changed. The backup is corrupted or invalid.']);
+            $this->assertSame('Current data stays intact', $package->fresh()->description);
+            $this->assertDatabaseHas('activity_logs', [
+                'action' => 'Backup validation failed',
+                'actor_email' => 'backup-admin@example.test',
+            ]);
+        } finally {
+            $backupService->delete($backupName);
+        }
+    }
+
+    public function test_backup_list_uses_cached_metadata_and_marks_changed_files_unknown_until_validated(): void
     {
         $backupService = app(BackupService::class);
         $existingBackups = $backupService->listBackups();
@@ -333,6 +440,15 @@ class BackupSafetyTest extends TestCase
             $secondContents['created_at'] = now()->subDay()->toIso8601String();
             file_put_contents($firstPath, Crypt::encryptString(json_encode($firstContents, JSON_THROW_ON_ERROR)), LOCK_EX);
             file_put_contents($secondPath, Crypt::encryptString(json_encode($secondContents, JSON_THROW_ON_ERROR)), LOCK_EX);
+            touch($firstPath, filemtime($firstPath) + 2);
+            touch($secondPath, filemtime($secondPath) + 2);
+            $backupService->validate($firstName);
+            try {
+                $backupService->validate($secondName);
+                $this->fail('An unsupported backup version must fail validation.');
+            } catch (\InvalidArgumentException) {
+                // The page must not decrypt the modified backup again just to render its metadata.
+            }
 
             $response = $this->withSession([
                 'is_admin' => true,
@@ -347,18 +463,16 @@ class BackupSafetyTest extends TestCase
                     && $byName[$firstName]['compatible'] === true
                     && $byName[$firstName]['latest'] === true
                     && $byName[$firstName]['legacy'] === false
-                    && $byName[$secondName]['format'] === 'JSON v0'
-                    && $byName[$secondName]['compatible'] === false
+                    && $byName[$secondName]['format'] === 'Not validated'
+                    && $byName[$secondName]['compatible'] === null
                     && $byName[$secondName]['latest'] === false
-                    && $byName[$secondName]['legacy'] === true;
+                    && $byName[$secondName]['legacy'] === false;
             });
             $response->assertSee($firstName)
                 ->assertSee($secondName)
-                ->assertSee('Not compatible with current system')
-                ->assertSee('Older backup')
-                ->assertSee('Latest')
-                ->assertSee('disabled', false)
-                ->assertSee('This backup cannot be restored because it is not compatible.');
+                ->assertSee('Compatibility unknown — validate first')
+                ->assertSee('Current')
+                ->assertSee('disabled', false);
         } finally {
             foreach (array_diff($backupService->listBackups(), $existingBackups) as $backup) {
                 $backupService->delete($backup);
@@ -538,7 +652,7 @@ class BackupSafetyTest extends TestCase
             ]);
 
             $response->assertRedirect()
-                ->assertSessionHas('success');
+                ->assertSessionHas('success', fn (string $message): bool => str_starts_with($message, 'Database recovery completed successfully.'));
             $this->assertSame('Description from the backup', $package->fresh()->description);
             $this->assertTrue(Hash::check('CurrentPrimary#2026', $primary->fresh()->password));
             $this->assertSame('full', $primary->fresh()->role);
@@ -559,7 +673,19 @@ class BackupSafetyTest extends TestCase
                 'actor_email' => 'current.primary@example.test',
             ]);
             $this->assertDatabaseHas('activity_logs', [
-                'action' => 'Backup restored successfully',
+                'action' => 'Database restore started',
+                'user_id' => $primary->id,
+            ]);
+            $this->assertDatabaseHas('activity_logs', [
+                'action' => 'Recovery safety backup created',
+                'user_id' => $primary->id,
+            ]);
+            $this->assertDatabaseHas('activity_logs', [
+                'action' => 'Recovery verification completed',
+                'user_id' => $primary->id,
+            ]);
+            $this->assertDatabaseHas('activity_logs', [
+                'action' => 'Database restore completed',
                 'user_id' => $primary->id,
             ]);
 
@@ -663,7 +789,7 @@ class BackupSafetyTest extends TestCase
             ]);
 
             $response->assertRedirect('/admin/backups')
-                ->assertSessionHasErrors(['backup' => 'Backup format is not compatible with the current system.']);
+                ->assertSessionHasErrors(['backup' => 'Backup format is incompatible with the current system. No data was restored.']);
             $this->assertSame('Keep this data', $package->fresh()->description);
             $this->assertSame($listedBackups, $backupService->listBackups());
         } finally {
@@ -719,6 +845,19 @@ class BackupSafetyTest extends TestCase
     {
         $this->get('/admin/recover')->assertNotFound();
         $this->post('/admin/full-restore')->assertNotFound();
+
+        $teamAdmin = User::factory()->create([
+            'role' => 'limited',
+            'is_active' => true,
+        ]);
+        $this->withSession([
+            'is_admin' => true,
+            'admin_user_id' => $teamAdmin->id,
+            'admin_session_version' => $teamAdmin->session_version,
+            'admin_role' => 'limited',
+        ])->post(route('admin.backups.validate'), [
+            'backup' => 'backup-20260926000000.json.enc',
+        ])->assertForbidden();
     }
 
     public function test_admin_downloads_encrypted_backup_without_decrypting_it(): void
