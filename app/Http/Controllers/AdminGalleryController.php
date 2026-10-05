@@ -8,7 +8,11 @@ use Illuminate\Support\Facades\Storage;
 
 class AdminGalleryController extends Controller
 {
-    public function index() { return view('admin.gallery', ['galleryItems' => GalleryItem::latest()->get()]); }
+    public function index()
+    {
+        return view('admin.gallery', ['galleryItems' => GalleryItem::latest()->get()]);
+    }
+
     public function store(Request $request)
     {
         $data = $this->validated($request);
@@ -23,14 +27,27 @@ class AdminGalleryController extends Controller
     {
         $data = $this->validated($request, false);
         if ($request->hasFile('image')) {
-            Storage::disk('public')->delete($gallery->image_path);
-            $data['image_path'] = $request->file('image')->store('gallery', 'public');
+            $oldImagePath = $gallery->image_path;
+            $newImagePath = $request->file('image')->store('gallery', 'public');
+            $data['image_path'] = $newImagePath;
         }
         $gallery->update($data);
 
+        if (isset($oldImagePath)) {
+            Storage::disk('public')->delete($oldImagePath);
+        }
+
         return back()->with('success', 'Gallery item updated.');
     }
-    public function destroy(GalleryItem $gallery) { Storage::disk('public')->delete($gallery->image_path); $gallery->delete(); return back()->with('success', 'Gallery item deleted.'); }
+
+    public function destroy(GalleryItem $gallery)
+    {
+        Storage::disk('public')->delete($gallery->image_path);
+        $gallery->delete();
+
+        return back()->with('success', 'Gallery item deleted.');
+    }
+
     private function validated(Request $request, bool $imageRequired = true): array
     {
         $data = $request->validate([

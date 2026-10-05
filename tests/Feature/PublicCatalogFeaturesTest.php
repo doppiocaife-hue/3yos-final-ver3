@@ -138,6 +138,10 @@ class PublicCatalogFeaturesTest extends TestCase
         $response->assertOk();
         $response->assertSee('gallery-admin-preview');
         $response->assertSee('Replace image');
+        $response->assertSee('id="galleryCropModal"', false);
+        $response->assertSee('Apply Crop');
+        $response->assertSee('aspect-ratio: 4 / 3');
+        $response->assertSee('data-gallery-crop-input', false);
         $response->assertDontSee('Image controls');
         $response->assertDontSee('name="title"');
         $response->assertDontSee('name="event_type"');
@@ -201,6 +205,40 @@ class PublicCatalogFeaturesTest extends TestCase
         Storage::disk('public')->assertExists($gallery->image_path);
         $galleryImage = $this->get(route('gallery.image', ['path' => $gallery->image_path]));
         $galleryImage->assertOk()->assertHeader('Content-Type', 'image/png')->assertStreamedContent($image);
+    }
+
+    public function test_gallery_edit_keeps_an_unchanged_image_and_replaces_it_safely(): void
+    {
+        Storage::fake('public');
+        $admin = User::factory()->create(['role' => 'full']);
+        $originalPath = 'gallery/original.png';
+        Storage::disk('public')->put($originalPath, 'original image');
+        $gallery = GalleryItem::create([
+            'title' => 'Gallery image',
+            'image_path' => $originalPath,
+        ]);
+        $session = $this->websiteSession($admin);
+
+        $this->withSession($session)
+            ->from(route('admin.gallery.index'))
+            ->put(route('admin.gallery.update', $gallery), ['is_featured' => '1'])
+            ->assertRedirect(route('admin.gallery.index'));
+        $this->assertSame($originalPath, $gallery->fresh()->image_path);
+        Storage::disk('public')->assertExists($originalPath);
+
+        $image = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lb8AAAAASUVORK5CYII=');
+        $this->withSession($session)
+            ->from(route('admin.gallery.index'))
+            ->put(route('admin.gallery.update', $gallery), [
+                'image' => UploadedFile::fake()->createWithContent('replacement.png', $image),
+                'is_featured' => '1',
+            ])
+            ->assertRedirect(route('admin.gallery.index'));
+
+        $replacementPath = $gallery->fresh()->image_path;
+        $this->assertNotSame($originalPath, $replacementPath);
+        Storage::disk('public')->assertMissing($originalPath);
+        Storage::disk('public')->assertExists($replacementPath);
     }
 
     public function test_package_estimate_uses_the_package_rate_times_guest_count(): void
