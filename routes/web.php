@@ -88,7 +88,6 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     Route::get('/manual', fn () => redirect()->route('admin.support'))->name('admin.manual');
     Route::middleware('ensure.full-admin')->group(function () {
         Route::post('/manage-website/reauthenticate', [ManageWebsiteAuthenticationController::class, 'store'])
-            ->middleware('throttle:5,1')
             ->name('admin.manage-website.reauthenticate');
         Route::middleware('ensure.manage-website')->group(function () {
             Route::resource('packages', AdminPackageController::class)

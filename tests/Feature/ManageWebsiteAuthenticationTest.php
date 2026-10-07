@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Tests\TestCase;
 
 class ManageWebsiteAuthenticationTest extends TestCase
@@ -20,7 +21,10 @@ class ManageWebsiteAuthenticationTest extends TestCase
             ->assertSee('id="manageWebsiteSubnav"', false)
             ->assertSee('id="manageWebsiteAuthForm"', false)
             ->assertSee('Unlock Manage Website')
-            ->assertSee('data-manage-website-unlocked="false"', false);
+            ->assertSee('data-manage-website-unlocked="false"', false)
+            ->assertSee("form.dataset.authSubmitting = 'true'", false)
+            ->assertSee("passwordSubmit.textContent = 'Authenticating...'", false)
+            ->assertSee('if (!dialog.open) dialog.showModal()', false);
     }
 
     public function test_direct_access_to_every_website_section_requires_reauthentication(): void
@@ -67,6 +71,73 @@ class ManageWebsiteAuthenticationTest extends TestCase
         foreach (['admin.packages.index', 'admin.services.index', 'admin.gallery.index'] as $routeName) {
             $this->get(route($routeName))->assertOk();
         }
+    }
+
+    public function test_reauthentication_limits_failed_passwords_per_admin_and_clears_the_limit_on_success(): void
+    {
+        $adminSession = $this->adminSession();
+        $throttleKey = 'manage-website-reauth:database:'.$adminSession['admin_user_id'].'|127.0.0.1';
+        RateLimiter::clear($throttleKey);
+
+        for ($attempt = 0; $attempt < 4; $attempt++) {
+            $this->withSession($adminSession)
+                ->from(route('admin.dashboard'))
+                ->post(route('admin.manage-website.reauthenticate'), [
+                    'current_admin_password' => 'incorrect-password',
+                ])
+                ->assertRedirect(route('admin.dashboard'))
+                ->assertSessionHasErrors('manage_website_password');
+        }
+
+        $this->withSession($adminSession)
+            ->post(route('admin.manage-website.reauthenticate'), [
+                'current_admin_password' => 'the-correct-password',
+                'return_to' => '/admin/',
+            ])
+            ->assertRedirect(route('admin.dashboard'))
+            ->assertSessionHas('manage_website_auth_expires_at');
+
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this->withSession($adminSession)
+                ->from(route('admin.dashboard'))
+                ->post(route('admin.manage-website.reauthenticate'), [
+                    'current_admin_password' => 'incorrect-password',
+                ])
+                ->assertRedirect(route('admin.dashboard'))
+                ->assertSessionHasErrors([
+                    'manage_website_password' => 'The administrator password is incorrect. Manage Website remains locked.',
+                ]);
+        }
+
+        $this->withSession($adminSession)
+            ->from(route('admin.dashboard'))
+            ->post(route('admin.manage-website.reauthenticate'), [
+                'current_admin_password' => 'incorrect-password',
+            ])
+            ->assertRedirect(route('admin.dashboard'))
+            ->assertSessionHasErrors('manage_website_password')
+            ->assertSessionHas('errors', function ($errors) {
+                return str_starts_with(
+                    $errors->first('manage_website_password'),
+                    'Too many authentication attempts.'
+                );
+            });
+
+        $anotherAdminSession = $this->adminSession();
+        $anotherAdminKey = 'manage-website-reauth:database:'.$anotherAdminSession['admin_user_id'].'|127.0.0.1';
+        RateLimiter::clear($anotherAdminKey);
+        $this->withSession($anotherAdminSession)
+            ->from(route('admin.dashboard'))
+            ->post(route('admin.manage-website.reauthenticate'), [
+                'current_admin_password' => 'incorrect-password',
+            ])
+            ->assertRedirect(route('admin.dashboard'))
+            ->assertSessionHasErrors([
+                'manage_website_password' => 'The administrator password is incorrect. Manage Website remains locked.',
+            ]);
+
+        RateLimiter::clear($throttleKey);
+        RateLimiter::clear($anotherAdminKey);
     }
 
     public function test_expired_manage_website_authentication_requires_reauthentication_again(): void

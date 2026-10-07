@@ -242,12 +242,18 @@ document.querySelectorAll('form input:not([type="hidden"]), form select, form te
     const currentAdmin = document.getElementById('admin-password-current-admin');
     let pendingForm = null;
     let pendingSubmitter = null;
+    let dialogSubmissionPending = false;
 
     document.addEventListener('submit', (event) => {
         const form = event.target;
         if (!(form instanceof HTMLFormElement) || !form.hasAttribute('data-password-confirm')) return;
+        if (form.id === 'manageWebsiteAuthForm' && form.dataset.authSubmitting === 'true') {
+            event.preventDefault();
+            return;
+        }
         if (form.dataset.passwordConfirmed === 'true') {
             delete form.dataset.passwordConfirmed;
+            if (form.id === 'manageWebsiteAuthForm') form.dataset.authSubmitting = 'true';
             return;
         }
 
@@ -263,20 +269,32 @@ document.querySelectorAll('form input:not([type="hidden"]), form select, form te
             : '';
         passwordMessage.textContent = form.dataset.passwordMessage || 'Confirm your administrator password to continue.';
         passwordInput.value = '';
-        dialog.showModal();
+        if (!dialog.open) dialog.showModal();
         passwordInput.focus();
     });
 
-    document.getElementById('admin-password-cancel').addEventListener('click', () => dialog.close('cancel'));
-    dialog.addEventListener('cancel', () => {
+    const resetPendingDialog = () => {
         pendingForm = null;
         pendingSubmitter = null;
+        dialogSubmissionPending = false;
+        passwordSubmit.disabled = false;
+        passwordSubmit.textContent = 'Continue';
+    };
+
+    document.getElementById('admin-password-cancel').addEventListener('click', () => {
+        dialog.close('cancel');
+        resetPendingDialog();
     });
+    dialog.addEventListener('cancel', resetPendingDialog);
 
     dialogForm.addEventListener('submit', (event) => {
         event.preventDefault();
+        if (dialogSubmissionPending) return;
         if (!dialogForm.reportValidity() || !pendingForm) return;
 
+        dialogSubmissionPending = true;
+        passwordSubmit.disabled = true;
+        passwordSubmit.textContent = 'Authenticating...';
         const form = pendingForm;
         const submitter = pendingSubmitter;
         pendingForm = null;

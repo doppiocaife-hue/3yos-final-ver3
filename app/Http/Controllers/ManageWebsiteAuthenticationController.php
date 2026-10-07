@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\AdminPasswordVerifier;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 
 class ManageWebsiteAuthenticationController extends Controller
 {
@@ -12,6 +13,17 @@ class ManageWebsiteAuthenticationController extends Controller
 
     public function store(Request $request, AdminPasswordVerifier $passwordVerifier): RedirectResponse
     {
+        $throttleKey = $this->throttleKey($request);
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+
+            return back()
+                ->withErrors([
+                    'manage_website_password' => 'Too many authentication attempts. Please wait '.ceil($seconds / 60).' minute(s) and try again.',
+                ])
+                ->withInput($request->except('current_admin_password'));
+        }
+
         $password = $request->input('current_admin_password');
         $returnTo = $this->adminReturnPath(
             $request->session()->get('manage_website_return_to')
@@ -22,9 +34,13 @@ class ManageWebsiteAuthenticationController extends Controller
             $request->session()->put('manage_website_return_to', $returnTo);
         }
 
-        if (! is_string($password)
-            || strlen($password) > 512
-            || ! $passwordVerifier->verify($request, $password)) {
+        $passwordIsValid = is_string($password)
+            && strlen($password) <= 512
+            && $passwordVerifier->verify($request, $password);
+
+        if (! $passwordIsValid) {
+            RateLimiter::hit($throttleKey, 300);
+
             return back()
                 ->withErrors([
                     'manage_website_password' => 'The administrator password is incorrect. Manage Website remains locked.',
@@ -32,6 +48,7 @@ class ManageWebsiteAuthenticationController extends Controller
                 ->withInput($request->except('current_admin_password'));
         }
 
+        RateLimiter::clear($throttleKey);
         $request->session()->put([
             'manage_website_auth_user_id' => $request->session()->get('admin_user_id'),
             'manage_website_auth_source' => $request->session()->get('admin_auth_source'),
@@ -42,6 +59,15 @@ class ManageWebsiteAuthenticationController extends Controller
         $destination = $request->session()->pull('manage_website_return_to');
 
         return redirect()->to($this->adminReturnPath($destination) ?? route('admin.dashboard'));
+    }
+
+    private function throttleKey(Request $request): string
+    {
+        $adminId = $request->session()->get('admin_user_id');
+        $adminIdentity = $request->session()->get('admin_auth_source').':'
+            .($adminId ?? strtolower((string) $request->session()->get('admin_email')));
+
+        return 'manage-website-reauth:'.$adminIdentity.'|'.$request->ip();
     }
 
     private function adminReturnPath(mixed $destination): ?string
