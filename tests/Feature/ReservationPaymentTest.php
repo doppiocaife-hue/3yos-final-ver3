@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Contracts\ReceiptOcrEngine;
 use App\Models\ActivityLog;
 use App\Models\Package;
 use App\Models\Reservation;
@@ -20,6 +21,18 @@ class ReservationPaymentTest extends TestCase
     use RefreshDatabase;
 
     private const ADMIN = ['is_admin' => true, 'admin_role' => 'full', 'admin_name' => 'Payment Tester', 'admin_email' => 'tester@3yos.com'];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->app->instance(ReceiptOcrEngine::class, new class implements ReceiptOcrEngine
+        {
+            public function recognize(string $imagePath): string
+            {
+                return "GCash payment successful\nAmount 100.00\nDate Oct 03, 2026\nReference No. TEST12345";
+            }
+        });
+    }
 
     private function reservation(array $overrides = []): Reservation
     {
@@ -71,6 +84,24 @@ class ReservationPaymentTest extends TestCase
         );
     }
 
+    private function analyzeReceipt(Reservation $reservation, UploadedFile $file, ?ReservationPayment $payment = null): array
+    {
+        $payload = ['receipt_image' => $file];
+        if ($payment) {
+            $payload['payment_id'] = $payment->id;
+        }
+        $response = $this->withSession(self::ADMIN)
+            ->withHeaders(['Accept' => 'application/json'])
+            ->post(route('admin.reservations.payments.receipt.analyze', $reservation), $payload)
+            ->assertOk();
+
+        return [
+            'receipt_review_token' => $response->json('review_token'),
+            'receipt_confirmed' => '1',
+            'reference_number' => $response->json('receipt.reference_number'),
+        ];
+    }
+
     private function assertTotals(Reservation $reservation, float $paid, float $balance, string $status): void
     {
         $fresh = $reservation->fresh();
@@ -120,14 +151,16 @@ class ReservationPaymentTest extends TestCase
         Storage::fake('public');
         $reservation = $this->reservation();
         $url = route('admin.reservations.payments.store', $reservation);
+        $firstReceipt = $this->pngUpload();
+        $firstReceiptReview = $this->analyzeReceipt($reservation, $firstReceipt);
 
         $this->withSession(self::ADMIN)->post($url, [
             'payment_date' => now()->toDateString(),
             'payment_type' => 'Downpayment',
             'amount' => 100,
             'payment_method' => 'GCash',
-            'receipt_image' => $this->pngUpload(),
-        ])->assertRedirect();
+            'receipt_image' => $firstReceipt,
+        ] + $firstReceiptReview)->assertRedirect();
 
         $payment = $reservation->payments()->firstOrFail();
         $oldPath = $payment->receipt_image_path;
@@ -165,6 +198,8 @@ class ReservationPaymentTest extends TestCase
         $this->assertSame($oldPath, $payment->fresh()->receipt_image_path);
         Storage::disk('local')->assertExists($oldPath);
 
+        $replacement = $this->pngUpload('replacement.png');
+        $replacementReview = $this->analyzeReceipt($reservation, $replacement, $payment);
         $this->withSession(self::ADMIN)->post(route('admin.reservations.payments.update', [$reservation, $payment]), [
             '_method' => 'PUT',
             'current_admin_password' => 'password',
@@ -172,8 +207,8 @@ class ReservationPaymentTest extends TestCase
             'payment_type' => 'Downpayment',
             'amount' => 100,
             'payment_method' => 'GCash',
-            'receipt_image' => $this->pngUpload('replacement.png'),
-        ])->assertRedirect();
+            'receipt_image' => $replacement,
+        ] + $replacementReview)->assertRedirect();
 
         $newPath = $payment->fresh()->receipt_image_path;
         $this->assertNotSame($oldPath, $newPath);

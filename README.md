@@ -212,14 +212,17 @@ Create a deployment-specific `.env` from `.env.example`; the `.env` file is not 
 | `APP_TIMEZONE` | Application timezone for local date/time handling. Defaults to `Asia/Manila`; set it explicitly in each deployment environment. |
 | `PRIMARY_ADMIN_SETUP_KEY` | Private first-administrator setup credential. Use at least 32 characters, configure it before initial setup, then remove it and refresh cached configuration. |
 | `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` | Optional environment-controlled Emergency Super Admin credentials for the normal `/admin/login` form. Configure both privately; blank values disable emergency sign-in. The account is not stored in the `users` table and does not work as a bypass for a completely unavailable database. |
-| `DB_CONNECTION`, `DB_DATABASE`, `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` | Database driver and connection settings. `DB_CONNECTION=sqlite` is the default; configure the appropriate values for a server database. |
+| `DB_CONNECTION`, `DB_DATABASE`, `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` | Database driver and connection settings. The application defaults to MySQL (`DB_CONNECTION=mysql`); local development and PHPUnit tests may use SQLite where configured. Set credentials privately in `.env`. |
 | `SESSION_DRIVER`, `SESSION_LIFETIME`, `SESSION_SECURE_COOKIE` | Session storage/lifetime and cookie transport. Set `SESSION_SECURE_COOKIE=true` when serving production over HTTPS. |
 | `MAIL_MAILER`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME` | Outbound email transport and sender identity. Use provider-issued credentials, not a personal account password. |
 | `RECAPTCHA_SITE_KEY`, `RECAPTCHA_SECRET_KEY` | Public reCAPTCHA widget key and server-side verification secret. These are read from `config/services.php`; add them privately to `.env` and do not expose the secret key. |
+| `TESSERACT_BINARY`, `TESSERACT_TIMEOUT` | Optional local Tesseract OCR executable and timeout for private receipt analysis. No receipt image is sent to a third-party OCR provider. |
 | `FILESYSTEM_DISK` | Default filesystem disk; the local private disk is the default. Gallery images explicitly use the public disk. |
 | `CACHE_STORE`, `QUEUE_CONNECTION` | Laravel cache and queue drivers. Configure their backing stores/tables according to the chosen deployment. Current customer notification sends use the configured mail transport directly. |
 
 The example environment file provides safe placeholders, not working production credentials. Validate that the required tables for database-backed sessions, cache, or queues exist before selecting those drivers.
+
+Receipt OCR uses a locally installed Tesseract executable. Install Tesseract on the application host and ensure it is on `PATH`, or set `TESSERACT_BINARY` in `.env` to its full executable path (for example, `C:\Program Files\Tesseract-OCR\tesseract.exe` on Windows). Receipt images remain on the application host. If Tesseract is unavailable, admins can still record payments manually without attaching an image.
 
 ## Testing and frontend assets
 

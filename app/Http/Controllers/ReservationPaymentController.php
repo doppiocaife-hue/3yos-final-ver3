@@ -2,13 +2,21 @@
 
 namespace App\Http\Controllers;
 
+use App\Contracts\ReceiptOcrEngine;
+use App\Exceptions\ReceiptOcrUnavailable;
 use App\Models\ActivityLog;
 use App\Models\Reservation;
 use App\Models\ReservationPayment;
 use App\Models\ReservationRefund;
+use App\Services\ReceiptTextParser;
+use Carbon\Carbon;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -56,15 +64,92 @@ class ReservationPaymentController extends Controller
         ]);
     }
 
+    public function analyzeReceipt(
+        Request $request,
+        Reservation $reservation,
+        ReceiptOcrEngine $ocrEngine,
+        ReceiptTextParser $parser,
+    ): JsonResponse {
+        $data = $request->validate([
+            'receipt_image' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120', 'dimensions:max_width=10000,max_height=10000'],
+            'payment_id' => ['nullable', 'integer'],
+        ]);
+        $payment = null;
+        if (isset($data['payment_id'])) {
+            $payment = $reservation->payments()->whereKey($data['payment_id'])->firstOrFail();
+        }
+
+        $file = $data['receipt_image'];
+        $hash = $this->receiptHash($file);
+        $this->assertNoDuplicateReceipt($request, $reservation, $hash, null, $payment);
+
+        try {
+            $analysis = $parser->parse($ocrEngine->recognize($file->getRealPath()));
+        } catch (ReceiptOcrUnavailable) {
+            $this->recordFinancialActivity($request, 'Receipt OCR unavailable', 'Local receipt OCR could not be completed; no receipt or payment was saved.', $reservation);
+
+            return response()->json([
+                'message' => 'Local receipt OCR is not installed or could not process this image. You can still record the payment manually without attaching a receipt.',
+            ], 503);
+        }
+
+        if (! $analysis['detected']) {
+            $this->recordFinancialActivity($request, 'Receipt rejected', 'The uploaded image was not identified as a completed payment receipt.', $reservation);
+
+            return response()->json([
+                'message' => 'Receipt Not Detected. The uploaded image does not appear to be a completed payment receipt. Upload payment proof or record the payment manually without attaching this image.',
+            ], 422);
+        }
+
+        $this->assertNoDuplicateReceipt(
+            $request,
+            $reservation,
+            $hash,
+            $analysis['reference_number'],
+            $payment,
+        );
+        $this->recordFinancialActivity(
+            $request,
+            'Receipt OCR processed',
+            'Detected '.$analysis['receipt_type'].'; extracted fields are awaiting administrator review.',
+            $reservation,
+        );
+
+        $review = [
+            'reservation_id' => $reservation->id,
+            'payment_id' => $payment?->id,
+            'receipt_sha256' => $hash,
+            'analysis' => [
+                'amount' => $analysis['amount'],
+                'payment_method' => $analysis['payment_method'],
+                'payment_date' => $analysis['payment_date'],
+                'reference_number' => $analysis['reference_number'],
+            ],
+            'expires_at' => now()->addMinutes(30)->timestamp,
+        ];
+
+        return response()->json([
+            'receipt' => $analysis,
+            'review_token' => Crypt::encryptString(json_encode($review, JSON_THROW_ON_ERROR)),
+        ]);
+    }
+
     public function store(Request $request, Reservation $reservation): RedirectResponse
     {
         $data = $this->validatePayment($request);
         $receiptImage = $data['receipt_image'] ?? null;
         unset($data['receipt_image']);
+        $receiptReview = $receiptImage
+            ? $this->verifyReceiptReview($request, $reservation, $receiptImage, null)
+            : null;
+        $referenceHash = $this->referenceHash($data['reference_number'] ?? null);
+        if (! $receiptImage) {
+            $this->assertNoDuplicateReceipt($request, $reservation, null, $data['reference_number'] ?? null);
+        }
         $newReceiptPath = null;
 
         try {
-            $created = DB::transaction(function () use ($request, $reservation, $data, $receiptImage, &$newReceiptPath) {
+            $created = DB::transaction(function () use ($request, $reservation, $data, $receiptImage, $receiptReview, $referenceHash, &$newReceiptPath) {
                 $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
                 $reservation->ensurePaymentLedger();
                 $reservation->recalculatePaymentTotals();
@@ -89,7 +174,10 @@ class ReservationPaymentController extends Controller
 
                 if ($receiptImage) {
                     $newReceiptPath = $this->storeReceiptImage($receiptImage);
+                    $data['receipt_sha256'] = $receiptReview['receipt_sha256'];
+                    $this->recordReceiptCorrections($request, $reservation, $receiptReview['analysis'], $data);
                 }
+                $data['reference_sha256'] = $referenceHash;
 
                 $payment = $reservation->payments()->create($data + [
                     'receipt_image_path' => $newReceiptPath,
@@ -116,6 +204,17 @@ class ReservationPaymentController extends Controller
 
                 return true;
             });
+        } catch (QueryException $exception) {
+            $this->deleteReceiptImage($newReceiptPath);
+            if ($this->isUniqueConstraintViolation($exception)) {
+                $this->assertNoDuplicateReceipt(
+                    $request,
+                    $reservation,
+                    $receiptReview['receipt_sha256'] ?? null,
+                    $data['reference_number'] ?? null,
+                );
+            }
+            throw $exception;
         } catch (Throwable $exception) {
             $this->deleteReceiptImage($newReceiptPath);
             throw $exception;
@@ -136,8 +235,15 @@ class ReservationPaymentController extends Controller
             $data = $this->validatePayment($request);
             $receiptImage = $data['receipt_image'] ?? null;
             unset($data['receipt_image']);
+            $receiptReview = $receiptImage
+                ? $this->verifyReceiptReview($request, $reservation, $receiptImage, $payment)
+                : null;
+            $referenceHash = $this->referenceHash($data['reference_number'] ?? null);
+            if (! $receiptImage) {
+                $this->assertNoDuplicateReceipt($request, $reservation, null, $data['reference_number'] ?? null, $payment);
+            }
 
-            DB::transaction(function () use ($request, $reservation, $payment, $data, $receiptImage, &$newReceiptPath, &$oldReceiptPath) {
+            DB::transaction(function () use ($request, $reservation, $payment, $data, $receiptImage, $receiptReview, $referenceHash, &$newReceiptPath, &$oldReceiptPath) {
                 $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
                 $payment = $reservation->payments()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
                 $reservation->ensurePaymentLedger();
@@ -159,8 +265,11 @@ class ReservationPaymentController extends Controller
                 if ($receiptImage) {
                     $newReceiptPath = $this->storeReceiptImage($receiptImage);
                     $data['receipt_image_path'] = $newReceiptPath;
+                    $data['receipt_sha256'] = $receiptReview['receipt_sha256'];
+                    $this->recordReceiptCorrections($request, $reservation, $receiptReview['analysis'], $data);
                 }
 
+                $data['reference_sha256'] = $referenceHash;
                 $payment->update($data);
                 $reservation->recalculatePaymentTotals();
 
@@ -193,6 +302,18 @@ class ReservationPaymentController extends Controller
                 ->withErrors($exception->errors(), 'editPayment')
                 ->withInput()
                 ->with('editing_payment', $payment->id);
+        } catch (QueryException $exception) {
+            $this->deleteReceiptImage($newReceiptPath);
+            if ($this->isUniqueConstraintViolation($exception)) {
+                $this->assertNoDuplicateReceipt(
+                    $request,
+                    $reservation,
+                    $receiptReview['receipt_sha256'] ?? null,
+                    $data['reference_number'] ?? null,
+                    $payment,
+                );
+            }
+            throw $exception;
         } catch (Throwable $exception) {
             $this->deleteReceiptImage($newReceiptPath);
             throw $exception;
@@ -259,7 +380,7 @@ class ReservationPaymentController extends Controller
             $newDueDate = array_key_exists('payment_due_date', $data)
                 ? (($data['payment_due_date'] === null)
                     ? null
-                    : \Carbon\Carbon::parse($data['payment_due_date'])->toDateString())
+                    : Carbon::parse($data['payment_due_date'])->toDateString())
                 : $oldDueDate;
 
             $financials = $reservation->financials();
@@ -283,8 +404,8 @@ class ReservationPaymentController extends Controller
                 }
 
                 if ($paymentDueDateChanged) {
-                    $oldDate = $oldDueDate === null ? 'Not set' : \Carbon\Carbon::parse($oldDueDate)->format('F j, Y');
-                    $newDate = $newDueDate === null ? 'Not set' : \Carbon\Carbon::parse($newDueDate)->format('F j, Y');
+                    $oldDate = $oldDueDate === null ? 'Not set' : Carbon::parse($oldDueDate)->format('F j, Y');
+                    $newDate = $newDueDate === null ? 'Not set' : Carbon::parse($newDueDate)->format('F j, Y');
                     $changes[] = 'Payment due date: '.$oldDate.' → '.$newDate;
                 }
 
@@ -385,8 +506,11 @@ class ReservationPaymentController extends Controller
             'payment_type' => ['required', Rule::in(ReservationPayment::TYPES)],
             'amount' => ['required', 'numeric', 'gt:0', 'max:9999999999', 'decimal:0,2'],
             'payment_method' => ['required', Rule::in(ReservationPayment::METHODS)],
+            'reference_number' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:1000'],
-            'receipt_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'receipt_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120', 'dimensions:max_width=10000,max_height=10000'],
+            'receipt_confirmed' => ['sometimes', 'accepted'],
+            'receipt_review_token' => ['nullable', 'string', 'max:10000'],
         ], [
             'payment_date.required' => 'Choose the payment date.',
             'payment_date.before_or_equal' => 'The payment date cannot be in the future.',
@@ -396,11 +520,174 @@ class ReservationPaymentController extends Controller
             'amount.gt' => 'The amount must be greater than ₱0.00.',
             'amount.decimal' => 'The amount can have at most two decimal places.',
             'payment_method.required' => 'Choose how the customer paid.',
-            'payment_method.in' => 'Choose Cash, GCash, Bank Transfer, or Other.',
+            'payment_method.in' => 'Choose Cash, GCash, Maya, Bank Transfer, or Other.',
         ]);
         $data['amount'] = round((float) $data['amount'], 2);
 
         return $data;
+    }
+
+    private function verifyReceiptReview(
+        Request $request,
+        Reservation $reservation,
+        UploadedFile $file,
+        ?ReservationPayment $payment,
+    ): array {
+        if (! $request->boolean('receipt_confirmed')) {
+            throw ValidationException::withMessages([
+                'receipt_image' => 'Review the receipt details and confirm them before recording a payment.',
+            ]);
+        }
+
+        $token = $request->input('receipt_review_token');
+        if (! is_string($token) || $token === '') {
+            throw ValidationException::withMessages([
+                'receipt_image' => 'Analyze this receipt before recording it.',
+            ]);
+        }
+
+        try {
+            $review = json_decode(Crypt::decryptString($token), true, 512, JSON_THROW_ON_ERROR);
+        } catch (DecryptException|\JsonException) {
+            throw ValidationException::withMessages([
+                'receipt_image' => 'Receipt review expired or is invalid. Analyze the image again.',
+            ]);
+        }
+
+        $hash = $this->receiptHash($file);
+        if (($review['reservation_id'] ?? null) !== $reservation->id
+            || ($review['payment_id'] ?? null) !== $payment?->id
+            || ($review['receipt_sha256'] ?? null) !== $hash
+            || ! is_int($review['expires_at'] ?? null)
+            || $review['expires_at'] < now()->timestamp
+            || ! is_array($review['analysis'] ?? null)) {
+            throw ValidationException::withMessages([
+                'receipt_image' => 'Receipt review expired or the image changed. Analyze the current image again.',
+            ]);
+        }
+
+        $this->assertNoDuplicateReceipt(
+            $request,
+            $reservation,
+            $hash,
+            $request->input('reference_number'),
+            $payment,
+        );
+
+        return [
+            'receipt_sha256' => $hash,
+            'analysis' => $review['analysis'],
+        ];
+    }
+
+    private function receiptHash(UploadedFile $file): string
+    {
+        $path = $file->getRealPath();
+        $hash = is_string($path) ? hash_file('sha256', $path) : false;
+        if (! is_string($hash)) {
+            throw ValidationException::withMessages([
+                'receipt_image' => 'The uploaded receipt image could not be read.',
+            ]);
+        }
+
+        return $hash;
+    }
+
+    private function referenceHash(?string $reference): ?string
+    {
+        if (! is_string($reference) || trim($reference) === '') {
+            return null;
+        }
+
+        $normalized = preg_replace('/[^A-Z0-9]/', '', mb_strtoupper(trim($reference)));
+
+        return $normalized === '' ? null : hash('sha256', $normalized);
+    }
+
+    private function assertNoDuplicateReceipt(
+        Request $request,
+        Reservation $reservation,
+        ?string $receiptHash,
+        ?string $reference,
+        ?ReservationPayment $except = null,
+    ): void {
+        $duplicate = null;
+        $message = null;
+        $errorField = 'reference_number';
+        if ($receiptHash !== null) {
+            $duplicate = ReservationPayment::with('reservation')
+                ->where('receipt_sha256', $receiptHash)
+                ->when($except, fn ($query) => $query->where('id', '<>', $except->id))
+                ->first();
+            if ($duplicate) {
+                $errorField = 'receipt_image';
+                $message = 'Duplicate Receipt Detected. This exact receipt image has already been recorded for '
+                    .$this->reservationLabel($duplicate->reservation).'. Amount: '.$this->peso($duplicate->amount)
+                    .'. Payment method: '.$duplicate->payment_method.'.';
+                if ($duplicate->reference_number) {
+                    $message .= ' Reference Number: '.$duplicate->reference_number.'.';
+                }
+            }
+        }
+
+        $referenceHash = $this->referenceHash($reference);
+        if (! $duplicate && $referenceHash !== null) {
+            $duplicate = ReservationPayment::with('reservation')
+                ->where('reference_sha256', $referenceHash)
+                ->when($except, fn ($query) => $query->where('id', '<>', $except->id))
+                ->first();
+            if ($duplicate) {
+                $message = 'Duplicate Transaction Reference. This reference number has already been recorded for '
+                    .$this->reservationLabel($duplicate->reservation).'.';
+            }
+        }
+
+        if ($duplicate) {
+            $this->recordFinancialActivity($request, 'Duplicate receipt blocked', 'A duplicate receipt or transaction reference was blocked.', $reservation);
+            throw ValidationException::withMessages([
+                $errorField => $message,
+            ]);
+        }
+    }
+
+    private function reservationLabel(?Reservation $reservation): string
+    {
+        return $reservation
+            ? 'Reservation '.($reservation->reservation_code ?: '#'.$reservation->id)
+            : 'another reservation';
+    }
+
+    private function isUniqueConstraintViolation(QueryException $exception): bool
+    {
+        return $exception->getCode() === '23000'
+            || str_contains(strtolower($exception->getMessage()), 'unique constraint');
+    }
+
+    private function recordReceiptCorrections(Request $request, Reservation $reservation, array $extracted, array $submitted): void
+    {
+        $corrections = [];
+        if (isset($extracted['amount'])
+            && Reservation::toCents((float) $extracted['amount']) !== Reservation::toCents((float) ($submitted['amount'] ?? 0))) {
+            $corrections[] = 'amount';
+        }
+        foreach (['payment_method', 'payment_date'] as $field) {
+            if (! empty($extracted[$field]) && ($submitted[$field] ?? null) !== $extracted[$field]) {
+                $corrections[] = $field;
+            }
+        }
+        if (! empty($extracted['reference_number'])
+            && $this->referenceHash($extracted['reference_number']) !== $this->referenceHash($submitted['reference_number'] ?? null)) {
+            $corrections[] = 'reference number';
+        }
+
+        if ($corrections !== []) {
+            $this->recordFinancialActivity(
+                $request,
+                'Receipt OCR fields corrected',
+                'Administrator reviewed and corrected extracted fields: '.implode(', ', $corrections).'.',
+                $reservation,
+            );
+        }
     }
 
     private function storeReceiptImage(UploadedFile $file): string
@@ -465,15 +752,19 @@ class ReservationPaymentController extends Controller
             $changes[] = 'Payment method: '.$previous['payment_method'].' → '.$data['payment_method'];
         }
         if (isset($data['payment_date'])
-            && \Carbon\Carbon::parse($previous['payment_date'])->toDateString() !== \Carbon\Carbon::parse($data['payment_date'])->toDateString()) {
-            $changes[] = 'Payment date: '.\Carbon\Carbon::parse($previous['payment_date'])->format('F j, Y')
-                .' → '.\Carbon\Carbon::parse($data['payment_date'])->format('F j, Y');
+            && Carbon::parse($previous['payment_date'])->toDateString() !== Carbon::parse($data['payment_date'])->toDateString()) {
+            $changes[] = 'Payment date: '.Carbon::parse($previous['payment_date'])->format('F j, Y')
+                .' → '.Carbon::parse($data['payment_date'])->format('F j, Y');
         }
         if (isset($data['payment_type']) && $previous['payment_type'] !== $data['payment_type']) {
             $changes[] = 'Payment type: '.$previous['payment_type'].' → '.$data['payment_type'];
         }
         if (array_key_exists('notes', $data) && (string) ($previous['notes'] ?? '') !== (string) ($data['notes'] ?? '')) {
             $changes[] = 'Payment notes were changed.';
+        }
+        if (array_key_exists('reference_number', $data)
+            && (string) ($previous['reference_number'] ?? '') !== (string) ($data['reference_number'] ?? '')) {
+            $changes[] = 'Payment reference number was changed.';
         }
 
         return $changes;

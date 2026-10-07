@@ -40,4 +40,9 @@ return [
         'secret_key' => env('RECAPTCHA_SECRET_KEY'),
     ],
 
+    'receipt_ocr' => [
+        'binary' => env('TESSERACT_BINARY', 'tesseract'),
+        'timeout' => env('TESSERACT_TIMEOUT', 30),
+    ],
+
 ];

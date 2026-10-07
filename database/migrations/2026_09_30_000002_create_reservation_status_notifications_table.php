@@ -18,7 +18,7 @@ return new class extends Migration
             $table->text('error_message')->nullable();
             $table->timestamps();
 
-            $table->index(['reservation_id', 'notification_type']);
+            $table->index(['reservation_id', 'notification_type'], 'rsn_reservation_type_index');
         });
     }
 

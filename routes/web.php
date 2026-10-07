@@ -65,6 +65,9 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
     Route::scopeBindings()->group(function () {
         Route::get('/reservations/{reservation}/payments', [ReservationPaymentController::class, 'index'])->name('admin.reservations.payments');
         Route::get('/reservations/{reservation}/payments/print', [ReservationPaymentController::class, 'print'])->name('admin.reservations.payments.print');
+        Route::post('/reservations/{reservation}/payments/receipt/analyze', [ReservationPaymentController::class, 'analyzeReceipt'])
+            ->middleware('throttle:8,1')
+            ->name('admin.reservations.payments.receipt.analyze');
         Route::post('/reservations/{reservation}/payments', [ReservationPaymentController::class, 'store'])
             ->withoutMiddleware('capture.activity')
             ->name('admin.reservations.payments.store');

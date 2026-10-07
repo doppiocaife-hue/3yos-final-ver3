@@ -52,8 +52,9 @@
                 @elseif($fullyPaid)
                     <div class="alert alert-success mb-0">This booking is fully paid. Edit a payment below to make changes.</div>
                 @else
-                    <form method="POST" enctype="multipart/form-data" action="{{ route('admin.reservations.payments.store', $reservation) }}" data-submit-once data-confirm-message="Record this payment? The balance and status will be recalculated.">
+                    <form method="POST" enctype="multipart/form-data" action="{{ route('admin.reservations.payments.store', $reservation) }}" data-submit-once data-confirm-message="Record this payment? The balance and status will be recalculated." data-receipt-form data-analyze-url="{{ route('admin.reservations.payments.receipt.analyze', $reservation) }}">
                         @csrf
+                        <input type="hidden" name="receipt_review_token" value="">
                         <div class="row g-3">
                             <div class="col-sm-6">
                                 <label class="form-label" for="payment_date">Payment date</label>
@@ -76,17 +77,32 @@
                                     @foreach($methods as $method)<option value="{{ $method }}" @selected(old('payment_method', 'Cash') === $method)>{{ $method }}</option>@endforeach
                                 </select>
                             </div>
+                            <div class="col-12">
+                                <label class="form-label" for="reference_number">Reference / transaction number <span class="text-muted fw-normal">(optional)</span></label>
+                                <input class="form-control @error('reference_number') is-invalid @enderror" type="text" id="reference_number" name="reference_number" value="{{ old('reference_number') }}" maxlength="100" autocomplete="off">
+                            </div>
                             <div class="col-12 receipt-upload-field">
-                                <label class="form-label" for="receipt_image">Official Receipt Image <span class="text-muted fw-normal">(optional)</span></label>
-                                <input class="form-control @error('receipt_image') is-invalid @enderror" type="file" id="receipt_image" name="receipt_image" accept="image/jpeg,image/png,image/webp">
-                                <div class="form-text">Upload proof of payment. JPG, PNG, or WEBP; maximum 5MB.</div>
+                                <label class="form-label" for="receipt_image">Payment receipt image <span class="text-muted fw-normal">(optional)</span></label>
+                                <input class="form-control @error('receipt_image') is-invalid @enderror" type="file" id="receipt_image" name="receipt_image" accept="image/jpeg,image/png,image/webp" data-receipt-file>
+                                <div class="form-text">JPG, PNG, or WEBP; maximum 5MB. Analyze and review the receipt before saving it.</div>
+                                <div class="receipt-review mt-3" data-receipt-review hidden>
+                                    <img class="receipt-review-preview" alt="Selected receipt preview" data-receipt-preview hidden>
+                                    <button class="btn btn-sm btn-outline-primary mt-2" type="button" data-analyze-receipt>Analyze receipt</button>
+                                    <button class="btn btn-sm btn-outline-secondary mt-2" type="button" data-clear-receipt>Remove image</button>
+                                    <p class="small mt-2 mb-2" role="status" aria-live="polite" data-receipt-status></p>
+                                    <div class="receipt-review-details small" data-receipt-details hidden></div>
+                                    <label class="form-check mt-2" data-receipt-confirmation hidden>
+                                        <input class="form-check-input" type="checkbox" name="receipt_confirmed" value="1">
+                                        <span class="form-check-label">I reviewed the extracted details and confirm them before recording this payment.</span>
+                                    </label>
+                                </div>
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="notes">Notes <span class="text-muted fw-normal">(optional)</span></label>
                                 <textarea class="form-control" id="notes" name="notes" rows="2" maxlength="1000" placeholder="Reference number, who paid, etc.">{{ old('notes') }}</textarea>
                             </div>
                         </div>
-                        <div class="d-flex justify-content-end mt-3"><button class="btn luxury-btn" type="submit">Save Payment</button></div>
+                        <div class="d-flex justify-content-end mt-3"><button class="btn luxury-btn" type="submit" data-save-payment>Save Payment</button></div>
                     </form>
                 @endif
             </section>
@@ -185,7 +201,7 @@
                                     <span class="text-muted">—</span>
                                 @endif
                             </td>
-                            <td class="text-muted payment-notes">{{ $transaction->notes ?: '—' }}</td>
+                            <td class="text-muted payment-notes">@if($transaction->kind === 'payment' && $transaction->payment->reference_number)<span>Reference: {{ $transaction->payment->reference_number }}</span><br>@endif{{ $transaction->notes ?: '—' }}</td>
                             <td class="text-muted">{{ $transaction->recorded_by_name ?: '—' }}<br><small>{{ $transaction->created_at?->format('M j, Y g:i A') }}</small></td>
                             <td class="text-end">
                                 @if($transaction->kind === 'payment')
@@ -198,6 +214,7 @@
                                             data-amount="{{ number_format($transaction->payment->amount, 2, '.', '') }}"
                                             data-method="{{ $transaction->payment->payment_method }}"
                                             data-notes="{{ $transaction->payment->notes }}"
+                                            data-reference="{{ $transaction->payment->reference_number }}"
                                             data-receipt-url="{{ $transaction->payment->receipt_image_path ? route('admin.reservations.payments.receipt', [$reservation, $transaction->payment]) : '' }}">Edit</button>
                                     </div>
                                 @else
@@ -236,18 +253,32 @@
     @if($errors->editPayment->any())
         <div class="alert alert-danger" role="alert"><ul class="mb-0 ps-3">@foreach($errors->editPayment->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
-    <form method="POST" enctype="multipart/form-data" id="edit-payment-form" action="" data-password-confirm data-password-message="Confirm your administrator password to edit this payment." data-submit-once data-confirm-message="Save changes to this payment? The balance will be recalculated.">
+    <form method="POST" enctype="multipart/form-data" id="edit-payment-form" action="" data-password-confirm data-password-message="Confirm your administrator password to edit this payment." data-submit-once data-confirm-message="Save changes to this payment? The balance will be recalculated." data-receipt-form data-analyze-url="{{ route('admin.reservations.payments.receipt.analyze', $reservation) }}">
         @csrf @method('PUT')
+        <input type="hidden" name="receipt_review_token" value="">
+        <input type="hidden" name="payment_id" value="">
         <div class="row g-3">
             <div class="col-sm-6"><label class="form-label" for="edit_payment_date">Payment date</label><input class="form-control" type="date" id="edit_payment_date" name="payment_date" max="{{ now()->toDateString() }}" required></div>
             <div class="col-sm-6"><label class="form-label" for="edit_payment_type">Payment type</label><select class="form-select" id="edit_payment_type" name="payment_type" required>@foreach($types as $type)<option value="{{ $type }}">{{ $type }}</option>@endforeach</select></div>
             <div class="col-sm-6"><label class="form-label" for="edit_amount">Amount (₱)</label><input class="form-control" type="number" id="edit_amount" name="amount" min="0.01" step="0.01" inputmode="decimal" required></div>
             <div class="col-sm-6"><label class="form-label" for="edit_payment_method">Payment method</label><select class="form-select" id="edit_payment_method" name="payment_method" required>@foreach($methods as $method)<option value="{{ $method }}">{{ $method }}</option>@endforeach</select></div>
+            <div class="col-12"><label class="form-label" for="edit_reference_number">Reference / transaction number <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" type="text" id="edit_reference_number" name="reference_number" maxlength="100" autocomplete="off"></div>
             <div class="col-12 receipt-upload-field">
                 <label class="form-label" for="edit_receipt_image">Official Receipt Image <span class="text-muted fw-normal">(optional)</span></label>
                 <div class="current-receipt mb-2"><span id="edit-receipt-empty" class="text-muted small">No receipt uploaded.</span><button id="edit-view-receipt" type="button" class="btn btn-sm btn-outline-secondary" data-view-receipt hidden>View current receipt</button></div>
-                <input class="form-control" type="file" id="edit_receipt_image" name="receipt_image" accept="image/jpeg,image/png,image/webp">
-                <div class="form-text">Choose a new JPG, PNG, or WEBP image (maximum 5MB) to replace the current receipt.</div>
+                <input class="form-control" type="file" id="edit_receipt_image" name="receipt_image" accept="image/jpeg,image/png,image/webp" data-receipt-file>
+                <div class="form-text">Choose a new JPG, PNG, or WEBP image (maximum 5MB), then analyze and review it before replacing the receipt.</div>
+                <div class="receipt-review mt-3" data-receipt-review hidden>
+                    <img class="receipt-review-preview" alt="Selected receipt preview" data-receipt-preview hidden>
+                    <button class="btn btn-sm btn-outline-primary mt-2" type="button" data-analyze-receipt>Analyze receipt</button>
+                    <button class="btn btn-sm btn-outline-secondary mt-2" type="button" data-clear-receipt>Remove image</button>
+                    <p class="small mt-2 mb-2" role="status" aria-live="polite" data-receipt-status></p>
+                    <div class="receipt-review-details small" data-receipt-details hidden></div>
+                    <label class="form-check mt-2" data-receipt-confirmation hidden>
+                        <input class="form-check-input" type="checkbox" name="receipt_confirmed" value="1">
+                        <span class="form-check-label">I reviewed the extracted details and confirm them before saving this change.</span>
+                    </label>
+                </div>
             </div>
             <div class="col-12"><label class="form-label" for="edit_notes">Notes <span class="text-muted fw-normal">(optional)</span></label><textarea class="form-control" id="edit_notes" name="notes" rows="2" maxlength="1000"></textarea></div>
         </div>
@@ -268,6 +299,9 @@
     .refund-type, .refund-amount { color: var(--danger) !important; }
     body.dark-mode .refund-type, body.dark-mode .refund-amount { color: #ffb0b0 !important; }
     .receipt-upload-field { min-width: 0; }
+    .receipt-review { padding: .75rem; border: 1px solid var(--line); border-radius: .65rem; }
+    .receipt-review-preview { display: block; width: auto; max-width: min(100%, 320px); max-height: 240px; object-fit: contain; border-radius: .45rem; }
+    .receipt-review-details { overflow-wrap: anywhere; }
     .current-receipt { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
     .payment-receipt-dialog { width: min(900px, calc(100vw - 2rem)); max-width: none; max-height: calc(100dvh - 2rem); padding: 0; overflow: hidden; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
     .payment-receipt-dialog::backdrop { background: rgba(16, 20, 24, .72); }
@@ -354,11 +388,13 @@
     const form = document.getElementById('edit-payment-form');
     const currentReceiptButton = document.getElementById('edit-view-receipt');
     const currentReceiptEmpty = document.getElementById('edit-receipt-empty');
+    const receiptFile = document.getElementById('edit_receipt_image');
     const fields = {
         date: document.getElementById('edit_payment_date'),
         type: document.getElementById('edit_payment_type'),
         amount: document.getElementById('edit_amount'),
         method: document.getElementById('edit_payment_method'),
+        reference: document.getElementById('edit_reference_number'),
         notes: document.getElementById('edit_notes'),
     };
     const open = (values) => {
@@ -367,7 +403,11 @@
         fields.type.value = values.type;
         fields.amount.value = values.amount;
         fields.method.value = values.method;
+        fields.reference.value = values.reference || '';
         fields.notes.value = values.notes || '';
+        form.querySelector('[name="payment_id"]').value = values.id;
+        receiptFile.value = '';
+        receiptFile.dispatchEvent(new Event('change', { bubbles: true }));
         currentReceiptButton.dataset.receiptUrl = values.receiptUrl || '';
         currentReceiptButton.hidden = ! values.receiptUrl;
         currentReceiptEmpty.hidden = Boolean(values.receiptUrl);
@@ -389,9 +429,115 @@
             type: @json(old('payment_type')),
             amount: @json(old('amount')),
             method: @json(old('payment_method')),
+            reference: @json(old('reference_number')),
             notes: @json(old('notes')),
         });
     @endif
+})();
+</script>
+<script>
+(() => {
+    document.querySelectorAll('[data-receipt-form]').forEach((form) => {
+        const fileInput = form.querySelector('[data-receipt-file]');
+        const review = form.querySelector('[data-receipt-review]');
+        const preview = form.querySelector('[data-receipt-preview]');
+        const analyze = form.querySelector('[data-analyze-receipt]');
+        const status = form.querySelector('[data-receipt-status]');
+        const details = form.querySelector('[data-receipt-details]');
+        const confirmation = form.querySelector('[data-receipt-confirmation]');
+        const confirmCheckbox = form.querySelector('[name="receipt_confirmed"]');
+        const reviewToken = form.querySelector('[name="receipt_review_token"]');
+        const clear = form.querySelector('[data-clear-receipt]');
+        const saveButton = form.querySelector('[data-save-payment]') || form.querySelector('button[type="submit"]');
+        if (!fileInput || !review || !preview || !analyze || !status || !details || !confirmation || !confirmCheckbox || !reviewToken || !clear || !saveButton) return;
+        saveButton.dataset.defaultLabel = saveButton.textContent.trim();
+
+        const resetReview = () => {
+            reviewToken.value = '';
+            confirmCheckbox.checked = false;
+            confirmCheckbox.required = Boolean(fileInput.files && fileInput.files.length);
+            confirmation.hidden = ! (fileInput.files && fileInput.files.length);
+            details.hidden = true;
+            details.textContent = '';
+            status.textContent = '';
+            preview.hidden = true;
+            preview.removeAttribute('src');
+            saveButton.textContent = saveButton.dataset.defaultLabel;
+        };
+
+        fileInput.addEventListener('change', () => {
+            resetReview();
+            const file = fileInput.files && fileInput.files[0];
+            review.hidden = ! file;
+            if (file) {
+                const reader = new FileReader();
+                reader.addEventListener('load', () => {
+                    preview.src = String(reader.result || '');
+                    preview.hidden = false;
+                });
+                reader.readAsDataURL(file);
+            }
+        });
+
+        clear.addEventListener('click', () => {
+            fileInput.value = '';
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        analyze.addEventListener('click', async () => {
+            const file = fileInput.files && fileInput.files[0];
+            if (!file) {
+                status.textContent = 'Choose a receipt image first.';
+                return;
+            }
+            analyze.disabled = true;
+            status.textContent = 'Analyzing receipt locally…';
+            details.hidden = true;
+            reviewToken.value = '';
+            confirmCheckbox.checked = false;
+            confirmation.hidden = true;
+            const data = new FormData(form);
+            try {
+                const response = await fetch(form.dataset.analyzeUrl, {
+                    method: 'POST',
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    body: data,
+                    credentials: 'same-origin',
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    status.textContent = Object.values(result.errors || {}).flat()[0]
+                        || result.message
+                        || 'The receipt could not be analyzed. You can still record the payment manually without attaching it.';
+                    return;
+                }
+                const receipt = result.receipt || {};
+                status.textContent = `${receipt.receipt_type || 'Payment receipt'} · ${receipt.confidence || 'Needs Review'}. Review and correct the fields below.`;
+                details.textContent = [
+                    `Provider: ${receipt.provider || 'Not identified'}`,
+                    `Amount: ${receipt.amount ? `₱${receipt.amount}` : 'Not detected'}`,
+                    `Reference: ${receipt.reference_number || 'Not detected'}`,
+                    `Method: ${receipt.payment_method || 'Select manually'}`,
+                    `Date: ${receipt.payment_date || 'Select manually'}`,
+                ].join(' · ');
+                details.hidden = false;
+                if (receipt.amount) form.querySelector('[name="amount"]').value = receipt.amount;
+                if (receipt.reference_number) form.querySelector('[name="reference_number"]').value = receipt.reference_number;
+                if (receipt.payment_method && [...form.querySelector('[name="payment_method"]').options].some((option) => option.value === receipt.payment_method)) {
+                    form.querySelector('[name="payment_method"]').value = receipt.payment_method;
+                }
+                if (receipt.payment_date) form.querySelector('[name="payment_date"]').value = receipt.payment_date;
+                reviewToken.value = result.review_token;
+                confirmation.hidden = false;
+                confirmCheckbox.required = true;
+                if (saveButton.textContent.trim() === 'Save Payment') saveButton.textContent = 'Confirm & Record Payment';
+            } catch {
+                status.textContent = 'Receipt analysis failed. Check that local OCR is installed, then retry or record the payment manually without attaching the image.';
+            } finally {
+                analyze.disabled = false;
+            }
+        });
+    });
 })();
 </script>
 @endsection
