@@ -4,6 +4,11 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
+Schedule::command('backups:auto-create')
+    ->dailyAt('23:59')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping();
+
 Schedule::command('reservations:auto-complete-ended')
     ->dailyAt('23:59')
     ->timezone(config('app.timezone'));
