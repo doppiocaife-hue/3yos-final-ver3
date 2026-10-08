@@ -21,6 +21,20 @@ class ReceiptTextParserTest extends TestCase
         $this->assertSame('2026-10-03', $receipt['payment_date']);
     }
 
+    public function test_it_extracts_fields_from_the_gcash_express_send_layout(): void
+    {
+        $receipt = (new ReceiptTextParser)->parse(
+            "Express Send\nSent via GCash\nAmount 200.00\nTotal Amount Sent P 200.00\nRef No. 3045 466 533492 Sep 26, 2026 6:14 PM",
+        );
+
+        $this->assertTrue($receipt['detected']);
+        $this->assertSame('GCash', $receipt['provider']);
+        $this->assertSame('GCash', $receipt['payment_method']);
+        $this->assertSame('200.00', $receipt['amount']);
+        $this->assertSame('3045466533492', $receipt['reference_number']);
+        $this->assertSame('2026-09-26', $receipt['payment_date']);
+    }
+
     public function test_it_extracts_instapay_transfer_amount_and_optional_reference(): void
     {
         $receipt = (new ReceiptTextParser)->parse(

@@ -76,10 +76,10 @@ Route::middleware(['ensure.admin', 'capture.activity'])->prefix('admin')->group(
             ->withoutMiddleware('capture.activity')
             ->name('admin.reservations.refunds.store');
         Route::patch('/reservations/{reservation}/payment-details', [ReservationPaymentController::class, 'updateDetails'])->name('admin.reservations.payments.details');
-        Route::put('/reservations/{reservation}/payments/{payment}', [ReservationPaymentController::class, 'update'])
+        Route::put('/reservations/{reservation}/payments/{payment}', [ReservationPaymentController::class, 'correct'])
             ->withoutMiddleware('capture.activity')
             ->middleware('confirm.admin-password')
-            ->name('admin.reservations.payments.update');
+            ->name('admin.reservations.payments.correct');
     });
     Route::get('/inquiries', [AdminController::class, 'inquiries'])->name('admin.inquiries');
     Route::get('/inquiries/{inquiry}', [AdminController::class, 'showInquiry'])->name('admin.inquiries.show');

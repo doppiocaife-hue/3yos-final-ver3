@@ -9,11 +9,13 @@ use App\Models\Reservation;
 use App\Models\ReservationStatusNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Tests\Concerns\AcceptsReservations;
 use Tests\TestCase;
 
 class ReservationStatusNotificationTest extends TestCase
 {
     use RefreshDatabase;
+    use AcceptsReservations;
 
     private const ADMIN = ['is_admin' => true, 'admin_role' => 'full', 'admin_name' => 'Status Tester', 'admin_email' => 'tester@3yos.com'];
 
@@ -44,8 +46,7 @@ class ReservationStatusNotificationTest extends TestCase
         Mail::fake();
         $reservation = $this->reservation();
 
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $reservation))
+        $this->postReservationAcceptance($reservation, self::ADMIN)
             ->assertSessionHas('success', 'Reservation accepted and notification email sent.');
 
         Mail::assertSent(ReservationAcceptedMail::class, fn ($mail) => $mail->hasTo('status@example.com'));
@@ -83,7 +84,7 @@ class ReservationStatusNotificationTest extends TestCase
         Mail::fake();
         $reservation = $this->reservation();
 
-        $this->withSession(self::ADMIN)->post(route('admin.reservations.accept', $reservation));
+        $this->postReservationAcceptance($reservation, self::ADMIN);
         $this->withSession(self::ADMIN)->post(route('admin.reservations.accept', $reservation))
             ->assertSessionHas('success', 'Reservation saved successfully.');
 
@@ -121,8 +122,7 @@ class ReservationStatusNotificationTest extends TestCase
         Mail::shouldReceive('to')->andThrow(new \RuntimeException('SMTP connection refused'));
         $reservation = $this->reservation();
 
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $reservation))
+        $this->postReservationAcceptance($reservation, self::ADMIN)
             ->assertSessionHas('success', 'Reservation accepted, but the notification email could not be sent.');
 
         $this->assertSame('confirmed', $reservation->fresh()->status);

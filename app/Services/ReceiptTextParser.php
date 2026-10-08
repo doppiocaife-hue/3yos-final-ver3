@@ -34,7 +34,7 @@ class ReceiptTextParser
                 || $hasCompletedReceiptDetails
             );
         $message = ! $detected
-            ? 'The uploaded image does not appear to be a completed payment receipt. Upload payment proof or record the payment manually without attaching this image.'
+            ? 'The uploaded image does not appear to be a completed payment receipt.'
             : ($method === null
                 ? 'Payment receipt detected, but the payment type could not be determined. Please select the payment method manually.'
                 : 'Receipt detected. Review every field before recording the payment.');
@@ -137,6 +137,12 @@ class ReceiptTextParser
         $label = '(?:\breference(?:\s*(?:number|no\.?|#))?|\bref(?![a-z])(?:erence)?(?:\s*(?:number|no\.?|#))?|\btransaction\s*(?:id|number|reference))';
 
         foreach ($lines as $index => $line) {
+            if (preg_match('/'.$label.'\s*[:#\-]?\s*((?:\d{2,}[ -]+){1,4}\d{2,})(?!\d)/i', $line, $matches) === 1) {
+                $reference = preg_replace('/[ -]/', '', $matches[1]);
+                if (is_string($reference) && strlen($reference) >= 6 && strlen($reference) <= 20) {
+                    return $reference;
+                }
+            }
             if (preg_match('/'.$label.'\s*[:#\-]?\s*([A-Z0-9][A-Z0-9\-]{3,})\b/i', $line, $matches) === 1) {
                 return strtoupper($matches[1]);
             }
@@ -155,11 +161,11 @@ class ReceiptTextParser
         $datePattern = '/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}(?:\s+\d{1,2}:\d{2}\s*(?:AM|PM))?|\b\d{4}-\d{2}-\d{2}\b/i';
 
         foreach ($lines as $index => $line) {
-            if (preg_match('/\b(date|created on|transaction date|payment date|processing time)\b/i', $line) !== 1) {
-                continue;
-            }
             $dateText = $line;
             if (preg_match($datePattern, $dateText, $matches) !== 1) {
+                if (preg_match('/\b(date|created on|transaction date|payment date|processing time)\b/i', $line) !== 1) {
+                    continue;
+                }
                 $nextLine = $lines[$index + 1] ?? '';
                 if (preg_match($datePattern, $nextLine, $matches) !== 1) {
                     continue;

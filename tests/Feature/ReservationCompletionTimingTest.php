@@ -127,10 +127,10 @@ class ReservationCompletionTimingTest extends TestCase
         }
     }
 
-    public function test_automatic_completion_at_1159_pm_logs_once_and_is_idempotent(): void
+    public function test_automatic_completion_after_the_event_date_logs_once_and_is_idempotent(): void
     {
         config(['app.timezone' => 'Asia/Manila']);
-        Carbon::setTestNow(Carbon::create(2026, 10, 20, 23, 59, 0, 'Asia/Manila'));
+        Carbon::setTestNow(Carbon::create(2026, 10, 21, 0, 0, 0, 'Asia/Manila'));
         $reservation = $this->reservation(['event_date' => '2026-10-20']);
 
         $this->artisan('reservations:auto-complete-ended')->assertSuccessful();
@@ -141,12 +141,24 @@ class ReservationCompletionTimingTest extends TestCase
         $activity = ActivityLog::where('action', 'Reservation automatically completed')->firstOrFail();
         $this->assertSame('System', $activity->actor_name);
         $this->assertSame('system', $activity->actor_role);
-        $this->assertSame('2026-10-20', $activity->activity_date);
-        $this->assertSame('23:59:00', $activity->activity_time);
+        $this->assertSame('2026-10-21', $activity->activity_date);
+        $this->assertSame('00:00:00', $activity->activity_time);
         $this->assertSame(
-            'Reservation #'.$reservation->id.' automatically completed by system at 11:59 PM because the scheduled reservation date has ended.',
+            'Reservation #'.$reservation->id.' automatically completed by system at 12:00 AM because the scheduled reservation date has ended.',
             $activity->description,
         );
+    }
+
+    public function test_automatic_completion_keeps_today_active_until_the_event_date_has_passed(): void
+    {
+        config(['app.timezone' => 'Asia/Manila']);
+        Carbon::setTestNow(Carbon::create(2026, 10, 20, 23, 59, 0, 'Asia/Manila'));
+        $reservation = $this->reservation(['event_date' => '2026-10-20']);
+
+        $this->artisan('reservations:auto-complete-ended')->assertSuccessful();
+
+        $this->assertSame(Reservation::STATUS_CONFIRMED, $reservation->fresh()->status);
+        $this->assertSame(0, ActivityLog::where('action', 'Reservation automatically completed')->count());
     }
 
     public function test_automatic_completion_catches_up_missed_event_dates_but_skips_pending_cancelled_and_completed(): void
@@ -162,6 +174,10 @@ class ReservationCompletionTimingTest extends TestCase
         $this->artisan('reservations:auto-complete-ended')->assertSuccessful();
 
         $this->assertSame(Reservation::STATUS_COMPLETED, $overdue->fresh()->status);
+        $this->assertSame(
+            1,
+            app(\App\Services\ReservationCapacityService::class)->countForDate('2026-10-20'),
+        );
         $this->assertSame(Reservation::STATUS_PENDING, $pending->fresh()->status);
         $this->assertSame(Reservation::STATUS_CANCELLED, $cancelled->fresh()->status);
         $this->assertSame(Reservation::STATUS_COMPLETED, $completed->fresh()->status);
@@ -178,6 +194,7 @@ class ReservationCompletionTimingTest extends TestCase
 
         $this->assertNotNull($event);
         $this->assertSame('Asia/Manila', $event->timezone);
-        $this->assertTrue($event->expression === '59 23 * * *');
+        $this->assertSame('* * * * *', $event->expression);
+        $this->assertTrue($event->withoutOverlapping);
     }
 }

@@ -130,7 +130,6 @@
 
                 <div class="reservation-actions-group">
                     @if($reservation->status === 'pending')
-                        <form method="POST" action="{{ route('admin.reservations.accept', $reservation) }}" data-confirm-message="Accept this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-success" type="submit">Accept</button></form>
                         <form method="POST" action="{{ route('admin.reservations.cancel', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
                     @elseif($reservation->status === 'confirmed')
                         @if($canManuallyComplete)
@@ -139,6 +138,86 @@
                         <form method="POST" action="{{ route('admin.reservations.cancel', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
                     @endif
                 </div>
+                @if($reservation->status === 'pending')
+                    <hr>
+                    <h3 class="h6 fw-bold">Set contract and review initial payment</h3>
+                    <p class="small text-muted">Enter the agreed contract price, record a downpayment or full payment, and review its receipt before accepting.</p>
+                    <form method="POST" enctype="multipart/form-data"
+                        id="reservation-acceptance-form"
+                        action="{{ route('admin.reservations.accept', $reservation) }}"
+                        data-acceptance-form
+                        data-receipt-form
+                        data-require-receipt-review
+                        data-analyze-url="{{ route('admin.reservations.payments.receipt.analyze', $reservation) }}">
+                        @csrf
+                        <input type="hidden" name="receipt_review_token" value="">
+                        <div class="mb-2">
+                            <label class="form-label" for="acceptance-contract-price">Final contract price (₱)</label>
+                            <input class="form-control form-control-sm" type="number" id="acceptance-contract-price" name="total_cost"
+                                value="{{ old('total_cost') }}" min="0.01" max="9999999999" step="0.01" inputmode="decimal" required>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <label class="form-label" for="acceptance-payment-date">Payment date</label>
+                                <input class="form-control form-control-sm" type="date" id="acceptance-payment-date" name="payment_date"
+                                    value="{{ old('payment_date', now()->toDateString()) }}" max="{{ now()->toDateString() }}" required>
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label" for="acceptance-payment-type">Payment type</label>
+                                <select class="form-select form-select-sm" id="acceptance-payment-type" name="payment_type" required>
+                                    <option value="Downpayment" @selected(old('payment_type', 'Downpayment') === 'Downpayment')>Downpayment</option>
+                                    <option value="Full Payment" @selected(old('payment_type') === 'Full Payment')>Full Payment</option>
+                                </select>
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label" for="acceptance-amount">Payment amount (₱)</label>
+                                <input class="form-control form-control-sm" type="number" id="acceptance-amount" name="amount"
+                                    value="{{ old('amount') }}" min="0.01" max="9999999999" step="0.01" inputmode="decimal" required>
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label" for="acceptance-payment-method">Payment method</label>
+                                <select class="form-select form-select-sm" id="acceptance-payment-method" name="payment_method" required>
+                                    @foreach(\App\Models\ReservationPayment::METHODS as $method)
+                                        <option value="{{ $method }}" @selected(old('payment_method', 'Cash') === $method)>{{ $method }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <label class="form-label" for="acceptance-reference-number">Reference / transaction number <span class="text-muted fw-normal">(optional)</span></label>
+                            <input class="form-control form-control-sm" type="text" id="acceptance-reference-number" name="reference_number"
+                                value="{{ old('reference_number') }}" maxlength="100" autocomplete="off" placeholder="Enter the transaction reference">
+                        </div>
+                        <div class="mt-2">
+                            <label class="form-label" for="acceptance-receipt-image">Payment receipt image</label>
+                            <input class="form-control form-control-sm" type="file" id="acceptance-receipt-image" name="receipt_image"
+                                accept="image/jpeg,image/png,image/webp" data-receipt-file required>
+                            <div class="form-text">JPG, PNG, or WEBP; maximum 5MB. The receipt is analyzed automatically when selected.</div>
+                            <div class="receipt-review mt-3" data-receipt-review hidden>
+                                <button type="button" class="receipt-preview-trigger" data-acceptance-receipt-preview data-receipt-preview-trigger
+                                    aria-haspopup="dialog" aria-controls="acceptance-receipt-lightbox" hidden aria-label="View selected receipt full size">
+                                    <img class="receipt-review-preview" alt="" data-receipt-preview>
+                                    <span>Click to view full receipt</span>
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary mt-2" type="button" data-analyze-receipt>Analyze receipt</button>
+                                <button class="btn btn-sm btn-outline-secondary mt-2" type="button" data-clear-receipt>Remove image</button>
+                                <p class="small mt-2 mb-2" role="status" aria-live="polite" data-receipt-status></p>
+                                <div class="receipt-review-details small" data-receipt-details hidden></div>
+                                <label class="form-check mt-2" data-receipt-confirmation hidden>
+                                    <input class="form-check-input" type="checkbox" name="receipt_confirmed" value="1">
+                                    <span class="form-check-label">I reviewed the extracted details and confirm them before accepting this reservation.</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <label class="form-label" for="acceptance-payment-notes">Payment notes <span class="text-muted fw-normal">(optional)</span></label>
+                            <textarea class="form-control form-control-sm" id="acceptance-payment-notes" name="notes" rows="2" maxlength="1000" placeholder="Reference number, who paid, etc.">{{ old('notes') }}</textarea>
+                        </div>
+                        <p class="small text-muted mt-2 mb-0" data-acceptance-balance
+                            data-paid-cents="{{ $financials['gross_paid_cents'] }}">Enter the contract price and payment to see the remaining balance.</p>
+                        <button class="btn btn-sm btn-success mt-3 w-100" type="submit" data-save-payment>Confirm Payment &amp; Accept Reservation</button>
+                    </form>
+                @endif
             </section>
             <section class="card reservation-payment-card" id="reservation-payment" aria-labelledby="reservation-payment-heading">
                 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
@@ -276,6 +355,8 @@
                                     'Official Receipt uploaded',
                                     'Official Receipt replaced',
                                     'Official Receipt removed',
+                                    'Receipt OCR fields corrected',
+                                    'Duplicate receipt blocked',
                                 ], true))
                                     <div class="activity-entry-title">{{ $entry->action }}</div>
                                 @endif
@@ -306,6 +387,19 @@
     <div class="contract-preview-footer">
         <a id="contract-preview-download" class="btn btn-sm luxury-btn" href="#">Download</a>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-contract-preview-close>Close</button>
+    </div>
+</dialog>
+<dialog class="acceptance-receipt-lightbox" id="acceptance-receipt-lightbox" aria-labelledby="acceptance-receipt-lightbox-title">
+    <div class="acceptance-receipt-lightbox-header">
+        <h2 class="h5 mb-0" id="acceptance-receipt-lightbox-title">Official receipt</h2>
+        <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-acceptance-receipt-zoom aria-pressed="false">Zoom in</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-acceptance-receipt-close>Close</button>
+        </div>
+    </div>
+    <div class="acceptance-receipt-lightbox-body">
+        <img alt="Full-size payment receipt" data-acceptance-receipt-lightbox-image hidden>
+        <p class="small mb-0" role="status" data-acceptance-receipt-lightbox-error hidden>Receipt image could not be displayed.</p>
     </div>
 </dialog>
 
@@ -396,6 +490,19 @@
     .summary-grid--compact .summary-item > span { margin-bottom: .2rem; font-size: .6rem; }
     .summary-grid--compact .summary-item > strong { font-size: .9rem; }
     .summary-item--warn { border-left: 4px solid #d49b28; }
+    .receipt-review { padding: .75rem; border: 1px solid var(--line); border-radius: .65rem; }
+    .receipt-review-preview { display: block; width: auto; max-width: min(100%, 320px); max-height: 240px; object-fit: contain; border-radius: .45rem; }
+    .receipt-preview-trigger { display: inline-flex; flex-direction: column; align-items: flex-start; gap: .35rem; padding: 0; border: 0; color: var(--muted); background: transparent; text-align: left; cursor: zoom-in; }
+    .receipt-preview-trigger[hidden] { display: none !important; }
+    .receipt-review-details { overflow-wrap: anywhere; }
+    .acceptance-receipt-lightbox { width: min(94vw, 480px); max-width: none; max-height: min(96dvh, 960px); padding: 0; overflow: hidden; border: 1px solid #314753; border-radius: .8rem; background: #1b2b35; color: #eef4f7; }
+    .acceptance-receipt-lightbox::backdrop { background: rgba(0, 0, 0, .76); }
+    .acceptance-receipt-lightbox-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem 1rem; border-bottom: 1px solid #314753; }
+    .acceptance-receipt-lightbox-header h2 { font-size: 1.2rem; }
+    .acceptance-receipt-lightbox-body { display: grid; place-items: center; max-height: calc(96dvh - 4.5rem); overflow: auto; padding: .75rem; }
+    .acceptance-receipt-lightbox-body > img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(96dvh - 6.5rem); object-fit: contain; }
+    .acceptance-receipt-lightbox-body > img.is-zoomed { max-width: none; max-height: none; }
+    .acceptance-receipt-lightbox [hidden] { display: none; }
 
     .activity-entry { padding: .65rem 0; border-top: 1px solid var(--line); font-size: .82rem; }
     .activity-entry:first-child { border-top: 0; padding-top: 0; }
@@ -415,11 +522,207 @@
         .reservation-timeline .timeline-step-label { font-size: .56rem; }
         .reservation-secondary-heading { align-items: flex-start; }
         .reservation-notes-editor { margin-left: auto; }
+        .acceptance-receipt-lightbox { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); }
+        .acceptance-receipt-lightbox-header { padding: .65rem .75rem; }
+        .acceptance-receipt-lightbox-header h2 { font-size: 1.05rem; }
+        .acceptance-receipt-lightbox-body { max-height: calc(100dvh - 4rem); padding: .5rem; }
+        .acceptance-receipt-lightbox-body > img { max-height: calc(100dvh - 6rem); }
     }
     body.dark-mode .detail-list dd a,
     body.dark-mode .reservation-disclosure-action,
     body.dark-mode .reservation-timeline .timeline-step--current .timeline-step-label { color: #76c8bf; }
 </style>
+<script>
+(() => {
+    const form = document.querySelector('[data-acceptance-form]');
+    if (!form) return;
+
+    const fileInput = form.querySelector('[data-receipt-file]');
+    const review = form.querySelector('[data-receipt-review]');
+    const preview = form.querySelector('[data-receipt-preview]');
+    const previewTrigger = form.querySelector('[data-receipt-preview-trigger]');
+    const analyze = form.querySelector('[data-analyze-receipt]');
+    const status = form.querySelector('[data-receipt-status]');
+    const details = form.querySelector('[data-receipt-details]');
+    const confirmation = form.querySelector('[data-receipt-confirmation]');
+    const confirmCheckbox = form.querySelector('[name="receipt_confirmed"]');
+    const reviewToken = form.querySelector('[name="receipt_review_token"]');
+    const clear = form.querySelector('[data-clear-receipt]');
+    const saveButton = form.querySelector('[data-save-payment]');
+    if (!fileInput || !review || !preview || !previewTrigger || !analyze || !status || !details || !confirmation || !confirmCheckbox || !reviewToken || !clear || !saveButton) return;
+
+    let analysisController = null;
+    const updateSubmitState = () => {
+        saveButton.disabled = !reviewToken.value || !confirmCheckbox.checked;
+    };
+    const resetReview = () => {
+        analysisController?.abort();
+        analysisController = null;
+        reviewToken.value = '';
+        confirmCheckbox.checked = false;
+        confirmation.hidden = true;
+        details.hidden = true;
+        details.textContent = '';
+        status.textContent = '';
+        updateSubmitState();
+    };
+    const analyzeReceipt = async () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        resetReview();
+        const controller = new AbortController();
+        analysisController = controller;
+        analyze.disabled = true;
+        analyze.textContent = 'Analyzing…';
+        status.textContent = 'Analyzing receipt locally…';
+
+        try {
+            const response = await fetch(form.dataset.analyzeUrl, {
+                method: 'POST',
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: new FormData(form),
+                credentials: 'same-origin',
+                signal: controller.signal,
+            });
+            const result = await response.json();
+            if (controller !== analysisController) return;
+            if (!response.ok) {
+                status.textContent = Object.values(result.errors || {}).flat()[0] || result.message || 'The receipt could not be analyzed. Try another image.';
+                return;
+            }
+
+            const receipt = result.receipt || {};
+            status.textContent = `${receipt.receipt_type || 'Payment receipt'} · ${receipt.confidence || 'Needs Review'}. Review and correct the fields below.`;
+            details.textContent = [
+                `Provider: ${receipt.provider || 'Not identified'}`,
+                `Amount: ${receipt.amount ? `₱${receipt.amount}` : 'Not detected'}`,
+                `Reference: ${receipt.reference_number || 'Not detected'}`,
+                `Method: ${receipt.payment_method || 'Select manually'}`,
+                `Date: ${receipt.payment_date || 'Select manually'}`,
+            ].join(' · ');
+            details.hidden = false;
+            if (receipt.amount) form.querySelector('[name="amount"]').value = receipt.amount;
+            if (receipt.amount) form.querySelector('[name="amount"]').dispatchEvent(new Event('input', { bubbles: true }));
+            if (receipt.reference_number) form.querySelector('[name="reference_number"]').value = receipt.reference_number;
+            if (receipt.payment_method && [...form.querySelector('[name="payment_method"]').options].some((option) => option.value === receipt.payment_method)) {
+                form.querySelector('[name="payment_method"]').value = receipt.payment_method;
+            }
+            if (receipt.payment_date) form.querySelector('[name="payment_date"]').value = receipt.payment_date;
+            reviewToken.value = result.review_token;
+            confirmation.hidden = false;
+            analyze.textContent = 'Analyze again';
+            updateSubmitState();
+        } catch {
+            if (controller !== analysisController || controller.signal.aborted) return;
+            status.textContent = 'Receipt analysis failed. Retry the analysis before accepting.';
+        } finally {
+            if (controller === analysisController) {
+                analysisController = null;
+                analyze.disabled = false;
+                if (analyze.textContent === 'Analyzing…') analyze.textContent = 'Analyze again';
+            }
+        }
+    };
+
+    fileInput.addEventListener('change', () => {
+        resetReview();
+        const file = fileInput.files && fileInput.files[0];
+        review.hidden = !file;
+        previewTrigger.hidden = true;
+        if (!file) {
+            preview.removeAttribute('src');
+            return;
+        }
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+            if (fileInput.files[0] !== file) return;
+            const source = String(reader.result || '');
+            if (!source.startsWith('data:image/')) {
+                status.textContent = 'The selected receipt image could not be previewed. Choose the image again.';
+                return;
+            }
+            preview.src = source;
+            previewTrigger.hidden = false;
+            analyzeReceipt();
+        });
+        reader.addEventListener('error', () => {
+            status.textContent = 'The selected receipt image could not be read. Choose the image again.';
+        });
+        reader.readAsDataURL(file);
+    });
+    clear.addEventListener('click', () => {
+        fileInput.value = '';
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    analyze.addEventListener('click', analyzeReceipt);
+    confirmCheckbox.addEventListener('change', updateSubmitState);
+    form.addEventListener('submit', (event) => {
+        if (!reviewToken.value || !confirmCheckbox.checked) {
+            event.preventDefault();
+            status.textContent = 'Analyze the receipt and confirm the reviewed details before accepting.';
+            return;
+        }
+    });
+    updateSubmitState();
+})();
+</script>
+<script>
+(() => {
+    const dialog = document.getElementById('acceptance-receipt-lightbox');
+    const lightboxImage = dialog?.querySelector('[data-acceptance-receipt-lightbox-image]');
+    const lightboxError = dialog?.querySelector('[data-acceptance-receipt-lightbox-error]');
+    const zoomButton = dialog?.querySelector('[data-acceptance-receipt-zoom]');
+    const form = document.querySelector('[data-acceptance-form]');
+    if (!dialog || !lightboxImage || !lightboxError || !zoomButton || !form) return;
+
+    const resetZoom = () => {
+        lightboxImage.classList.remove('is-zoomed');
+        zoomButton.textContent = 'Zoom in';
+        zoomButton.setAttribute('aria-pressed', 'false');
+    };
+    const closePreview = () => dialog.close();
+    form.querySelectorAll('[data-acceptance-receipt-preview]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const thumbnail = button.querySelector('img');
+            const source = thumbnail?.currentSrc || thumbnail?.src;
+            if (!source) return;
+            resetZoom();
+            lightboxError.hidden = true;
+            lightboxImage.hidden = true;
+            lightboxImage.src = source;
+            dialog.showModal();
+        });
+    });
+    dialog.querySelector('[data-acceptance-receipt-close]')?.addEventListener('click', closePreview);
+    zoomButton.addEventListener('click', () => {
+        const zoomed = !lightboxImage.classList.contains('is-zoomed');
+        lightboxImage.classList.toggle('is-zoomed', zoomed);
+        zoomButton.textContent = zoomed ? 'Fit to screen' : 'Zoom in';
+        zoomButton.setAttribute('aria-pressed', String(zoomed));
+    });
+    dialog.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        closePreview();
+    });
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) closePreview();
+    });
+    lightboxImage.addEventListener('load', () => {
+        lightboxImage.hidden = false;
+        lightboxError.hidden = true;
+    });
+    lightboxImage.addEventListener('error', () => {
+        lightboxImage.hidden = true;
+        lightboxError.hidden = false;
+    });
+    dialog.addEventListener('close', () => {
+        lightboxImage.removeAttribute('src');
+        lightboxImage.hidden = true;
+        lightboxError.hidden = true;
+        resetZoom();
+    });
+})();
+</script>
 <script>
 (() => {
     const dialog = document.getElementById('contract-preview-dialog');
@@ -468,6 +771,45 @@
     dialog.addEventListener('click', (event) => {
         if (event.target === dialog) dialog.close();
     });
+})();
+</script>
+<script>
+(() => {
+    const form = document.querySelector('[data-acceptance-form]');
+    if (!form) return;
+
+    const contract = form.querySelector('[name="total_cost"]');
+    const amount = form.querySelector('[name="amount"]');
+    const type = form.querySelector('[name="payment_type"]');
+    const balance = form.querySelector('[data-acceptance-balance]');
+    const paidCents = Number(balance.dataset.paidCents || 0);
+    const formatPeso = (cents) => `₱${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const updateBalance = () => {
+        const contractCents = Math.round((Number(contract.value) || 0) * 100);
+        const amountCents = Math.round((Number(amount.value) || 0) * 100);
+        const availableCents = Math.max(0, contractCents - paidCents);
+        const remainingCents = Math.max(0, availableCents - amountCents);
+        balance.textContent = contractCents > 0
+            ? `Remaining after this payment: ${formatPeso(remainingCents)}`
+            : 'Enter the contract price and payment to see the remaining balance.';
+        amount.max = (availableCents / 100).toFixed(2);
+        if (type.value === 'Full Payment' && availableCents > 0) {
+            amount.value = (availableCents / 100).toFixed(2);
+        }
+    };
+
+    [contract, amount].forEach((input) => input.addEventListener('input', updateBalance));
+    type.addEventListener('change', updateBalance);
+    form.addEventListener('submit', (event) => {
+        const contractCents = Math.round((Number(contract.value) || 0) * 100);
+        const amountCents = Math.round((Number(amount.value) || 0) * 100);
+        const remainingCents = contractCents - paidCents - amountCents;
+        if (contractCents <= 0 || amountCents <= 0 || remainingCents < 0) return;
+        if (!window.confirm(`Confirm reservation acceptance?\n\nContract price: ${formatPeso(contractCents)}\nPayment: ${formatPeso(amountCents)}\nBalance remaining: ${formatPeso(remainingCents)}\n\nThe reviewed receipt, payment, contract price, and acceptance will be saved together.`)) {
+            event.preventDefault();
+        }
+    });
+    updateBalance();
 })();
 </script>
 @endsection

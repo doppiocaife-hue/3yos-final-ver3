@@ -19,7 +19,7 @@ class CompleteEndedReservations extends Command
         $today = now($timezone)->toDateString();
         $reservationIds = Reservation::query()
             ->where('status', Reservation::STATUS_CONFIRMED)
-            ->whereDate('event_date', '<=', $today)
+            ->whereDate('event_date', '<', $today)
             ->orderBy('id')
             ->pluck('id');
         $completedCount = 0;
@@ -36,7 +36,7 @@ class CompleteEndedReservations extends Command
                 }
 
                 $timestamp = now($timezone);
-                if ($reservation->event_date > $timestamp->toDateString()) {
+                if ($reservation->event_date >= $timestamp->toDateString()) {
                     return false;
                 }
 

@@ -18,6 +18,7 @@ class BackupService
         'clients',
         'reservations',
         'reservation_payments',
+        'reservation_payment_corrections',
         'reservation_refunds',
         'inquiries',
         'activity_logs',
@@ -33,6 +34,7 @@ class BackupService
         'clients',
         'reservations',
         'reservation_payments',
+        'reservation_payment_corrections',
         'reservation_refunds',
         'inquiries',
         'activity_logs',
@@ -59,6 +61,7 @@ class BackupService
         'clients',
         'reservations',
         'reservation_payments',
+        'reservation_payment_corrections',
         'reservation_refunds',
         'inquiries',
         'activity_logs',
@@ -257,6 +260,9 @@ class BackupService
                 }
                 if (in_array('reservations', $restoreTables, true) && ! in_array('reservation_refunds', $restoreTables, true) && Schema::hasTable('reservation_refunds')) {
                     DB::table('reservation_refunds')->delete();
+                }
+                if (in_array('reservations', $restoreTables, true) && ! in_array('reservation_payment_corrections', $restoreTables, true) && Schema::hasTable('reservation_payment_corrections')) {
+                    DB::table('reservation_payment_corrections')->delete();
                 }
 
                 foreach (array_reverse($restoreTables) as $table) {
@@ -652,7 +658,7 @@ class BackupService
             ];
         }
 
-        $requiredTables = self::TABLES;
+        $requiredTables = array_values(array_diff(self::TABLES, ['reservation_payment_corrections']));
         $allowedTables = $version === 1 ? self::LEGACY_TABLES : self::TABLES;
 
         $legacyLedgerMissing = ! array_key_exists('reservation_payments', $tables)

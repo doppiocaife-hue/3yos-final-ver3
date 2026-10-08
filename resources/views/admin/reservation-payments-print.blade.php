@@ -87,5 +87,8 @@
 
         <footer>Generated {{ now()->format('F j, Y g:i A') }} by {{ session('admin_name', 'Administrator') }}. For record-keeping only; not an official receipt.</footer>
     </main>
+<script>
+    window.addEventListener('load', () => window.print(), { once: true });
+</script>
 </body>
 </html>

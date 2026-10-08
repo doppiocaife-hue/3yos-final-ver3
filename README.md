@@ -62,7 +62,7 @@ The public and admin layouts load Bootstrap and their custom styles from `public
 1. A guest chooses a package and submits their contact information, event type, date, time, venue, guest count, and any additional details.
 2. The application validates the request, verifies reCAPTCHA, and creates a reservation with `pending` status and a generated reservation code.
 3. The guest can use the reservation code on the reservation status page to view the request's progress.
-4. An administrator reviews the request and accepts or cancels it through the dedicated workflow actions. Statuses cannot be edited directly; confirmed reservations are automatically completed at 11:59 PM on the event date. Stored statuses are `pending`, `confirmed`, `completed`, and `cancelled`; the guest-facing progress view labels a pending request as “Under Review” and a confirmed request as “Accepted.”
+4. An administrator reviews the request and accepts or cancels it through the dedicated workflow actions. Statuses cannot be edited directly; confirmed reservations are automatically completed after their event date has passed. Stored statuses are `pending`, `confirmed`, `completed`, and `cancelled`; the guest-facing progress view labels a pending request as “Under Review” and a confirmed request as “Accepted.”
 5. Configured email delivery sends reservation confirmation and applicable status notifications.
 
 Reservation dates must be at least two days in advance. The maximum is 4 active reservations/events per date: both `pending` and `confirmed` reservations consume capacity, while `cancelled` and terminal `completed` reservations do not. Guest submissions, administrator-created reservations, acceptance/cancellation actions, and confirmed-reservation date edits use the same capacity rule. These are application rules, not a statement of general business availability.
@@ -137,6 +137,7 @@ This database backup does not contain deployment configuration, application code
 ## Requirements
 
 - PHP 8.2 or later with the extensions required by Laravel and the selected database driver.
+- The PHP GD extension for receipt-image preprocessing.
 - Composer 2.
 - Node.js and npm for installing and building the frontend dependencies.
 - SQLite for the default local setup, or a configured database server and matching PHP driver.
@@ -201,6 +202,20 @@ Then, on either platform:
 7. Open `/admin/setup` and create the first Primary Admin using the configured setup key. After successful setup, remove `PRIMARY_ADMIN_SETUP_KEY` from the environment and run `php artisan config:clear` locally. In production, rebuild the cache after all environment values are final with `php artisan optimize`.
 8. Sign in and enter the services, packages, and gallery content needed by the public site. Confirm reCAPTCHA and email delivery before accepting live submissions.
 
+### Scheduled tasks
+
+Laravel's scheduler must be running for automatic reservation completion and scheduled backups. Reservation completion checks for every confirmed reservation dated before today every minute, in the configured application timezone; pending, cancelled, and current/future reservations are not changed.
+
+For Linux production, configure the hosting cron to run Laravel's scheduler every minute:
+
+```cron
+* * * * * cd /absolute/path/to/3yos-final-ver && php artisan schedule:run >> /dev/null 2>&1
+```
+
+On Windows/XAMPP, run `scripts\run-scheduler.bat` from Windows Task Scheduler. Configure a task to start at user logon (or system startup under the account that can access the project and database), and restart the task if it exits. Keep the task running: it invokes Laravel's `schedule:work`. Ensure the PHP CLI used by Task Scheduler has the required extensions and that Laravel's database server is available.
+
+Check registered schedules with `php artisan schedule:list`. To catch up ended reservations immediately, run `php artisan reservations:auto-complete-ended` from the project root; it can be safely run repeatedly and logs each completed reservation.
+
 ## Environment configuration
 
 Create a deployment-specific `.env` from `.env.example`; the `.env` file is not the configuration template and must not be committed or included in a release package. `.env.example` is the tracked template. Never put real credentials in documentation, source files, screenshots, or issue reports.
@@ -222,7 +237,7 @@ Create a deployment-specific `.env` from `.env.example`; the `.env` file is not 
 
 The example environment file provides safe placeholders, not working production credentials. Validate that the required tables for database-backed sessions, cache, or queues exist before selecting those drivers.
 
-Receipt OCR uses a locally installed Tesseract executable. Install Tesseract on the application host and ensure it is on `PATH`, or set `TESSERACT_BINARY` in `.env` to its full executable path (for example, `C:\Program Files\Tesseract-OCR\tesseract.exe` on Windows). Receipt images remain on the application host. If Tesseract is unavailable, admins can still record payments manually without attaching an image.
+Receipt OCR uses a locally installed Tesseract executable and the PHP GD extension. Install Tesseract on the application host and ensure it is on `PATH`, or set `TESSERACT_BINARY` in `.env` to its full executable path (for example, `C:\Program Files\Tesseract-OCR\tesseract.exe` on Windows). For XAMPP, enable `extension=gd` in `C:\xampp\php\php.ini` and restart Apache. Tall phone screenshots are OCRed both as uploaded and as an enlarged receipt-card crop to improve recognition of payment methods, references, and dates. Receipt images remain on the application host. If Tesseract is unavailable, admins can still record payments manually without attaching an image.
 
 ## Testing and frontend assets
 

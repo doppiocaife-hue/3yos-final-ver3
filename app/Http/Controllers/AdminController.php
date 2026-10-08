@@ -17,15 +17,22 @@ use App\Models\Service;
 use App\Services\ReservationNeedsAttentionService;
 use App\Services\ReservationFinancialService;
 use App\Services\ReservationCapacityService;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\HeaderUtils;
+use RuntimeException;
+use Throwable;
 
 class AdminController extends Controller
 {
@@ -588,9 +595,169 @@ class AdminController extends Controller
         return $months;
     }
 
-    public function acceptReservation(Request $request, Reservation $reservation, ReservationCapacityService $capacity)
+    public function acceptReservation(
+        Request $request,
+        Reservation $reservation,
+        ReservationCapacityService $capacity,
+        ReservationFinancialService $financialService,
+    )
     {
-        return $this->transitionReservationStatus($request, $reservation, $capacity, Reservation::STATUS_CONFIRMED);
+        $request->validate(['status' => ['prohibited']]);
+
+        if ($reservation->status === Reservation::STATUS_CONFIRMED) {
+            return back()->with('success', 'Reservation saved successfully.');
+        }
+        if ($reservation->status !== Reservation::STATUS_PENDING) {
+            throw ValidationException::withMessages(['status' => 'Only pending reservations can be accepted.']);
+        }
+
+        $data = $request->validate([
+            'status' => ['prohibited'],
+            'total_cost' => ['required', 'numeric', 'gt:0', 'max:9999999999', 'decimal:0,2'],
+            'payment_date' => ['required', 'date', 'before_or_equal:today'],
+            'payment_type' => ['required', Rule::in(['Downpayment', 'Full Payment'])],
+            'amount' => ['required', 'numeric', 'gt:0', 'max:9999999999', 'decimal:0,2'],
+            'payment_method' => ['required', Rule::in(ReservationPayment::METHODS)],
+            'reference_number' => ['nullable', 'string', 'max:100'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+            'receipt_image' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120', 'dimensions:max_width=10000,max_height=10000'],
+            'receipt_confirmed' => ['required', 'accepted'],
+            'receipt_review_token' => ['required', 'string', 'max:10000'],
+        ], [
+            'total_cost.required' => 'Enter the final contract price before accepting this reservation.',
+            'amount.required' => 'Record a downpayment or full payment before accepting this reservation.',
+            'receipt_image.required' => 'Upload and analyze the payment receipt before accepting this reservation.',
+            'receipt_confirmed.accepted' => 'Review and confirm the receipt details before accepting this reservation.',
+        ]);
+
+        $data['total_cost'] = round((float) $data['total_cost'], 2);
+        $data['amount'] = round((float) $data['amount'], 2);
+        $receiptImage = $data['receipt_image'];
+        unset($data['receipt_image']);
+        $receiptReview = $this->verifyAcceptanceReceiptReview($request, $reservation, $receiptImage);
+        $data['reference_number'] = $data['reference_number'] ?: ($receiptReview['analysis']['reference_number'] ?? null);
+        $referenceHash = $this->acceptanceReferenceHash($data['reference_number'] ?? null);
+        $newReceiptPath = null;
+        $this->assertAcceptanceReceiptIsUnique(
+            $request,
+            $reservation,
+            $receiptReview['receipt_sha256'],
+            $data['reference_number'] ?? null,
+        );
+
+        try {
+            $transitioned = DB::transaction(function () use (
+                $request,
+                $reservation,
+                $capacity,
+                $financialService,
+                $data,
+                $receiptImage,
+                $receiptReview,
+                $referenceHash,
+                &$newReceiptPath,
+            ): bool {
+                $lockedReservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
+                if ($lockedReservation->status !== Reservation::STATUS_PENDING) {
+                    throw ValidationException::withMessages(['status' => 'Only pending reservations can be accepted.']);
+                }
+
+                $capacity->lockDates([$lockedReservation->event_date]);
+                if ($capacity->countForDate($lockedReservation->event_date, $lockedReservation->id) >= Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE) {
+                    throw ValidationException::withMessages([
+                        'status' => 'Maximum active reservations for this date has been reached. Only '.Reservation::MAX_ACTIVE_RESERVATIONS_PER_DATE.' active reservations are allowed per date.',
+                    ]);
+                }
+
+                $lockedReservation->ensurePaymentLedger();
+                $lockedReservation->load('payments', 'refunds');
+                $existingFinancials = $financialService->calculate($lockedReservation, false);
+                $contractCents = Reservation::toCents($data['total_cost']);
+                $amountCents = Reservation::toCents($data['amount']);
+                $remainingCents = $contractCents - $existingFinancials['gross_paid_cents'];
+
+                if ($remainingCents <= 0 || $amountCents > $remainingCents) {
+                    throw ValidationException::withMessages([
+                        'amount' => 'The payment cannot exceed the remaining contract balance of ₱'.number_format(max(0, $remainingCents) / 100, 2).'.',
+                    ]);
+                }
+                if ($data['payment_type'] === 'Full Payment' && $amountCents !== $remainingCents) {
+                    throw ValidationException::withMessages([
+                        'amount' => 'A full payment must equal the remaining contract balance of ₱'.number_format($remainingCents / 100, 2).'.',
+                    ]);
+                }
+
+                $newReceiptPath = $receiptImage->store('payment-receipts', 'local');
+                if (! is_string($newReceiptPath)) {
+                    throw new RuntimeException('The private payment receipt could not be stored.');
+                }
+                $originalContract = $lockedReservation->total_cost;
+                $lockedReservation->update(['total_cost' => $data['total_cost']]);
+
+                $payment = $lockedReservation->payments()->create([
+                    'payment_date' => $data['payment_date'],
+                    'payment_type' => $data['payment_type'],
+                    'amount' => $data['amount'],
+                    'payment_method' => $data['payment_method'],
+                    'reference_number' => $data['reference_number'] ?? null,
+                    'reference_sha256' => $referenceHash,
+                    'notes' => $data['notes'] ?? null,
+                    'receipt_image_path' => $newReceiptPath,
+                    'receipt_sha256' => $receiptReview['receipt_sha256'],
+                    'recorded_by_user_id' => $request->session()->get('admin_user_id'),
+                    'recorded_by_name' => $request->session()->get('admin_name', 'Administrator'),
+                ]);
+                $lockedReservation->unsetRelation('payments');
+                $lockedReservation->recalculatePaymentTotals();
+                $lockedReservation->update(['status' => Reservation::STATUS_CONFIRMED]);
+
+                if ($originalContract === null || Reservation::toCents((float) $originalContract) !== $contractCents) {
+                    $this->logReservationActivity(
+                        $request,
+                        'Contract amount updated',
+                        'Set the final contract price for reservation #'.$lockedReservation->id.' to ₱'.number_format($data['total_cost'], 2).'.',
+                    );
+                }
+                $this->logReservationActivity(
+                    $request,
+                    'Payment recorded',
+                    $data['payment_type'].' of ₱'.number_format($data['amount'], 2).' recorded for reservation #'.$lockedReservation->id.' by '.$payment->recorded_by_name.'.',
+                );
+                $this->logReservationActivity(
+                    $request,
+                    'Official Receipt uploaded',
+                    'Official Receipt uploaded for ₱'.number_format($payment->amount, 2).' payment on reservation #'.$lockedReservation->id.'.',
+                );
+                $this->logAcceptanceReceiptCorrections($request, $lockedReservation, $receiptReview['analysis'], $data);
+                $this->logReservationActivity(
+                    $request,
+                    'Reservation status changed',
+                    'Changed reservation #'.$lockedReservation->id.' status from '.Reservation::statusLabel(Reservation::STATUS_PENDING).' to '.Reservation::statusLabel(Reservation::STATUS_CONFIRMED).'.',
+                );
+
+                return true;
+            }, 3);
+        } catch (QueryException $exception) {
+            $this->deleteAcceptanceReceipt($newReceiptPath);
+            if ($this->isAcceptanceUniqueConstraintViolation($exception)) {
+                $this->assertAcceptanceReceiptIsUnique(
+                    $request,
+                    $reservation,
+                    $receiptReview['receipt_sha256'],
+                    $data['reference_number'] ?? null,
+                );
+            }
+            throw $exception;
+        } catch (Throwable $exception) {
+            $this->deleteAcceptanceReceipt($newReceiptPath);
+            throw $exception;
+        }
+
+        if (! $transitioned) {
+            return back()->with('success', 'Reservation saved successfully.');
+        }
+
+        return back()->with('success', $this->sendStatusNotification($reservation->fresh(), Reservation::STATUS_CONFIRMED));
     }
 
     public function cancelReservation(Request $request, Reservation $reservation, ReservationCapacityService $capacity)
@@ -914,6 +1081,124 @@ class AdminController extends Controller
             'activity_time' => $timestamp->toTimeString(),
             'description' => $description,
         ]);
+    }
+
+    /**
+     * @return array{receipt_sha256: string, analysis: array<string, mixed>}
+     */
+    private function verifyAcceptanceReceiptReview(Request $request, Reservation $reservation, UploadedFile $file): array
+    {
+        $path = $file->getRealPath();
+        $hash = is_string($path) ? hash_file('sha256', $path) : false;
+        if (! is_string($hash)) {
+            throw ValidationException::withMessages(['receipt_image' => 'The uploaded receipt image could not be read.']);
+        }
+
+        try {
+            $review = json_decode(Crypt::decryptString($request->string('receipt_review_token')->toString()), true, 512, JSON_THROW_ON_ERROR);
+        } catch (DecryptException|\JsonException) {
+            throw ValidationException::withMessages(['receipt_image' => 'Receipt review expired or is invalid. Analyze the image again.']);
+        }
+
+        if (($review['reservation_id'] ?? null) !== $reservation->id
+            || ($review['payment_id'] ?? null) !== null
+            || ($review['receipt_sha256'] ?? null) !== $hash
+            || ! is_int($review['expires_at'] ?? null)
+            || $review['expires_at'] < now()->timestamp
+            || ! is_array($review['analysis'] ?? null)) {
+            throw ValidationException::withMessages([
+                'receipt_image' => 'Receipt review expired or the image changed. Analyze the current image again.',
+            ]);
+        }
+
+        return ['receipt_sha256' => $hash, 'analysis' => $review['analysis']];
+    }
+
+    private function assertAcceptanceReceiptIsUnique(
+        Request $request,
+        Reservation $reservation,
+        string $receiptHash,
+        ?string $reference,
+    ): void {
+        $duplicate = ReservationPayment::with('reservation')->where('receipt_sha256', $receiptHash)->first();
+        $referenceHash = $this->acceptanceReferenceHash($reference);
+        if (! $duplicate && $referenceHash !== null) {
+            $duplicate = ReservationPayment::with('reservation')->where('reference_sha256', $referenceHash)->first();
+        }
+
+        if (! $duplicate) {
+            return;
+        }
+
+        $this->logReservationActivity(
+            $request,
+            'Duplicate receipt blocked',
+            'A duplicate receipt or transaction reference was blocked for reservation #'.$reservation->id.'.',
+        );
+        $field = $duplicate->receipt_sha256 === $receiptHash ? 'receipt_image' : 'reference_number';
+        throw ValidationException::withMessages([
+            $field => $field === 'receipt_image'
+                ? 'This exact receipt image has already been recorded for another payment.'
+                : 'This transaction reference has already been recorded for another payment.',
+        ]);
+    }
+
+    private function acceptanceReferenceHash(?string $reference): ?string
+    {
+        if (! is_string($reference) || trim($reference) === '') {
+            return null;
+        }
+
+        $normalized = preg_replace('/[^A-Z0-9]/', '', mb_strtoupper(trim($reference)));
+
+        return $normalized === '' ? null : hash('sha256', $normalized);
+    }
+
+    private function logAcceptanceReceiptCorrections(
+        Request $request,
+        Reservation $reservation,
+        array $extracted,
+        array $submitted,
+    ): void {
+        $corrections = [];
+        if (isset($extracted['amount'])
+            && Reservation::toCents((float) $extracted['amount']) !== Reservation::toCents((float) $submitted['amount'])) {
+            $corrections[] = 'amount';
+        }
+        foreach (['payment_method', 'payment_date'] as $field) {
+            if (! empty($extracted[$field]) && ($submitted[$field] ?? null) !== $extracted[$field]) {
+                $corrections[] = $field;
+            }
+        }
+        if (! empty($extracted['reference_number'])
+            && $this->acceptanceReferenceHash($extracted['reference_number']) !== $this->acceptanceReferenceHash($submitted['reference_number'] ?? null)) {
+            $corrections[] = 'reference number';
+        }
+
+        if ($corrections !== []) {
+            $this->logReservationActivity(
+                $request,
+                'Receipt OCR fields corrected',
+                'Administrator reviewed and corrected extracted fields: '.implode(', ', $corrections).' for reservation #'.$reservation->id.'.',
+            );
+        }
+    }
+
+    private function isAcceptanceUniqueConstraintViolation(QueryException $exception): bool
+    {
+        return $exception->getCode() === '23000'
+            || str_contains(strtolower($exception->getMessage()), 'unique constraint');
+    }
+
+    private function deleteAcceptanceReceipt(?string $path): void
+    {
+        if (! $path || ! str_starts_with($path, 'payment-receipts/')) {
+            return;
+        }
+
+        if (Storage::disk('local')->exists($path) && ! Storage::disk('local')->delete($path)) {
+            report(new RuntimeException('The payment receipt could not be deleted after acceptance failed: '.$path));
+        }
     }
 
     private function normalizeReservationDetail(string $field, mixed $value): mixed

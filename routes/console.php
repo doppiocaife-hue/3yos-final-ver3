@@ -10,8 +10,9 @@ Schedule::command('backups:auto-create')
     ->withoutOverlapping();
 
 Schedule::command('reservations:auto-complete-ended')
-    ->dailyAt('23:59')
-    ->timezone(config('app.timezone'));
+    ->everyMinute()
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

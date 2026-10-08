@@ -39,4 +39,9 @@ class ReservationPayment extends Model
     {
         return $this->belongsTo(User::class, 'recorded_by_user_id');
     }
+
+    public function corrections()
+    {
+        return $this->hasMany(ReservationPaymentCorrection::class, 'payment_id')->latest('id');
+    }
 }

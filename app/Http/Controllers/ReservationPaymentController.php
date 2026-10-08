@@ -32,7 +32,7 @@ class ReservationPaymentController extends Controller
     {
         $reservation->ensurePaymentLedger();
         $reservation->recalculatePaymentTotals();
-        $reservation->load('payments', 'refunds', 'package');
+        $reservation->load('payments.corrections', 'refunds', 'package');
         $transactions = $this->transactions($reservation);
 
         return view('admin.reservation-payments', [
@@ -97,7 +97,7 @@ class ReservationPaymentController extends Controller
             $this->recordFinancialActivity($request, 'Receipt rejected', 'The uploaded image was not identified as a completed payment receipt.', $reservation);
 
             return response()->json([
-                'message' => 'Receipt Not Detected. The uploaded image does not appear to be a completed payment receipt. Upload payment proof or record the payment manually without attaching this image.',
+                'message' => 'Receipt Not Detected. '.$analysis['message'],
             ], 422);
         }
 
@@ -226,15 +226,21 @@ class ReservationPaymentController extends Controller
         );
     }
 
-    public function update(Request $request, Reservation $reservation, ReservationPayment $payment): RedirectResponse
+    public function correct(Request $request, Reservation $reservation, ReservationPayment $payment): RedirectResponse
     {
         $newReceiptPath = null;
-        $oldReceiptPath = null;
+        $receiptReview = null;
 
         try {
             $data = $this->validatePayment($request);
+            $reason = $request->validate([
+                'correction_reason' => ['required', 'string', 'min:3', 'max:1000'],
+            ], [
+                'correction_reason.required' => 'Enter a reason for correcting this payment.',
+                'correction_reason.min' => 'The correction reason must be at least 3 characters.',
+            ])['correction_reason'];
             $receiptImage = $data['receipt_image'] ?? null;
-            unset($data['receipt_image']);
+            unset($data['receipt_image'], $data['receipt_confirmed'], $data['receipt_review_token']);
             $receiptReview = $receiptImage
                 ? $this->verifyReceiptReview($request, $reservation, $receiptImage, $payment)
                 : null;
@@ -243,22 +249,20 @@ class ReservationPaymentController extends Controller
                 $this->assertNoDuplicateReceipt($request, $reservation, null, $data['reference_number'] ?? null, $payment);
             }
 
-            DB::transaction(function () use ($request, $reservation, $payment, $data, $receiptImage, $receiptReview, $referenceHash, &$newReceiptPath, &$oldReceiptPath) {
+            DB::transaction(function () use ($request, $reservation, $payment, $data, $reason, $receiptImage, $receiptReview, $referenceHash, &$newReceiptPath) {
                 $reservation = Reservation::whereKey($reservation->id)->lockForUpdate()->firstOrFail();
                 $payment = $reservation->payments()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
                 $reservation->ensurePaymentLedger();
                 $reservation->recalculatePaymentTotals();
-                $previous = $payment->getOriginal();
-                $oldReceiptPath = $payment->receipt_image_path;
+                $originalValues = $this->paymentSnapshot($payment);
 
-                // This payment's current amount is freed up before checking the new one.
                 $financials = $reservation->financials();
                 $available = ($financials['remaining_balance_cents'] ?? 0) + Reservation::toCents($payment->amount);
                 $this->assertWithinBalance($data['amount'], $available, true);
                 $grossAfterEdit = $financials['gross_paid_cents'] - Reservation::toCents($payment->amount) + Reservation::toCents($data['amount']);
                 if ($grossAfterEdit < $financials['total_refunded_cents']) {
                     throw ValidationException::withMessages([
-                        'amount' => 'The edited payment cannot be lower than the refunds already processed.',
+                        'amount' => 'The corrected payment cannot be lower than the refunds already processed.',
                     ]);
                 }
 
@@ -266,52 +270,68 @@ class ReservationPaymentController extends Controller
                     $newReceiptPath = $this->storeReceiptImage($receiptImage);
                     $data['receipt_image_path'] = $newReceiptPath;
                     $data['receipt_sha256'] = $receiptReview['receipt_sha256'];
-                    $this->recordReceiptCorrections($request, $reservation, $receiptReview['analysis'], $data);
                 }
 
                 $data['reference_sha256'] = $referenceHash;
                 $payment->update($data);
                 $reservation->recalculatePaymentTotals();
+                $correctedValues = $this->paymentSnapshot($payment);
 
-                $changes = $this->paymentChanges($previous, $data);
-                if ($changes !== []) {
-                    $this->recordFinancialActivity(
-                        $request,
-                        'Payment updated',
-                        implode("\n", $changes),
-                        $reservation,
-                    );
-                }
+                $payment->corrections()->create([
+                    'reservation_id' => $reservation->id,
+                    'admin_user_id' => $request->session()->get('admin_user_id'),
+                    'admin_name' => $request->session()->get('admin_name', 'Unknown administrator'),
+                    'admin_email' => $request->session()->get('admin_email'),
+                    'reason' => trim($reason),
+                    'original_values' => $originalValues,
+                    'corrected_values' => $correctedValues,
+                    'ocr_used' => $receiptReview !== null,
+                    'receipt_validation_result' => $receiptImage ? 'passed' : 'not_replaced',
+                    'duplicate_check_result' => 'passed',
+                ]);
 
-                if ($newReceiptPath !== null) {
-                    $this->recordFinancialActivity(
-                        $request,
-                        $oldReceiptPath === null ? 'Official Receipt uploaded' : 'Official Receipt replaced',
-                        $oldReceiptPath === null
-                            ? 'Official Receipt uploaded for '.$this->peso($payment->amount).' payment.'
-                            : 'Previous receipt: '.basename($oldReceiptPath)."\nNew receipt: ".basename($newReceiptPath).'.',
-                        $reservation,
-                    );
+                $this->recordFinancialActivity(
+                    $request,
+                    'Payment Corrected',
+                    $this->paymentCorrectionSummary(
+                        $payment,
+                        $originalValues,
+                        $correctedValues,
+                        trim($reason),
+                        (string) $request->session()->get('admin_name', 'Unknown administrator'),
+                        $receiptReview !== null,
+                    ),
+                    $reservation,
+                );
+
+                if ($receiptReview !== null) {
+                    $this->recordReceiptCorrections($request, $reservation, $receiptReview['analysis'], $data);
                 }
             });
         } catch (ValidationException $exception) {
             $this->deleteReceiptImage($newReceiptPath);
 
-            // Reopen the edit dialog with its own errors instead of flagging the add-payment form.
             return redirect()->route('admin.reservations.payments', $reservation)
-                ->withErrors($exception->errors(), 'editPayment')
-                ->withInput()
-                ->with('editing_payment', $payment->id);
+                ->withErrors($exception->errors(), 'correctPayment')
+                ->withInput($request->except('current_admin_password'))
+                ->with('correcting_payment', $payment->id);
         } catch (QueryException $exception) {
             $this->deleteReceiptImage($newReceiptPath);
             if ($this->isUniqueConstraintViolation($exception)) {
-                $this->assertNoDuplicateReceipt(
-                    $request,
-                    $reservation,
-                    $receiptReview['receipt_sha256'] ?? null,
-                    $data['reference_number'] ?? null,
-                    $payment,
-                );
+                try {
+                    $this->assertNoDuplicateReceipt(
+                        $request,
+                        $reservation,
+                        $receiptReview['receipt_sha256'] ?? null,
+                        $data['reference_number'] ?? null,
+                        $payment,
+                    );
+                } catch (ValidationException $duplicateException) {
+                    return redirect()->route('admin.reservations.payments', $reservation)
+                        ->withErrors($duplicateException->errors(), 'correctPayment')
+                        ->withInput($request->except('current_admin_password'))
+                        ->with('correcting_payment', $payment->id);
+                }
             }
             throw $exception;
         } catch (Throwable $exception) {
@@ -319,11 +339,7 @@ class ReservationPaymentController extends Controller
             throw $exception;
         }
 
-        if ($newReceiptPath !== null) {
-            $this->deleteReceiptImage($oldReceiptPath);
-        }
-
-        return redirect()->route('admin.reservations.payments', $reservation)->with('success', 'Payment updated and balance recalculated.');
+        return redirect()->route('admin.reservations.payments', $reservation)->with('success', 'Payment correction saved. The previous payment and receipt are preserved in correction history.');
     }
 
     public function receipt(Reservation $reservation, ReservationPayment $payment)
@@ -741,33 +757,46 @@ class ReservationPaymentController extends Controller
             ."\nPayment type: ".$payment->payment_type;
     }
 
-    private function paymentChanges(array $previous, array $data): array
+    private function paymentSnapshot(ReservationPayment $payment): array
     {
-        $changes = [];
+        return [
+            'payment_type' => $payment->payment_type,
+            'amount' => number_format((float) $payment->amount, 2, '.', ''),
+            'payment_method' => $payment->payment_method,
+            'payment_date' => $payment->payment_date->toDateString(),
+            'reference_number' => $payment->reference_number,
+            'notes' => $payment->notes,
+            'receipt_image_path' => $payment->receipt_image_path,
+            'receipt_sha256' => $payment->receipt_sha256,
+        ];
+    }
 
-        if (isset($data['amount']) && Reservation::toCents((float) $previous['amount']) !== Reservation::toCents((float) $data['amount'])) {
-            $changes[] = 'Amount: '.$this->peso($previous['amount']).' → '.$this->peso($data['amount']);
-        }
-        if (isset($data['payment_method']) && $previous['payment_method'] !== $data['payment_method']) {
-            $changes[] = 'Payment method: '.$previous['payment_method'].' → '.$data['payment_method'];
-        }
-        if (isset($data['payment_date'])
-            && Carbon::parse($previous['payment_date'])->toDateString() !== Carbon::parse($data['payment_date'])->toDateString()) {
-            $changes[] = 'Payment date: '.Carbon::parse($previous['payment_date'])->format('F j, Y')
-                .' → '.Carbon::parse($data['payment_date'])->format('F j, Y');
-        }
-        if (isset($data['payment_type']) && $previous['payment_type'] !== $data['payment_type']) {
-            $changes[] = 'Payment type: '.$previous['payment_type'].' → '.$data['payment_type'];
-        }
-        if (array_key_exists('notes', $data) && (string) ($previous['notes'] ?? '') !== (string) ($data['notes'] ?? '')) {
-            $changes[] = 'Payment notes were changed.';
-        }
-        if (array_key_exists('reference_number', $data)
-            && (string) ($previous['reference_number'] ?? '') !== (string) ($data['reference_number'] ?? '')) {
-            $changes[] = 'Payment reference number was changed.';
-        }
+    private function paymentCorrectionSummary(
+        ReservationPayment $payment,
+        array $original,
+        array $corrected,
+        string $reason,
+        string $adminName,
+        bool $ocrUsed,
+    ): string {
+        $formatAmount = fn (string $amount): string => $this->peso((float) $amount);
+        $formatReceipt = static fn (?string $path): string => $path ? basename($path) : 'No receipt';
+        $lines = [
+            'Payment ID: #'.$payment->id,
+            'Administrator: '.$adminName,
+            'Reason: '.$reason,
+            'Payment type: '.$original['payment_type'].' → '.$corrected['payment_type'],
+            'Amount: '.$formatAmount($original['amount']).' → '.$formatAmount($corrected['amount']),
+            'Payment method: '.$original['payment_method'].' → '.$corrected['payment_method'],
+            'Payment date: '.$original['payment_date'].' → '.$corrected['payment_date'],
+            'Reference number: '.($original['reference_number'] ?: 'None').' → '.($corrected['reference_number'] ?: 'None'),
+            'Receipt: '.$formatReceipt($original['receipt_image_path']).' → '.$formatReceipt($corrected['receipt_image_path']),
+            'OCR: '.($ocrUsed ? 'Used; administrator review required and completed' : 'Not used'),
+            'Receipt validation: '.($ocrUsed ? 'Passed' : 'No replacement receipt'),
+            'Duplicate detection: Passed',
+        ];
 
-        return $changes;
+        return implode("\n", $lines);
     }
 
     private function recordFinancialActivity(

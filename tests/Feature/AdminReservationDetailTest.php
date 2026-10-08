@@ -13,10 +13,13 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\AcceptsReservations;
 use Tests\TestCase;
 
 class AdminReservationDetailTest extends TestCase
 {
+    use AcceptsReservations;
+
     private const ADMIN = ['is_admin' => true, 'admin_role' => 'full', 'admin_name' => 'Detail Tester', 'admin_email' => 'detail@3yos.com'];
 
     private function reservation(array $overrides = []): Reservation
@@ -306,8 +309,7 @@ class AdminReservationDetailTest extends TestCase
     {
         Mail::fake();
         $reservation = $this->reservation(['status' => 'pending']);
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $reservation))
+        $this->postReservationAcceptance($reservation, self::ADMIN)
             ->assertSessionHasNoErrors();
         $this->withSession(self::ADMIN)
             ->post(route('admin.reservations.cancel', $reservation))

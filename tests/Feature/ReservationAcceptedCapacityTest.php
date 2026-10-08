@@ -6,11 +6,13 @@ use App\Models\Package;
 use App\Models\Reservation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Tests\Concerns\AcceptsReservations;
 use Tests\TestCase;
 
 class ReservationAcceptedCapacityTest extends TestCase
 {
     use RefreshDatabase;
+    use AcceptsReservations;
 
     private const ADMIN = ['is_admin' => true, 'admin_role' => 'full', 'admin_name' => 'Capacity Tester', 'admin_email' => 'capacity@3yos.com'];
     private const DATE = '2030-10-08';
@@ -42,8 +44,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         Mail::fake();
         $reservation = $this->reservation();
 
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $reservation))
+        $this->postReservationAcceptance($reservation, self::ADMIN)
             ->assertSessionHasNoErrors();
 
         $this->assertSame('confirmed', $reservation->fresh()->status);
@@ -57,8 +58,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         $this->reservation(['status' => 'confirmed']);
         $fourth = $this->reservation();
 
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $fourth))
+        $this->postReservationAcceptance($fourth, self::ADMIN)
             ->assertSessionHasNoErrors();
 
         $this->assertSame('confirmed', $fourth->fresh()->status);
@@ -74,8 +74,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         $this->reservation(['status' => 'confirmed']);
         $fifth = $this->reservation();
 
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $fifth))
+        $this->postReservationAcceptance($fifth, self::ADMIN)
             ->assertSessionHasErrors(['status' => 'Maximum active reservations for this date has been reached. Only 4 active reservations are allowed per date.']);
 
         // Previous status must remain unchanged.
@@ -112,8 +111,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         $this->reservation(['status' => 'confirmed']);
         $pending = $this->reservation(['status' => 'pending']);
 
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $pending))
+        $this->postReservationAcceptance($pending, self::ADMIN)
             ->assertSessionHasNoErrors();
 
         $this->assertSame('confirmed', $pending->fresh()->status);
@@ -169,8 +167,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         $this->reservation(['status' => 'pending']);
         $candidate = $this->reservation(['status' => 'cancelled']);
 
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $candidate))
+        $this->postReservationAcceptance($candidate, self::ADMIN)
             ->assertSessionHasErrors('status');
 
         $this->assertSame('cancelled', $candidate->fresh()->status);
@@ -187,8 +184,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         $this->reservation(['status' => 'cancelled']);
         $candidate = $this->reservation();
 
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $candidate))
+        $this->postReservationAcceptance($candidate, self::ADMIN)
             ->assertSessionHasNoErrors();
 
         $this->assertSame('confirmed', $candidate->fresh()->status);
@@ -203,8 +199,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         $this->reservation(['status' => 'pending']);
         $cancelled = $this->reservation(['status' => 'cancelled']);
 
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $cancelled))
+        $this->postReservationAcceptance($cancelled, self::ADMIN)
             ->assertSessionHasErrors('status');
 
         $this->assertSame('cancelled', $cancelled->fresh()->status);
@@ -220,8 +215,7 @@ class ReservationAcceptedCapacityTest extends TestCase
         $this->reservation(['status' => 'completed']);
         $candidate = $this->reservation();
 
-        $this->withSession(self::ADMIN)
-            ->post(route('admin.reservations.accept', $candidate))
+        $this->postReservationAcceptance($candidate, self::ADMIN)
             ->assertSessionHasNoErrors();
 
         $this->assertSame('confirmed', $candidate->fresh()->status);

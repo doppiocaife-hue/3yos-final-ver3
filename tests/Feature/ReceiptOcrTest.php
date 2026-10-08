@@ -127,10 +127,11 @@ class ReceiptOcrTest extends TestCase
         $this->useOcrText("SERVICE INVOICE\nNo. 0001\nRECEIVED from __________\nThe sum of _________");
         $reservation = $this->reservation();
 
-        $this->analyze($reservation, $this->pngUpload())
+        $response = $this->analyze($reservation, $this->pngUpload())
             ->assertUnprocessable()
-            ->assertJsonPath('message', fn ($message) => str_contains($message, 'Receipt Not Detected'));
+            ->assertJsonPath('message', 'Receipt Not Detected. The uploaded image does not appear to be a completed payment receipt.');
 
+        $this->assertStringNotContainsString('record the payment manually', $response->json('message'));
         $this->assertSame(0, ReservationPayment::count());
         $this->assertDatabaseHas('activity_logs', ['action' => 'Receipt rejected']);
     }

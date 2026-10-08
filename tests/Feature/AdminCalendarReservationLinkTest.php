@@ -4,10 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\Package;
 use App\Models\Reservation;
+use Tests\Concerns\AcceptsReservations;
 use Tests\TestCase;
 
 class AdminCalendarReservationLinkTest extends TestCase
 {
+    use AcceptsReservations;
+
     private const ADMIN = ['is_admin' => true, 'admin_role' => 'full'];
 
     private function reservation(array $overrides = []): Reservation
@@ -113,7 +116,7 @@ class AdminCalendarReservationLinkTest extends TestCase
     public function test_reservation_detail_opened_from_the_calendar_still_shows_its_activity_history(): void
     {
         $reservation = $this->reservation();
-        $this->withSession(self::ADMIN)->post(route('admin.reservations.accept', $reservation));
+        $this->postReservationAcceptance($reservation, self::ADMIN);
 
         $response = $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation));
 

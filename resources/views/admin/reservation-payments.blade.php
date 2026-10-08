@@ -23,14 +23,13 @@
             <p class="text-muted mb-0">{{ $reservation->full_name }} · {{ $reservation->event_type }} on {{ \Carbon\Carbon::parse($reservation->event_date)->format('M j, Y') }}{{ $reservation->package ? ' · ' . $reservation->package->name : '' }}</p>
         </div>
         <div class="page-actions">
-            <a class="btn btn-outline-secondary" href="{{ route('admin.reservations.payments.print', $reservation) }}" target="_blank" rel="noopener">View / print record</a>
+            <button class="btn btn-outline-secondary" type="button" data-print-record
+                data-print-url="{{ route('admin.reservations.payments.print', $reservation) }}">Print record</button>
         </div>
     </div>
+    <iframe title="Printable payment record" data-print-frame aria-hidden="true" tabindex="-1" hidden></iframe>
 
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
-    @if($errors->any())
-        <div class="alert alert-danger" role="alert"><ul class="mb-0 ps-3">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
-    @endif
 
     <div class="summary-grid" aria-label="Payment summary">
         <div class="summary-item summary-item--accent"><span>Contract price</span><strong>{{ $contractSet ? $peso($reservation->total_cost) : 'Not set' }}</strong></div>
@@ -50,9 +49,9 @@
                 @if(! $contractSet)
                     <div class="alert alert-warning mb-0">Set the contract price first, then record payments against it.</div>
                 @elseif($fullyPaid)
-                    <div class="alert alert-success mb-0">This booking is fully paid. Edit a payment below to make changes.</div>
+                    <div class="alert alert-success mb-0">This booking is fully paid. Correct a payment below if its recorded details need to change.</div>
                 @else
-                    <form method="POST" enctype="multipart/form-data" action="{{ route('admin.reservations.payments.store', $reservation) }}" data-submit-once data-confirm-message="Record this payment? The balance and status will be recalculated." data-receipt-form data-analyze-url="{{ route('admin.reservations.payments.receipt.analyze', $reservation) }}">
+                    <form method="POST" enctype="multipart/form-data" action="{{ route('admin.reservations.payments.store', $reservation) }}" novalidate data-payment-validation="record" data-submit-once data-confirm-message="Record this payment? The balance and status will be recalculated." data-receipt-form data-analyze-url="{{ route('admin.reservations.payments.receipt.analyze', $reservation) }}">
                         @csrf
                         <input type="hidden" name="receipt_review_token" value="">
                         <div class="row g-3">
@@ -84,9 +83,12 @@
                             <div class="col-12 receipt-upload-field">
                                 <label class="form-label" for="receipt_image">Payment receipt image <span class="text-muted fw-normal">(optional)</span></label>
                                 <input class="form-control @error('receipt_image') is-invalid @enderror" type="file" id="receipt_image" name="receipt_image" accept="image/jpeg,image/png,image/webp" data-receipt-file>
-                                <div class="form-text">JPG, PNG, or WEBP; maximum 5MB. Analyze and review the receipt before saving it.</div>
+                                <div class="form-text">JPG, PNG, or WEBP; maximum 5MB. The receipt is analyzed automatically when selected. Review the extracted details before saving.</div>
                                 <div class="receipt-review mt-3" data-receipt-review hidden>
-                                    <img class="receipt-review-preview" alt="Selected receipt preview" data-receipt-preview hidden>
+                                    <button type="button" class="receipt-preview-trigger" data-receipt-preview-trigger data-view-receipt hidden aria-label="View selected receipt full size">
+                                        <img class="receipt-review-preview" alt="" data-receipt-preview>
+                                        <span>Click to view full receipt</span>
+                                    </button>
                                     <button class="btn btn-sm btn-outline-primary mt-2" type="button" data-analyze-receipt>Analyze receipt</button>
                                     <button class="btn btn-sm btn-outline-secondary mt-2" type="button" data-clear-receipt>Remove image</button>
                                     <p class="small mt-2 mb-2" role="status" aria-live="polite" data-receipt-status></p>
@@ -206,8 +208,8 @@
                             <td class="text-end">
                                 @if($transaction->kind === 'payment')
                                     <div class="table-actions">
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-payment
-                                            data-action="{{ route('admin.reservations.payments.update', [$reservation, $transaction->payment]) }}"
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" data-correct-payment
+                                            data-action="{{ route('admin.reservations.payments.correct', [$reservation, $transaction->payment]) }}"
                                             data-id="{{ $transaction->payment->id }}"
                                             data-date="{{ $transaction->payment->payment_date->toDateString() }}"
                                             data-type="{{ $transaction->payment->payment_type }}"
@@ -215,8 +217,24 @@
                                             data-method="{{ $transaction->payment->payment_method }}"
                                             data-notes="{{ $transaction->payment->notes }}"
                                             data-reference="{{ $transaction->payment->reference_number }}"
-                                            data-receipt-url="{{ $transaction->payment->receipt_image_path ? route('admin.reservations.payments.receipt', [$reservation, $transaction->payment]) : '' }}">Edit</button>
+                                            data-receipt-url="{{ $transaction->payment->receipt_image_path ? route('admin.reservations.payments.receipt', [$reservation, $transaction->payment]) : '' }}">Correct Payment</button>
                                     </div>
+                                    @if($transaction->payment->corrections->isNotEmpty())
+                                        <details class="small text-start mt-2">
+                                            <summary>{{ $transaction->payment->corrections->count() }} correction{{ $transaction->payment->corrections->count() === 1 ? '' : 's' }} recorded</summary>
+                                            <div class="pt-2">
+                                                @foreach($transaction->payment->corrections as $correction)
+                                                    <div class="border-top pt-2 mt-2">
+                                                        <strong>{{ $correction->created_at?->format('M j, Y g:i A') }} · {{ $correction->admin_name }}</strong>
+                                                        <div>Reason: {{ $correction->reason }}</div>
+                                                        <div>Amount: {{ $peso($correction->original_values['amount'] ?? 0) }} → {{ $peso($correction->corrected_values['amount'] ?? 0) }}</div>
+                                                        <div>Method: {{ $correction->original_values['payment_method'] ?? '—' }} → {{ $correction->corrected_values['payment_method'] ?? '—' }}</div>
+                                                        <div>Receipt: {{ !empty($correction->original_values['receipt_image_path']) ? basename($correction->original_values['receipt_image_path']) : 'No receipt' }} → {{ !empty($correction->corrected_values['receipt_image_path']) ? basename($correction->corrected_values['receipt_image_path']) : 'No receipt' }}</div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        </details>
+                                    @endif
                                 @else
                                     <span class="text-muted">—</span>
                                 @endif
@@ -240,7 +258,10 @@
 <dialog id="payment-receipt-dialog" aria-labelledby="payment-receipt-title" class="payment-receipt-dialog">
     <div class="receipt-dialog-header">
         <h2 id="payment-receipt-title" class="h5 mb-0">Official receipt</h2>
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-close-receipt>Close</button>
+        <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-toggle-receipt-zoom aria-pressed="false">Zoom in</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-close-receipt>Close</button>
+        </div>
     </div>
     <div class="receipt-dialog-body">
         <img id="payment-receipt-image" alt="Official receipt image" hidden>
@@ -248,15 +269,13 @@
     </div>
 </dialog>
 
-<dialog id="edit-payment-dialog" aria-labelledby="edit-payment-title">
-    <h2 id="edit-payment-title" class="h5 mb-3">Edit payment</h2>
-    @if($errors->editPayment->any())
-        <div class="alert alert-danger" role="alert"><ul class="mb-0 ps-3">@foreach($errors->editPayment->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
-    @endif
-    <form method="POST" enctype="multipart/form-data" id="edit-payment-form" action="" data-password-confirm data-password-message="Confirm your administrator password to edit this payment." data-submit-once data-confirm-message="Save changes to this payment? The balance will be recalculated." data-receipt-form data-analyze-url="{{ route('admin.reservations.payments.receipt.analyze', $reservation) }}">
+<dialog id="correct-payment-dialog" aria-labelledby="correct-payment-title">
+    <h2 id="correct-payment-title" class="h5 mb-3">Correct payment</h2>
+    <form method="POST" enctype="multipart/form-data" id="correct-payment-form" action="" novalidate data-payment-validation="correct" data-password-confirm data-password-message="Confirm your administrator password to correct this payment." data-submit-once data-receipt-form data-analyze-url="{{ route('admin.reservations.payments.receipt.analyze', $reservation) }}">
         @csrf @method('PUT')
         <input type="hidden" name="receipt_review_token" value="">
         <input type="hidden" name="payment_id" value="">
+        <div class="alert alert-warning small">Corrections are permanently recorded. The original payment details and any replaced receipt will be preserved in the audit history.</div>
         <div class="row g-3">
             <div class="col-sm-6"><label class="form-label" for="edit_payment_date">Payment date</label><input class="form-control" type="date" id="edit_payment_date" name="payment_date" max="{{ now()->toDateString() }}" required></div>
             <div class="col-sm-6"><label class="form-label" for="edit_payment_type">Payment type</label><select class="form-select" id="edit_payment_type" name="payment_type" required>@foreach($types as $type)<option value="{{ $type }}">{{ $type }}</option>@endforeach</select></div>
@@ -267,9 +286,12 @@
                 <label class="form-label" for="edit_receipt_image">Official Receipt Image <span class="text-muted fw-normal">(optional)</span></label>
                 <div class="current-receipt mb-2"><span id="edit-receipt-empty" class="text-muted small">No receipt uploaded.</span><button id="edit-view-receipt" type="button" class="btn btn-sm btn-outline-secondary" data-view-receipt hidden>View current receipt</button></div>
                 <input class="form-control" type="file" id="edit_receipt_image" name="receipt_image" accept="image/jpeg,image/png,image/webp" data-receipt-file>
-                <div class="form-text">Choose a new JPG, PNG, or WEBP image (maximum 5MB), then analyze and review it before replacing the receipt.</div>
+                <div class="form-text">Choose a new JPG, PNG, or WEBP image (maximum 5MB). It will be analyzed automatically; review the extracted details before replacing the receipt. Existing receipts are retained in correction history.</div>
                 <div class="receipt-review mt-3" data-receipt-review hidden>
-                    <img class="receipt-review-preview" alt="Selected receipt preview" data-receipt-preview hidden>
+                    <button type="button" class="receipt-preview-trigger" data-receipt-preview-trigger data-view-receipt hidden aria-label="View selected receipt full size">
+                        <img class="receipt-review-preview" alt="" data-receipt-preview>
+                        <span>Click to view full receipt</span>
+                    </button>
                     <button class="btn btn-sm btn-outline-primary mt-2" type="button" data-analyze-receipt>Analyze receipt</button>
                     <button class="btn btn-sm btn-outline-secondary mt-2" type="button" data-clear-receipt>Remove image</button>
                     <p class="small mt-2 mb-2" role="status" aria-live="polite" data-receipt-status></p>
@@ -281,13 +303,27 @@
                 </div>
             </div>
             <div class="col-12"><label class="form-label" for="edit_notes">Notes <span class="text-muted fw-normal">(optional)</span></label><textarea class="form-control" id="edit_notes" name="notes" rows="2" maxlength="1000"></textarea></div>
+            <div class="col-12"><label class="form-label" for="correction_reason">Reason for correction</label><textarea class="form-control" id="correction_reason" name="correction_reason" rows="3" minlength="3" maxlength="1000" required>{{ old('correction_reason') }}</textarea><div class="form-text">Explain why the recorded payment is being corrected. This reason is saved with the audit history.</div></div>
         </div>
         <div class="d-flex justify-content-end gap-2 mt-4">
             <button type="button" class="btn btn-outline-secondary" data-close-dialog>Cancel</button>
-            <button type="submit" class="btn luxury-btn">Save changes</button>
+            <button type="submit" class="btn luxury-btn">Review and correct</button>
         </div>
     </form>
 </dialog>
+
+<dialog id="payment-validation-dialog" class="payment-validation-dialog" aria-labelledby="payment-validation-title" aria-describedby="payment-validation-message">
+    <div class="payment-validation-header">
+        <span class="payment-validation-icon" aria-hidden="true">!</span>
+        <h2 id="payment-validation-title" class="h5 mb-0">Information Required</h2>
+    </div>
+    <div id="payment-validation-message" class="alert alert-warning mb-3" role="alert" aria-live="assertive"></div>
+    <div class="d-flex justify-content-end">
+        <button type="button" class="btn btn-outline-secondary" data-close-payment-validation>Close</button>
+    </div>
+</dialog>
+
+<script type="application/json" id="payment-server-errors">@json(array_values(array_unique(array_merge($errors->all(), $errors->correctPayment->all()))))</script>
 
 <style>
     .payment-history { min-width: 900px; }
@@ -301,17 +337,31 @@
     .receipt-upload-field { min-width: 0; }
     .receipt-review { padding: .75rem; border: 1px solid var(--line); border-radius: .65rem; }
     .receipt-review-preview { display: block; width: auto; max-width: min(100%, 320px); max-height: 240px; object-fit: contain; border-radius: .45rem; }
+    .receipt-preview-trigger { display: inline-flex; flex-direction: column; align-items: flex-start; gap: .35rem; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: .8rem; text-align: left; cursor: zoom-in; }
+    .receipt-preview-trigger:hover .receipt-review-preview, .receipt-preview-trigger:focus-visible .receipt-review-preview { outline: 2px solid var(--accent, #b78b4b); outline-offset: 3px; }
+    .receipt-preview-trigger[hidden] { display: none; }
     .receipt-review-details { overflow-wrap: anywhere; }
     .current-receipt { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
     .payment-receipt-dialog { width: min(900px, calc(100vw - 2rem)); max-width: none; max-height: calc(100dvh - 2rem); padding: 0; overflow: hidden; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
     .payment-receipt-dialog::backdrop { background: rgba(16, 20, 24, .72); }
+    .payment-validation-dialog { width: min(480px, calc(100vw - 2rem)); max-height: min(80dvh, 640px); overflow-y: auto; padding: 1.25rem; border: 1px solid var(--line); border-radius: .75rem; background: var(--surface); color: var(--ink); }
+    .payment-validation-dialog::backdrop { background: rgba(16, 20, 24, .62); }
+    .payment-validation-header { display: flex; align-items: center; gap: .7rem; margin-bottom: 1rem; }
+    .payment-validation-icon { display: grid; flex: 0 0 1.8rem; width: 1.8rem; height: 1.8rem; place-items: center; border: 1px solid currentColor; border-radius: 50%; color: #8a5b00; font-weight: 700; }
+    body.dark-mode .payment-validation-icon { color: #ffd36b; }
+    .payment-validation-dialog #payment-validation-message { white-space: pre-line; overflow-wrap: anywhere; }
+    [data-receipt-status][data-state="error"] { color: var(--danger); font-weight: 600; }
+    [data-receipt-status][data-state="success"] { color: var(--success, #26734d); font-weight: 600; }
     .receipt-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem 1rem; border-bottom: 1px solid var(--line); }
     .receipt-dialog-body { display: grid; place-items: center; min-height: 140px; max-height: calc(100dvh - 6rem); overflow: auto; padding: .75rem; }
+    .receipt-dialog-body.is-zoomed { display: block; }
     .receipt-dialog-body img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100dvh - 8rem); object-fit: contain; }
+    .receipt-dialog-body img.is-zoomed { max-width: none; max-height: none; }
     .receipt-dialog-body img[hidden], #payment-receipt-error[hidden] { display: none; }
-    #edit-payment-dialog { width: min(640px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+    #correct-payment-dialog { width: min(640px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; }
     @media (max-width: 575px) {
         .payment-receipt-dialog { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); }
+        .payment-validation-dialog { width: calc(100vw - 1rem); max-height: calc(100dvh - 2rem); padding: 1rem; }
         .receipt-dialog-header { padding: .65rem .75rem; }
         .receipt-dialog-body { max-height: calc(100dvh - 5rem); padding: .5rem; }
         .receipt-dialog-body img { max-height: calc(100dvh - 7rem); }
@@ -344,15 +394,34 @@
     const dialog = document.getElementById('payment-receipt-dialog');
     const image = document.getElementById('payment-receipt-image');
     const error = document.getElementById('payment-receipt-error');
-    if (!dialog || !image || !error) return;
+    const body = dialog && dialog.querySelector('.receipt-dialog-body');
+    const zoomButton = dialog && dialog.querySelector('[data-toggle-receipt-zoom]');
+    if (!dialog || !image || !error || !body || !zoomButton) return;
+
+    const resetZoom = () => {
+        image.classList.remove('is-zoomed');
+        body.classList.remove('is-zoomed');
+        zoomButton.textContent = 'Zoom in';
+        zoomButton.setAttribute('aria-pressed', 'false');
+    };
 
     const open = (url) => {
         if (!url) return;
+        resetZoom();
         image.hidden = true;
         error.hidden = true;
         image.src = url;
         dialog.showModal();
     };
+
+    zoomButton.addEventListener('click', () => {
+        const zoomed = !image.classList.contains('is-zoomed');
+        image.classList.toggle('is-zoomed', zoomed);
+        body.classList.toggle('is-zoomed', zoomed);
+        zoomButton.textContent = zoomed ? 'Fit to screen' : 'Zoom in';
+        zoomButton.setAttribute('aria-pressed', String(zoomed));
+        if (zoomed) body.scrollTo({ top: 0, left: 0 });
+    });
 
     document.querySelectorAll('[data-view-receipt]').forEach((button) => {
         button.addEventListener('click', () => open(button.dataset.receiptUrl));
@@ -376,6 +445,7 @@
         image.removeAttribute('src');
         image.hidden = true;
         error.hidden = true;
+        resetZoom();
     });
     dialog.addEventListener('click', (event) => {
         if (event.target === dialog) dialog.close();
@@ -384,8 +454,9 @@
 </script>
 <script>
 (() => {
-    const dialog = document.getElementById('edit-payment-dialog');
-    const form = document.getElementById('edit-payment-form');
+    const dialog = document.getElementById('correct-payment-dialog');
+    const form = document.getElementById('correct-payment-form');
+    const passwordDialog = document.getElementById('admin-password-dialog');
     const currentReceiptButton = document.getElementById('edit-view-receipt');
     const currentReceiptEmpty = document.getElementById('edit-receipt-empty');
     const receiptFile = document.getElementById('edit_receipt_image');
@@ -397,6 +468,21 @@
         reference: document.getElementById('edit_reference_number'),
         notes: document.getElementById('edit_notes'),
     };
+    form.addEventListener('submit', (event) => {
+        if (form.dataset.correctionConfirmed === 'true') {
+            delete form.dataset.correctionConfirmed;
+            return;
+        }
+        if (!window.confirm(form.dataset.confirmMessage || 'Confirm this payment correction?')) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        form.dataset.correctionConfirmed = 'true';
+    });
+    passwordDialog?.addEventListener('close', () => {
+        if (passwordDialog.returnValue !== 'confirmed') delete form.dataset.correctionConfirmed;
+    });
     const open = (values) => {
         form.action = values.action;
         fields.date.value = values.date;
@@ -406,6 +492,13 @@
         fields.reference.value = values.reference || '';
         fields.notes.value = values.notes || '';
         form.querySelector('[name="payment_id"]').value = values.id;
+        form.querySelector('[name="correction_reason"]').value = '';
+        form.dataset.confirmMessage = [
+            'Confirm payment correction',
+            `Payment ID: #${values.id}`,
+            `Current amount: ₱${Number(values.amount || 0).toFixed(2)}`,
+            'The original values and any replaced receipt will remain in the audit history.',
+        ].join('\n');
         receiptFile.value = '';
         receiptFile.dispatchEvent(new Event('change', { bubbles: true }));
         currentReceiptButton.dataset.receiptUrl = values.receiptUrl || '';
@@ -415,14 +508,13 @@
         fields.amount.focus();
     };
 
-    document.querySelectorAll('[data-edit-payment]').forEach((button) => {
+    document.querySelectorAll('[data-correct-payment]').forEach((button) => {
         button.addEventListener('click', () => open(button.dataset));
     });
     dialog.querySelector('[data-close-dialog]').addEventListener('click', () => dialog.close());
 
-    // A rejected edit comes back with its input; reopen the dialog so the admin can correct it.
-    @if(session('editing_payment'))
-        const failed = document.querySelector('[data-edit-payment][data-id="{{ session('editing_payment') }}"]');
+    @if(session('correcting_payment'))
+        const failed = document.querySelector('[data-correct-payment][data-id="{{ session('correcting_payment') }}"]');
         if (failed) open({
             ...failed.dataset,
             date: @json(old('payment_date')),
@@ -432,7 +524,169 @@
             reference: @json(old('reference_number')),
             notes: @json(old('notes')),
         });
+        if (failed) form.querySelector('[name="correction_reason"]').value = @json(old('correction_reason'));
     @endif
+})();
+</script>
+<script>
+(() => {
+    const button = document.querySelector('[data-print-record]');
+    const frame = document.querySelector('[data-print-frame]');
+    if (!button || !frame) return;
+
+    button.addEventListener('click', () => {
+        const url = button.dataset.printUrl;
+        if (!url) return;
+
+        frame.src = `${url}${url.includes('?') ? '&' : '?'}print=${Date.now()}`;
+    });
+})();
+</script>
+<script>
+(() => {
+    const dialog = document.getElementById('payment-validation-dialog');
+    const title = document.getElementById('payment-validation-title');
+    const message = document.getElementById('payment-validation-message');
+    if (!dialog || !title || !message) return;
+    let focusTargetAfterClose = null;
+
+    window.showPaymentValidationAlert = (heading, details, focusTarget = null) => {
+        title.textContent = heading;
+        message.textContent = details;
+        focusTargetAfterClose = focusTarget;
+        if (!dialog.open) {
+            dialog.showModal();
+            dialog.querySelector('[data-close-payment-validation]').focus();
+        }
+    };
+
+    dialog.querySelector('[data-close-payment-validation]').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => {
+        if (focusTargetAfterClose instanceof HTMLElement && focusTargetAfterClose.isConnected) {
+            focusTargetAfterClose.focus();
+        }
+        focusTargetAfterClose = null;
+    });
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+    });
+
+    const serverErrors = document.getElementById('payment-server-errors');
+    if (serverErrors) {
+        try {
+            const errors = JSON.parse(serverErrors.textContent || '[]');
+            if (Array.isArray(errors) && errors.length > 0) {
+                requestAnimationFrame(() => {
+                    window.showPaymentValidationAlert(
+                        'Please review the payment information',
+                        errors.join('\n'),
+                    );
+                });
+            }
+        } catch (error) {
+            console.error('Unable to display payment validation errors.', error);
+        }
+    }
+})();
+</script>
+<script>
+(() => {
+    const fieldLabels = {
+        amount: 'Amount Paid',
+        payment_type: 'Payment Type',
+        payment_method: 'Payment Method',
+        payment_date: 'Payment Date',
+        correction_reason: 'Correction Reason',
+    };
+    const messageForInvalidField = (name, field) => {
+        if (field.validity.valueMissing) {
+            return name === 'payment_type' || name === 'payment_method'
+                ? `Please choose the ${fieldLabels[name]}.`
+                : `Please enter the ${fieldLabels[name]}.`;
+        }
+        if (name === 'correction_reason' && field.validity.tooShort) {
+            return 'Please enter a Correction Reason of at least 3 characters.';
+        }
+        if (name === 'amount' && field.validity.rangeUnderflow) {
+            return 'Amount Paid must be greater than ₱0.00.';
+        }
+        if (name === 'amount' && field.validity.rangeOverflow) {
+            return 'Amount Paid cannot exceed the remaining balance.';
+        }
+        if (name === 'payment_date' && field.validity.rangeOverflow) {
+            return 'Payment Date cannot be in the future.';
+        }
+        return `Please check the ${fieldLabels[name] || name.replaceAll('_', ' ')}.`;
+    };
+
+    document.querySelectorAll('[data-payment-validation]').forEach((form) => {
+        const fields = ['amount', 'payment_type', 'payment_method', 'payment_date'];
+        if (form.dataset.paymentValidation === 'correct') fields.push('correction_reason');
+
+        const clearReceiptIssue = () => {
+            delete form.dataset.receiptIssue;
+            const status = form.querySelector('[data-receipt-status]');
+            if (status) delete status.dataset.state;
+        };
+
+        form.querySelector('[data-receipt-file]')?.addEventListener('change', clearReceiptIssue);
+        form.addEventListener('submit', (event) => {
+            const messages = [];
+            const invalidFields = [];
+
+            fields.forEach((name) => {
+                const field = form.elements.namedItem(name);
+                if (!field || !field.willValidate || field.validity.valid) return;
+                invalidFields.push(field);
+                messages.push(field.validity.valueMissing
+                    ? { label: fieldLabels[name] }
+                    : { text: messageForInvalidField(name, field) });
+            });
+
+            const fileInput = form.querySelector('[data-receipt-file]');
+            const receiptFileSelected = Boolean(fileInput?.files?.length);
+            const reviewToken = form.querySelector('[name="receipt_review_token"]')?.value;
+            const confirmed = form.querySelector('[name="receipt_confirmed"]')?.checked;
+
+            if (receiptFileSelected && !reviewToken) {
+                let receiptIssue = null;
+                try {
+                    receiptIssue = JSON.parse(form.dataset.receiptIssue || 'null');
+                } catch {
+                    receiptIssue = null;
+                }
+                messages.push(receiptIssue
+                    ? { text: receiptIssue.message, title: receiptIssue.title }
+                    : { text: 'Please analyze the uploaded receipt before continuing.' });
+            } else if (receiptFileSelected && !confirmed) {
+                messages.push({ text: 'Please review and confirm the extracted receipt information before continuing.' });
+            }
+
+            if (messages.length === 0) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            let heading = 'Information Required';
+            let body;
+            if (messages.length === 1 && messages[0].title) {
+                heading = messages[0].title;
+                body = messages[0].text;
+            } else if (messages.length === 1 && messages[0].text) {
+                body = messages[0].text;
+            } else {
+                heading = form.dataset.paymentValidation === 'correct'
+                    ? 'Complete the correction details'
+                    : 'Complete the payment details';
+                body = [
+                    form.dataset.paymentValidation === 'correct'
+                        ? 'Please complete the following before reviewing the correction:'
+                        : 'Please complete the following required fields:',
+                    ...messages.map(({ label, text }) => `• ${label || text}`),
+                ].join('\n');
+            }
+            window.showPaymentValidationAlert(heading, body, invalidFields[0] || fileInput);
+        }, true);
+    });
 })();
 </script>
 <script>
@@ -441,6 +695,7 @@
         const fileInput = form.querySelector('[data-receipt-file]');
         const review = form.querySelector('[data-receipt-review]');
         const preview = form.querySelector('[data-receipt-preview]');
+        const previewTrigger = form.querySelector('[data-receipt-preview-trigger]');
         const analyze = form.querySelector('[data-analyze-receipt]');
         const status = form.querySelector('[data-receipt-status]');
         const details = form.querySelector('[data-receipt-details]');
@@ -449,70 +704,87 @@
         const reviewToken = form.querySelector('[name="receipt_review_token"]');
         const clear = form.querySelector('[data-clear-receipt]');
         const saveButton = form.querySelector('[data-save-payment]') || form.querySelector('button[type="submit"]');
-        if (!fileInput || !review || !preview || !analyze || !status || !details || !confirmation || !confirmCheckbox || !reviewToken || !clear || !saveButton) return;
+        if (!fileInput || !review || !preview || !previewTrigger || !analyze || !status || !details || !confirmation || !confirmCheckbox || !reviewToken || !clear || !saveButton) return;
         saveButton.dataset.defaultLabel = saveButton.textContent.trim();
+        const analyzeLabel = analyze.textContent.trim();
+        let analysisController = null;
 
-        const resetReview = () => {
-            reviewToken.value = '';
-            confirmCheckbox.checked = false;
-            confirmCheckbox.required = Boolean(fileInput.files && fileInput.files.length);
-            confirmation.hidden = ! (fileInput.files && fileInput.files.length);
-            details.hidden = true;
-            details.textContent = '';
-            status.textContent = '';
-            preview.hidden = true;
-            preview.removeAttribute('src');
-            saveButton.textContent = saveButton.dataset.defaultLabel;
-        };
-
-        fileInput.addEventListener('change', () => {
-            resetReview();
-            const file = fileInput.files && fileInput.files[0];
-            review.hidden = ! file;
-            if (file) {
-                const reader = new FileReader();
-                reader.addEventListener('load', () => {
-                    preview.src = String(reader.result || '');
-                    preview.hidden = false;
-                });
-                reader.readAsDataURL(file);
-            }
-        });
-
-        clear.addEventListener('click', () => {
-            fileInput.value = '';
-            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-
-        analyze.addEventListener('click', async () => {
+        const analyzeReceipt = async () => {
             const file = fileInput.files && fileInput.files[0];
             if (!file) {
-                status.textContent = 'Choose a receipt image first.';
+                window.showPaymentValidationAlert('Receipt Required', 'Please upload a receipt image before analyzing it.');
                 return;
             }
+
+            analysisController?.abort();
+            const controller = new AbortController();
+            analysisController = controller;
             analyze.disabled = true;
+            analyze.textContent = 'Analyzing…';
             status.textContent = 'Analyzing receipt locally…';
+            status.dataset.state = 'pending';
             details.hidden = true;
             reviewToken.value = '';
             confirmCheckbox.checked = false;
             confirmation.hidden = true;
             const data = new FormData(form);
+            data.delete('_method');
+
             try {
                 const response = await fetch(form.dataset.analyzeUrl, {
                     method: 'POST',
                     headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                     body: data,
                     credentials: 'same-origin',
+                    signal: controller.signal,
                 });
                 const result = await response.json();
+                if (controller !== analysisController) return;
                 if (!response.ok) {
-                    status.textContent = Object.values(result.errors || {}).flat()[0]
-                        || result.message
-                        || 'The receipt could not be analyzed. You can still record the payment manually without attaching it.';
+                    const validationMessage = Object.values(result.errors || {}).flat().find((item) => typeof item === 'string');
+                    const detail = validationMessage || result.message || 'The receipt could not be validated.';
+                    const isDuplicate = /duplicate receipt detected/i.test(detail);
+                    const isDuplicateReference = /duplicate transaction reference/i.test(detail);
+                    const isReceiptNotDetected = /receipt not detected|does not appear to be a completed payment receipt/i.test(detail);
+                    const isAnalysisFailure = response.status === 503;
+                    const title = isDuplicate
+                        ? 'Duplicate Receipt Detected'
+                        : isDuplicateReference
+                            ? 'Duplicate Transaction Reference'
+                            : isAnalysisFailure
+                                ? 'Receipt Analysis Failed'
+                                : isReceiptNotDetected
+                                    ? 'Invalid Receipt'
+                                    : 'Receipt Validation Failed';
+                    const compactStatus = isDuplicate
+                        ? '⚠ Duplicate receipt detected'
+                        : isDuplicateReference
+                            ? '⚠ Duplicate reference detected'
+                            : isAnalysisFailure
+                                ? '⚠ Receipt analysis failed'
+                                : isReceiptNotDetected
+                                    ? '⚠ Receipt requires a valid payment image'
+                                    : '⚠ Receipt validation failed';
+                    const popupDetail = isAnalysisFailure
+                        ? 'The system could not analyze this receipt. Please try a clearer image.'
+                        : isDuplicate
+                            ? `${detail}\nPlease upload a different receipt or review the existing payment.`
+                            : isDuplicateReference
+                                ? `${detail}\nPlease verify the existing payment before continuing.`
+                                : isReceiptNotDetected
+                                    ? `${detail.replace(/^Receipt Not Detected\.\s*/i, '')}\nPlease upload a valid payment receipt.`
+                                    : detail;
+                    form.dataset.receiptIssue = JSON.stringify({ title, message: popupDetail });
+                    status.textContent = compactStatus;
+                    status.dataset.state = 'error';
+                    window.showPaymentValidationAlert(title, popupDetail);
                     return;
                 }
+
                 const receipt = result.receipt || {};
-                status.textContent = `${receipt.receipt_type || 'Payment receipt'} · ${receipt.confidence || 'Needs Review'}. Review and correct the fields below.`;
+                delete form.dataset.receiptIssue;
+                status.textContent = '✓ Receipt analyzed successfully';
+                status.dataset.state = 'success';
                 details.textContent = [
                     `Provider: ${receipt.provider || 'Not identified'}`,
                     `Amount: ${receipt.amount ? `₱${receipt.amount}` : 'Not detected'}`,
@@ -530,12 +802,68 @@
                 reviewToken.value = result.review_token;
                 confirmation.hidden = false;
                 confirmCheckbox.required = true;
+                analyze.textContent = 'Analyze again';
                 if (saveButton.textContent.trim() === 'Save Payment') saveButton.textContent = 'Confirm & Record Payment';
             } catch {
-                status.textContent = 'Receipt analysis failed. Check that local OCR is installed, then retry or record the payment manually without attaching the image.';
+                if (controller !== analysisController || controller.signal.aborted) return;
+                const detail = 'The system could not analyze this receipt. Please try a clearer image.';
+                form.dataset.receiptIssue = JSON.stringify({ title: 'Receipt Analysis Failed', message: detail });
+                status.textContent = '⚠ Receipt analysis failed';
+                status.dataset.state = 'error';
+                window.showPaymentValidationAlert('Receipt Analysis Failed', detail);
             } finally {
-                analyze.disabled = false;
+                if (controller === analysisController) {
+                    analysisController = null;
+                    analyze.disabled = false;
+                    if (analyze.textContent.trim() === 'Analyzing…') analyze.textContent = 'Analyze again';
+                }
             }
+        };
+
+        const resetReview = () => {
+            analysisController?.abort();
+            analysisController = null;
+            analyze.disabled = false;
+            analyze.textContent = analyzeLabel;
+            reviewToken.value = '';
+            delete form.dataset.receiptIssue;
+            confirmCheckbox.checked = false;
+            confirmCheckbox.required = Boolean(fileInput.files && fileInput.files.length);
+            confirmation.hidden = ! (fileInput.files && fileInput.files.length);
+            details.hidden = true;
+            details.textContent = '';
+            status.textContent = '';
+            delete status.dataset.state;
+            previewTrigger.hidden = true;
+            delete previewTrigger.dataset.receiptUrl;
+            preview.removeAttribute('src');
+            saveButton.textContent = saveButton.dataset.defaultLabel;
+        };
+
+        fileInput.addEventListener('change', () => {
+            resetReview();
+            const file = fileInput.files && fileInput.files[0];
+            review.hidden = ! file;
+            if (file) {
+                const reader = new FileReader();
+                reader.addEventListener('load', () => {
+                    if (fileInput.files[0] !== file) return;
+                    preview.src = String(reader.result || '');
+                    previewTrigger.dataset.receiptUrl = preview.src;
+                    previewTrigger.hidden = false;
+                    analyzeReceipt();
+                });
+                reader.readAsDataURL(file);
+            }
+        });
+
+        clear.addEventListener('click', () => {
+            fileInput.value = '';
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        analyze.addEventListener('click', () => {
+            analyzeReceipt();
         });
     });
 })();

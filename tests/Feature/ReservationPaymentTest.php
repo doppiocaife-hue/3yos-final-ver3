@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\Package;
 use App\Models\Reservation;
 use App\Models\ReservationPayment;
+use App\Models\ReservationPaymentCorrection;
 use App\Models\ReservationRefund;
 use App\Services\BackupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -102,6 +103,45 @@ class ReservationPaymentTest extends TestCase
         ];
     }
 
+    public function test_receipt_analysis_uses_post_for_each_reservation_and_correction_save_remains_put(): void
+    {
+        $reservations = [$this->reservation(), $this->reservation()];
+
+        foreach ($reservations as $reservation) {
+            $payment = $reservation->payments()->create([
+                'payment_date' => now()->toDateString(),
+                'payment_type' => 'Downpayment',
+                'amount' => 100,
+                'payment_method' => 'Cash',
+                'recorded_by_name' => 'Payment Tester',
+            ]);
+
+            $this->withSession(self::ADMIN)
+                ->get(route('admin.reservations.payments', $reservation))
+                ->assertOk()
+                ->assertSee('data-analyze-url="'.route('admin.reservations.payments.receipt.analyze', $reservation).'"', false)
+                ->assertSee("data.delete('_method')", false);
+
+            $analysis = $this->withSession(self::ADMIN)
+                ->withHeaders(['Accept' => 'application/json'])
+                ->post(route('admin.reservations.payments.receipt.analyze', $reservation), [
+                    'receipt_image' => $this->pngUpload('replacement-'.$reservation->id.'.png'),
+                    'payment_id' => $payment->id,
+                ])
+                ->assertOk()
+                ->assertJsonStructure(['review_token', 'receipt']);
+
+            $this->assertNotEmpty($analysis->json('receipt'));
+            $this->put(route('admin.reservations.payments.receipt.analyze', $reservation))
+                ->assertStatus(405);
+        }
+
+        $this->assertSame(
+            'PUT',
+            app('router')->getRoutes()->getByName('admin.reservations.payments.correct')->methods()[0],
+        );
+    }
+
     private function assertTotals(Reservation $reservation, float $paid, float $balance, string $status): void
     {
         $fresh = $reservation->fresh();
@@ -177,8 +217,19 @@ class ReservationPaymentTest extends TestCase
         $this->withSession(self::ADMIN)
             ->get(route('admin.reservations.payments', $reservation))
             ->assertOk()
+            ->assertSee('The receipt is analyzed automatically when selected.')
+            ->assertSee('data-analyze-receipt', false)
+            ->assertSee('Analyze again')
+            ->assertSee('analyzeReceipt();')
             ->assertSee('View Receipt')
-            ->assertSee($receiptUrl);
+            ->assertSee($receiptUrl)
+            ->assertSee('<dialog id="payment-receipt-dialog"', false)
+            ->assertSee('data-view-receipt', false)
+            ->assertSee('data-receipt-preview-trigger', false)
+            ->assertSee('Click to view full receipt')
+            ->assertSee('data-close-receipt', false)
+            ->assertSee('data-toggle-receipt-zoom', false)
+            ->assertSee('aria-pressed="false"', false);
         $this->withSession(self::ADMIN)
             ->get($receiptUrl)
             ->assertOk()
@@ -187,9 +238,10 @@ class ReservationPaymentTest extends TestCase
         $this->flushSession();
         $this->get($receiptUrl)->assertRedirect(route('admin.login'));
 
-        $this->withSession(self::ADMIN)->post(route('admin.reservations.payments.update', [$reservation, $payment]), [
+        $this->withSession(self::ADMIN)->post(route('admin.reservations.payments.correct', [$reservation, $payment]), [
             '_method' => 'PUT',
             'current_admin_password' => 'password',
+            'correction_reason' => 'Preserving the existing receipt',
             'payment_date' => now()->toDateString(),
             'payment_type' => 'Downpayment',
             'amount' => 100,
@@ -200,9 +252,10 @@ class ReservationPaymentTest extends TestCase
 
         $replacement = $this->pngUpload('replacement.png');
         $replacementReview = $this->analyzeReceipt($reservation, $replacement, $payment);
-        $this->withSession(self::ADMIN)->post(route('admin.reservations.payments.update', [$reservation, $payment]), [
+        $this->withSession(self::ADMIN)->post(route('admin.reservations.payments.correct', [$reservation, $payment]), [
             '_method' => 'PUT',
             'current_admin_password' => 'password',
+            'correction_reason' => 'Replacing the receipt with the verified image',
             'payment_date' => now()->toDateString(),
             'payment_type' => 'Downpayment',
             'amount' => 100,
@@ -212,11 +265,17 @@ class ReservationPaymentTest extends TestCase
 
         $newPath = $payment->fresh()->receipt_image_path;
         $this->assertNotSame($oldPath, $newPath);
-        $replacementActivity = ActivityLog::where('action', 'Official Receipt replaced')->firstOrFail();
+        $replacementActivity = ActivityLog::where('action', 'Payment Corrected')->firstOrFail();
         $this->assertSame('Payment Tester', $replacementActivity->actor_name);
         $this->assertStringNotContainsString($newPath, $replacementActivity->description);
-        Storage::disk('local')->assertMissing($oldPath);
+        Storage::disk('local')->assertExists($oldPath);
         Storage::disk('local')->assertExists($newPath);
+        $correction = $payment->corrections()->firstOrFail();
+        $this->assertSame($oldPath, $correction->original_values['receipt_image_path']);
+        $this->assertSame($newPath, $correction->corrected_values['receipt_image_path']);
+        $this->assertTrue($correction->ocr_used);
+        $this->assertSame('passed', $correction->receipt_validation_result);
+        $this->assertSame('passed', $correction->duplicate_check_result);
         $this->assertTotals($reservation, 100.0, 900.0, 'Partially Paid');
         $this->assertModelExists($payment);
         $this->assertSame($newPath, $payment->fresh()->receipt_image_path);
@@ -286,7 +345,8 @@ class ReservationPaymentTest extends TestCase
         $this->withSession(self::ADMIN)
             ->get(route('admin.reservations.payments', $reservation))
             ->assertOk()
-            ->assertSee('Edit')
+            ->assertSee('Correct Payment')
+            ->assertSee('permanently recorded')
             ->assertDontSee('Delete');
 
         $this->withSession(self::ADMIN)
@@ -303,70 +363,77 @@ class ReservationPaymentTest extends TestCase
         $this->assertTotals($reservation, 100.0, 900.0, 'Partially Paid');
     }
 
-    public function test_editing_a_payment_recalculates_and_cannot_exceed_the_contract(): void
+    public function test_correcting_a_payment_recalculates_and_cannot_exceed_the_contract(): void
     {
         $reservation = $this->reservation();
         $this->pay($reservation, 100);
         $payment = $reservation->payments()->firstOrFail();
 
-        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.update', [$reservation, $payment]), [
+        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.correct', [$reservation, $payment]), [
             'current_admin_password' => 'password',
+            'correction_reason' => 'Correcting the recorded amount',
             'payment_date' => now()->toDateString(),
             'payment_type' => 'Downpayment',
             'payment_method' => 'Cash',
             'amount' => 200,
         ]);
-        $amountOnlyActivity = ActivityLog::where('action', 'Payment updated')->firstOrFail();
+        $amountOnlyActivity = ActivityLog::where('action', 'Payment Corrected')->firstOrFail();
         $this->assertStringContainsString('Amount: ₱100.00 → ₱200.00', $amountOnlyActivity->description);
-        $this->assertStringNotContainsString('Payment method:', $amountOnlyActivity->description);
-        $this->assertStringNotContainsString('Payment date:', $amountOnlyActivity->description);
-        $this->assertStringNotContainsString('Payment type:', $amountOnlyActivity->description);
+        $this->assertStringContainsString('Reason: Correcting the recorded amount', $amountOnlyActivity->description);
+        $this->assertSame(100.0, (float) $payment->corrections()->firstOrFail()->original_values['amount']);
+        $this->assertSame(200.0, (float) $payment->corrections()->firstOrFail()->corrected_values['amount']);
         $this->assertTotals($reservation, 200.0, 800.0, 'Partially Paid');
 
         $fields = ['payment_date' => now()->toDateString(), 'payment_type' => 'Downpayment', 'payment_method' => 'GCash'];
 
-        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.update', [$reservation, $payment]), $fields + [
+        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.correct', [$reservation, $payment]), $fields + [
             'current_admin_password' => 'password',
+            'correction_reason' => 'Correcting the payment classification',
             'amount' => 1000,
         ]);
         $this->assertTotals($reservation, 1000.0, 0.0, 'Fully Paid');
-        $activity = ActivityLog::where('action', 'Payment updated')->latest('id')->firstOrFail();
+        $activity = ActivityLog::where('action', 'Payment Corrected')->latest('id')->firstOrFail();
         $this->assertStringContainsString('Amount: ₱200.00 → ₱1,000.00', $activity->description);
         $this->assertStringContainsString('Payment method: Cash → GCash', $activity->description);
-        $this->assertStringNotContainsString('Payment date:', $activity->description);
-        $this->assertStringNotContainsString('Payment type:', $activity->description);
         $this->assertSame('Payment Tester', $activity->actor_name);
 
-        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.update', [$reservation, $payment]), [
+        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.correct', [$reservation, $payment]), [
             'current_admin_password' => 'password',
+            'correction_reason' => 'Correcting the date and payment type',
             'payment_date' => now()->subDay()->toDateString(),
             'payment_type' => 'Final Payment',
             'amount' => 1000,
             'payment_method' => 'GCash',
             'notes' => 'Updated payment reference',
         ])->assertRedirect();
-        $detailsActivity = ActivityLog::where('action', 'Payment updated')->latest('id')->firstOrFail();
-        $this->assertStringContainsString('Payment date:', $detailsActivity->description);
+        $detailsActivity = ActivityLog::where('action', 'Payment Corrected')->latest('id')->firstOrFail();
+        $this->assertStringContainsString('Payment date: '.now()->toDateString().' → '.now()->subDay()->toDateString(), $detailsActivity->description);
         $this->assertStringContainsString('Payment type: Downpayment → Final Payment', $detailsActivity->description);
-        $this->assertStringContainsString('Payment notes were changed.', $detailsActivity->description);
         $this->assertStringNotContainsString('password', $detailsActivity->description);
-        $this->assertSame(3, ActivityLog::where('action', 'Payment updated')->count());
+        $this->assertSame(3, ActivityLog::where('action', 'Payment Corrected')->count());
+        $this->assertSame(3, ReservationPaymentCorrection::where('payment_id', $payment->id)->count());
+        $this->withSession(self::ADMIN)
+            ->get(route('admin.reservations.payments', $reservation))
+            ->assertOk()
+            ->assertSee('3 corrections recorded')
+            ->assertSee('Correcting the recorded amount');
 
-        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.update', [$reservation, $payment]), $fields + [
+        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.correct', [$reservation, $payment]), $fields + [
             'current_admin_password' => 'password',
+            'correction_reason' => 'This correction should be rejected',
             'amount' => 1000.01,
         ])
-            ->assertSessionHasErrorsIn('editPayment', 'amount')
-            ->assertSessionHas('editing_payment', $payment->id);
+            ->assertSessionHasErrorsIn('correctPayment', 'amount')
+            ->assertSessionHas('correcting_payment', $payment->id);
         $this->assertSame(1000.0, (float) $payment->fresh()->amount);
     }
 
-    public function test_payment_edit_requires_the_current_admin_password(): void
+    public function test_payment_correction_requires_the_current_admin_password(): void
     {
         $reservation = $this->reservation();
         $this->pay($reservation, 100);
         $payment = $reservation->payments()->firstOrFail();
-        $updateRoute = route('admin.reservations.payments.update', [$reservation, $payment]);
+        $updateRoute = route('admin.reservations.payments.correct', [$reservation, $payment]);
 
         $this->withSession(self::ADMIN)
             ->from(route('admin.reservations.payments', $reservation))
@@ -375,6 +442,7 @@ class ReservationPaymentTest extends TestCase
                 'payment_type' => 'Downpayment',
                 'amount' => 250,
                 'payment_method' => 'GCash',
+                'correction_reason' => 'Required reason test',
             ])
             ->assertRedirect(route('admin.reservations.payments', $reservation))
             ->assertSessionHasErrors('current_admin_password');
@@ -388,6 +456,7 @@ class ReservationPaymentTest extends TestCase
                 'payment_type' => 'Downpayment',
                 'amount' => 250,
                 'payment_method' => 'GCash',
+                'correction_reason' => 'Required reason test',
             ])
             ->assertSessionHasErrors('current_admin_password');
         $this->assertSame(100.0, (float) $payment->fresh()->amount);
@@ -395,8 +464,57 @@ class ReservationPaymentTest extends TestCase
             ->get(route('admin.reservations.payments', $reservation))
             ->assertOk()
             ->assertSee('data-password-confirm', false)
-            ->assertSee('Confirm your administrator password to edit this payment.')
+            ->assertSee('Confirm your administrator password to correct this payment.')
             ->assertDontSee('delete this payment');
+    }
+
+    public function test_payment_correction_requires_a_reason_and_does_not_change_payment_when_missing(): void
+    {
+        $reservation = $this->reservation();
+        $this->pay($reservation, 100);
+        $payment = $reservation->payments()->firstOrFail();
+
+        $this->withSession(self::ADMIN)
+            ->put(route('admin.reservations.payments.correct', [$reservation, $payment]), [
+                'current_admin_password' => 'password',
+                'payment_date' => now()->toDateString(),
+                'payment_type' => 'Downpayment',
+                'amount' => 200,
+                'payment_method' => 'GCash',
+            ])
+            ->assertSessionHasErrorsIn('correctPayment', 'correction_reason');
+
+        $this->assertSame(100.0, (float) $payment->fresh()->amount);
+        $this->assertSame(0, $payment->corrections()->count());
+        $this->assertSame(0, ActivityLog::where('action', 'Payment Corrected')->count());
+    }
+
+    public function test_payment_correction_rejects_each_missing_required_payment_field(): void
+    {
+        $reservation = $this->reservation();
+        $this->pay($reservation, 100);
+        $payment = $reservation->payments()->firstOrFail();
+        $complete = [
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'amount' => 200,
+            'payment_method' => 'GCash',
+            'correction_reason' => 'Correcting a missing payment value',
+            'current_admin_password' => 'password',
+        ];
+
+        foreach (['payment_date', 'payment_type', 'amount', 'payment_method'] as $missingField) {
+            $fields = $complete;
+            unset($fields[$missingField]);
+
+            $this->withSession(self::ADMIN)
+                ->put(route('admin.reservations.payments.correct', [$reservation, $payment]), $fields)
+                ->assertSessionHasErrorsIn('correctPayment', $missingField)
+                ->assertSessionHas('correcting_payment', $payment->id);
+        }
+
+        $this->assertSame(100.0, (float) $payment->fresh()->amount);
+        $this->assertSame(0, $payment->corrections()->count());
     }
 
     public function test_payment_validation_messages(): void
@@ -405,6 +523,19 @@ class ReservationPaymentTest extends TestCase
 
         $this->withSession(self::ADMIN)->post(route('admin.reservations.payments.store', $reservation), [])
             ->assertSessionHasErrors(['payment_date', 'payment_type', 'amount', 'payment_method']);
+        $complete = [
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'amount' => 100,
+            'payment_method' => 'Cash',
+        ];
+        foreach (['payment_date', 'payment_type', 'amount', 'payment_method'] as $missingField) {
+            $fields = $complete;
+            unset($fields[$missingField]);
+            $this->withSession(self::ADMIN)
+                ->post(route('admin.reservations.payments.store', $reservation), $fields)
+                ->assertSessionHasErrors($missingField);
+        }
         $this->pay($reservation, 0)->assertSessionHasErrors(['amount' => 'The amount must be greater than ₱0.00.']);
         $this->pay($reservation, -50)->assertSessionHasErrors('amount');
         $this->pay($reservation, 10.555)->assertSessionHasErrors('amount');
@@ -553,10 +684,32 @@ class ReservationPaymentTest extends TestCase
             ->assertOk()
             ->assertSeeInOrder(['Contract price', '₱1,000.00', 'Payment status', 'Partially Paid', 'Gross paid', '₱100.00', 'Net paid', '₱100.00', 'Remaining balance', '₱900.00', 'Payment due date', 'October 15, 2026'])
             ->assertSee('Reference 12345')
-            ->assertSee('Payment history');
+            ->assertSee('Payment history')
+            ->assertSee('Print record')
+            ->assertDontSee('View / print record')
+            ->assertSee('data-print-record', false)
+            ->assertSee('data-print-frame', false)
+            ->assertSee('data-print-url="'.route('admin.reservations.payments.print', $reservation).'"', false)
+            ->assertSee('novalidate data-payment-validation="record"', false)
+            ->assertSee('<dialog id="payment-validation-dialog"', false)
+            ->assertSee('data-close-payment-validation', false)
+            ->assertSee('aria-describedby="payment-validation-message"', false)
+            ->assertSee('Duplicate Receipt Detected')
+            ->assertSee('Duplicate Transaction Reference')
+            ->assertSee('Invalid Receipt')
+            ->assertSee('Receipt Analysis Failed')
+            ->assertSee('✓ Receipt analyzed successfully')
+            ->assertSee('novalidate data-payment-validation="correct"', false)
+            ->assertSee('Please review and confirm the extracted receipt information before continuing.')
+            ->assertSee('Correction Reason')
+            ->assertSee("method: 'POST'", false)
+            ->assertDontSee('target="_blank"', false);
 
         $this->withSession(self::ADMIN)->get(route('admin.reservations.payments.print', $reservation))
-            ->assertOk()->assertSee('Payment record')->assertSee('₱900.00');
+            ->assertOk()
+            ->assertSee('Payment record')
+            ->assertSee('₱900.00')
+            ->assertSee('window.addEventListener(\'load\', () => window.print()', false);
 
         // The reservation list links to the detail page; the detail page links onward to payment history.
         $this->withSession(self::ADMIN)->get(route('admin.reservations'))
@@ -578,6 +731,27 @@ class ReservationPaymentTest extends TestCase
         $this->withSession(self::ADMIN)->get(route('admin.reservations.show', $reservation))
             ->assertSee('Payment recorded')
             ->assertSee('Amount: ₱100.00');
+    }
+
+    public function test_payment_page_renders_server_validation_errors_for_the_alert_dialog(): void
+    {
+        $reservation = $this->reservation();
+        $this->pay($reservation, 100);
+        $payment = $reservation->payments()->firstOrFail();
+        $errors = new \Illuminate\Support\ViewErrorBag;
+        $errors->put('correctPayment', new \Illuminate\Support\MessageBag([
+            'correction_reason' => ['Enter a reason for correcting this payment.'],
+        ]));
+
+        $this->withSession(array_merge(self::ADMIN, [
+            'correcting_payment' => $payment->id,
+            'errors' => $errors,
+        ]))
+            ->get(route('admin.reservations.payments', $reservation))
+            ->assertOk()
+            ->assertSee('<dialog id="payment-validation-dialog"', false)
+            ->assertSee('id="payment-server-errors"', false)
+            ->assertSee('Enter a reason for correcting this payment.');
     }
 
     public function test_partial_refunds_preserve_the_payment_ledger_and_are_idempotent(): void
@@ -892,7 +1066,7 @@ class ReservationPaymentTest extends TestCase
         $this->assertTotals($reservation, 500.0, 500.0, 'Partially Paid');
     }
 
-    public function test_refunded_amounts_cannot_be_undone_by_editing_payments(): void
+    public function test_refunded_amounts_cannot_be_undone_by_correcting_payments(): void
     {
         $reservation = $this->reservation();
         $this->pay($reservation, 800);
@@ -905,11 +1079,12 @@ class ReservationPaymentTest extends TestCase
         ];
 
         $this->withSession(self::ADMIN)
-            ->put(route('admin.reservations.payments.update', [$reservation, $payment]), $paymentFields + [
+            ->put(route('admin.reservations.payments.correct', [$reservation, $payment]), $paymentFields + [
                 'current_admin_password' => 'password',
+                'correction_reason' => 'Correcting an amount after refund',
                 'amount' => 200,
             ])
-            ->assertSessionHasErrorsIn('editPayment', 'amount');
+            ->assertSessionHasErrorsIn('correctPayment', 'amount');
         $this->assertModelExists($payment);
         $this->assertSame(1, $reservation->refunds()->count());
         $this->assertSame(300.0, (float) $reservation->refunds()->firstOrFail()->amount);
@@ -956,7 +1131,7 @@ class ReservationPaymentTest extends TestCase
             $this->get(route('admin.reservations.payments', $reservation)),
             $this->get(route('admin.reservations.payments.print', $reservation)),
             $this->post(route('admin.reservations.payments.store', $reservation), $fields),
-            $this->put(route('admin.reservations.payments.update', [$reservation, $payment]), $fields),
+            $this->put(route('admin.reservations.payments.correct', [$reservation, $payment]), $fields + ['correction_reason' => 'Guest must not correct']),
             $this->patch(route('admin.reservations.payments.details', $reservation), ['total_cost' => 1]),
             $this->patch(route('admin.reservations.update', $reservation), ['amount_paid' => 1000]),
             $this->post(route('admin.reservations.refunds.store', $reservation), [
@@ -986,8 +1161,9 @@ class ReservationPaymentTest extends TestCase
         $this->pay($first, 100);
         $payment = $first->payments()->firstOrFail();
 
-        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.update', [$second, $payment]), [
+        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.correct', [$second, $payment]), [
             'current_admin_password' => 'password',
+            'correction_reason' => 'Wrong reservation binding test',
             'payment_date' => now()->toDateString(),
             'payment_type' => 'Downpayment',
             'amount' => 200,
@@ -1001,6 +1177,15 @@ class ReservationPaymentTest extends TestCase
         $reservation = $this->reservation();
         $this->pay($reservation, 300);
         $this->refund($reservation, 100);
+        $payment = $reservation->payments()->firstOrFail();
+        $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.correct', [$reservation, $payment]), [
+            'current_admin_password' => 'password',
+            'correction_reason' => 'Fixing a previously recorded payment detail',
+            'payment_date' => now()->toDateString(),
+            'payment_type' => 'Downpayment',
+            'amount' => 300,
+            'payment_method' => 'Cash',
+        ])->assertRedirect();
 
         $service = app(BackupService::class);
         $path = $service->pathFor(basename($service->create()));
@@ -1015,6 +1200,9 @@ class ReservationPaymentTest extends TestCase
         $this->assertArrayHasKey('reservation_refunds', $contents['tables']);
         $this->assertCount(1, $contents['tables']['reservation_refunds']);
         $this->assertSame(100.0, (float) $contents['tables']['reservation_refunds'][0]['amount']);
+        $this->assertArrayHasKey('reservation_payment_corrections', $contents['tables']);
+        $this->assertCount(1, $contents['tables']['reservation_payment_corrections']);
+        $this->assertSame('Fixing a previously recorded payment detail', $contents['tables']['reservation_payment_corrections'][0]['reason']);
     }
 
     public function test_restoring_a_backup_made_before_payment_history_clears_stale_payments(): void
@@ -1035,6 +1223,16 @@ class ReservationPaymentTest extends TestCase
             $this->assertSame(2, ReservationPayment::count());
             $this->refund($reservation, 100);
             $this->assertSame(1, ReservationRefund::count());
+            $payment = $reservation->payments()->latest('id')->firstOrFail();
+            $this->withSession(self::ADMIN)->put(route('admin.reservations.payments.correct', [$reservation, $payment]), [
+                'current_admin_password' => 'password',
+                'correction_reason' => 'Correcting the stale payment ledger entry',
+                'payment_date' => now()->toDateString(),
+                'payment_type' => 'Partial Payment',
+                'amount' => 450,
+                'payment_method' => 'Cash',
+            ])->assertRedirect();
+            $this->assertSame(1, ReservationPaymentCorrection::count());
 
             $service->restore($name);
         } finally {
@@ -1043,6 +1241,7 @@ class ReservationPaymentTest extends TestCase
 
         $this->assertSame(0, ReservationPayment::count());
         $this->assertSame(0, ReservationRefund::count());
+        $this->assertSame(0, ReservationPaymentCorrection::count());
         $this->withSession(self::ADMIN)->get(route('admin.reservations.payments', $reservation))->assertOk();
         $this->assertTotals($reservation, 2000.0, 3000.0, 'Partially Paid');
     }

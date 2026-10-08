@@ -122,7 +122,7 @@
                         <td>
                             <div class="reservation-row-actions">
                                 @if($reservation->status === 'pending')
-                                    <form method="POST" action="{{ route('admin.reservations.accept', $reservation) }}" data-confirm-message="Accept this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-success" type="submit">Accept</button></form>
+                                    <a class="btn btn-sm btn-success" href="{{ route('admin.reservations.show', $reservation) }}#reservation-acceptance-form">Review &amp; accept</a>
                                     <form method="POST" action="{{ route('admin.reservations.cancel', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
                                 @endif
                                 <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.reservations.show', $reservation) }}">View</a>
@@ -160,7 +160,7 @@
                 </div>
                 <div class="reservation-actions">
                     @if($reservation->status === 'pending')
-                        <form method="POST" action="{{ route('admin.reservations.accept', $reservation) }}" data-confirm-message="Accept this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-success" type="submit">Accept</button></form>
+                        <a class="btn btn-sm btn-success" href="{{ route('admin.reservations.show', $reservation) }}#reservation-acceptance-form">Review &amp; accept</a>
                         <form method="POST" action="{{ route('admin.reservations.cancel', $reservation) }}" data-confirm-message="Cancel this reservation? The change will be saved immediately.">@csrf<button class="btn btn-sm btn-danger" type="submit">Cancel</button></form>
                     @endif
                     <a class="btn btn-sm luxury-btn" href="{{ route('admin.reservations.show', $reservation) }}">View reservation</a>
